@@ -6,13 +6,12 @@ version: 0.2.3
 date-released: "2026-10-31"
 license: MIT
 authors:
-  - family-names: "<你的姓>"
-    given-names: "<你的名>"
-    alias: "<your-github-username>"
+  - given-names: "Cosmo w"
+    alias: "xinghui2628"
   - family-names: "<第二作者姓>"
     given-names: "<第二作者名>"
     alias: "<coauthor-github-username>"
-repository-code: "https://github.com/<your-github-username>/dsh-wechat-persona"
+repository-code: "https://github.com/xinghui2628/dsh-wechat-persona"
 abstract: >-
   一个在 DeepSeek Harness 中运行的微信小号 AI 人格聊天分身插件：
   支持人格化回复、拟人化节奏、按联系人记忆、token 预算、风控熔断，

@@ -489,7 +489,7 @@ npm run build         # tsc -> dist/
 
 ## 作者与贡献者
 
-- **第一作者 / 维护者**：<你的名字或 GitHub 用户名>
+- **第一作者 / 维护者**：Cosmo w（GitHub: [@xinghui2628](https://github.com/xinghui2628)）
 - **第二作者 / 共同维护**：<第二作者名字>
 - 其他贡献者：见 [CONTRIBUTORS.md](CONTRIBUTORS.md) 与 GitHub Contributors 页
 

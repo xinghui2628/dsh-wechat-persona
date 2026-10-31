@@ -4,7 +4,7 @@
 
 | 顺序 | 角色 | 署名 |
 |---|---|---|
-| 第一作者（项目作者 / 维护者） | 项目发起、设计、实现、发布 | **<你的名字或 GitHub 用户名>**（GitHub: `<your-github-username>`） |
+| 第一作者（项目作者 / 维护者） | 项目发起、设计、实现、发布 | **Cosmo w**（GitHub: `xinghui2628`） |
 | 第二作者（共同作者 / 共同维护） | <例如：桌面通道调试、真机测试、文档、人格包> | **<第二作者名字>**（GitHub: `<coauthor-github-username>`） |
 | 其他贡献者 | 见 GitHub Contributors 页面 / 本文件末尾 | — |
 
