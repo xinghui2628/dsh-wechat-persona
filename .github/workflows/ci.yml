@@ -8,6 +8,10 @@ on:
 jobs:
   verify:
     runs-on: windows-latest
+    # 插件的在线时段/每日预算/限频都按本地时区（Asia/Shanghai）计算；
+    # GitHub 托管 runner 默认 UTC，会让依赖时钟的测试失败，这里统一时区。
+    env:
+      TZ: Asia/Shanghai
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
