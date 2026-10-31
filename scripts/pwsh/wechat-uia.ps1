@@ -1420,7 +1420,9 @@ function Get-ListRows([IntPtr]$Hwnd, [string[]]$Names) {
         $newMap[$r.name] = $pv
         if ($pv) {
             $oldPv = [string](@($prevMap.PSObject.Properties) | Where-Object { $_.Name -eq $r.name } | ForEach-Object { $_.Value } | Select-Object -First 1)
-            if ($oldPv -and $oldPv -ne $pv) { $r.unread = $true }
+            # 绿底选中行 = 当前打开的会话：机器人自己刚发的消息会让预览变化，
+            # 但已打开的会话不会产生“未读”，这里不能把它标成 unread，否则会自回声/自言自语。
+            if ($oldPv -and $oldPv -ne $pv -and -not $r.selected) { $r.unread = $true }
         }
     }
     try { $newMap | ConvertTo-Json -Compress | Set-Content -LiteralPath $pvFile -Encoding UTF8 } catch {}

@@ -23,6 +23,8 @@ import { readFileSync, writeFileSync } from 'node:fs';
 const POLL_INTERVAL_MS = 2000;
 const SCRIPT_TIMEOUT_MS = 90000;
 const MAX_CONSECUTIVE_FAILURES = 6;
+// 每个联系人保留最近几条已发送文本：用于识别「把自己的消息回读成新消息」的自回声。
+const MAX_SENT_HISTORY = 5;
 const SENT_STATE_PATH = join(tmpdir(), 'dsh-wechat-persona-sent.json');
 
 export type DesktopScriptName = 'wechat-uia' | 'user-activity';
@@ -93,8 +95,10 @@ export class DesktopChannel {
     try {
       const raw = readFileSync(SENT_STATE_PATH, 'utf8');
       const obj = JSON.parse(raw);
-      for (const [name, text] of Object.entries(obj || {})) {
-        if (typeof text === 'string' && text) this.lastSentText.set(name, text);
+      for (const [name, value] of Object.entries(obj || {})) {
+        const list = Array.isArray(value) ? value : [value];
+        const texts = list.filter((x) => typeof x === 'string' && x);
+        if (texts.length > 0) this.lastSentText.set(name, texts.slice(-MAX_SENT_HISTORY));
       }
     } catch { /* 首次运行或文件损坏，忽略 */ }
   }
@@ -102,7 +106,7 @@ export class DesktopChannel {
   saveSentState() {
     try {
       const obj = {};
-      for (const [name, text] of this.lastSentText) obj[name] = text;
+      for (const [name, texts] of this.lastSentText) obj[name] = texts;
       writeFileSync(SENT_STATE_PATH, JSON.stringify(obj), 'utf8');
     } catch { /* 写临时文件失败不影响主流程 */ }
   }
@@ -111,22 +115,46 @@ export class DesktopChannel {
     return String(text || '').replace(/[\s，。！？、,.!?；;：:""''（）()【】\[\]…~～-]/g, '');
   }
 
-  /** 预览文字是否是我们自己刚发出去的消息（避免自问自答）。 */
+  /** 记录一条刚发送的文本（保留最近 MAX_SENT_HISTORY 条，供自回声识别用）。 */
+  rememberSentText(label, text) {
+    const trimmed = String(text || '').slice(0, 200);
+    const history = this.lastSentText.get(label) || [];
+    const next = [...history.filter((item) => item !== trimmed), trimmed].slice(-MAX_SENT_HISTORY);
+    this.lastSentText.set(label, next);
+    return next;
+  }
+
+  /** 预览文字是否是我们自己刚发出去的消息（避免自问自答/自言自语）。 */
   isOwnPreview(name, preview) {
+    return this.isOwnText(name, preview);
+  }
+
+  /** 一段文字是否是我们自己刚发过的内容（带 OCR 容错）。 */
+  isOwnText(name, text) {
     const own = this.lastSentText.get(name);
-    if (!own) return false;
-    const p = this.normalizeText(preview);
-    const s = this.normalizeText(own);
+    if (!own || own.length === 0) return false;
+    const p = this.normalizeText(text);
+    if (p.length < 2) return false;
+    return own.some((item) => this.looksLikeOwnText(p, this.normalizeText(item)));
+  }
+
+  /**
+   * 判断一段（已归一化的）文字是不是自己刚发过的内容。
+   * 列表预览/窗口 OCR 会截断、漏字、把形近字认错（如「完整」→「完整」、
+   * 「你」→「亻克」、「复读」→「亻读」），所以整串相等之外还要比较前缀和字符重合率。
+   * 宁可把好友的短回复漏掉一次，也不要把自己的话当成对方消息来自言自语。
+   */
+  looksLikeOwnText(p, s) {
     if (p.length < 2 || s.length < 2) return false;
-    if (p.length >= 4 && s.length >= 4) {
-      if (s.includes(p) || p.includes(s.slice(0, Math.min(12, s.length)))) return true;
-    }
-    // OCR 会把数字/字母认错（OK1→OKI），整串不等时用字符重合率兜底，
-    // 避免把自己的回复当成好友的新消息而自问自答。
-    if (p.length >= 4 && s.length >= 4) {
+    if (p === s) return true;
+    if (s.length >= 4 && (s.includes(p) || p.includes(s))) return true;
+    // 列表预览只显示前 ~20 个字：检查是否互为前缀/后缀。
+    const head = Math.min(p.length, s.length, 12);
+    if (head >= 4 && (s.startsWith(p.slice(0, head)) || p.startsWith(s.slice(0, head)))) return true;
+    if (p.length >= 6 && s.length >= 6) {
       const chars = [...new Set(p)];
       const common = chars.filter((ch) => s.includes(ch)).length;
-      if (common / chars.length >= 0.8) return true;
+      if (common / chars.length >= 0.6) return true;
     }
     return false;
   }
@@ -331,6 +359,12 @@ export class DesktopChannel {
       for (const message of data.messages) {
         const text = String(message?.text || '').trim();
         if (!text) continue;
+        // 双保险：窗口读取偶尔会把机器人自己的绿气泡 OCR 成「对方消息」
+        // （右侧过滤失败/窗口布局异常时），命中最近发送过的文本就直接丢弃，绝不回给自己。
+        if (this.isOwnText(name, text)) {
+          this.logger.debug?.(`[desktop] 跳过自回声消息：${name} ${text.slice(0, 30)}`);
+          continue;
+        }
         this.emitMessage(name, text, message?.id);
       }
     }
@@ -431,7 +465,7 @@ export class DesktopChannel {
     this.lastSendAt = Date.now();
     this.lastActiveContact = label;
     this.lastActiveContactAt = Date.now();
-    this.lastSentText.set(label, text.slice(0, 200));
+    this.rememberSentText(label, text);
     this.saveSentState();
     this.logger.debug?.(`[desktop] 已发送给 ${contactId}（${text.length} 字）`);
     return { ok: true };

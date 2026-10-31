@@ -269,6 +269,7 @@ export type SkipReason =
   | 'private-chat-disabled'
   | 'persona-disabled'
   | 'self-message'
+  | 'self-echo'
   | 'empty-message'
   | 'pure-sticker'
   | 'noise'

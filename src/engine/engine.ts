@@ -59,6 +59,32 @@ function matchWhitelist(config: WechatPersonaConfig, contactId: string, contactN
   return false
 }
 
+/** 归一化文本：去标点/空白，用于自回声比对。 */
+function normalizeEchoText(text: unknown): string {
+  return String(text ?? '').replace(/[\s，。！？、,.!?；;：:""''（）()【】\[\]…~～-]/g, '')
+}
+
+/**
+ * 判断入站文本是不是机器人自己刚说过的话（通道回读造成）。
+ * 列表预览会截断、OCR 会漏字认错字，所以整串之外还要比前缀/后缀与字符重合率。
+ * 安全原则：宁可漏回一条，也不自问自答。
+ */
+function looksLikeOwnText(inbound: unknown, own: unknown): boolean {
+  const a = normalizeEchoText(inbound)
+  const b = normalizeEchoText(own)
+  if (a.length < 2 || b.length < 2) return false
+  if (a === b) return true
+  if (b.length >= 4 && (a.includes(b) || b.includes(a))) return true
+  const head = Math.min(a.length, b.length, 12)
+  if (head >= 4 && (a.startsWith(b.slice(0, head)) || b.startsWith(a.slice(0, head)))) return true
+  if (a.length >= 6 && b.length >= 6) {
+    const chars = [...new Set(a)]
+    const common = chars.filter((ch) => b.includes(ch)).length
+    if (common / chars.length >= 0.6) return true
+  }
+  return false
+}
+
 export class PersonaEngine {
   private readonly deps: EngineDeps
   private started = false
@@ -333,6 +359,24 @@ export class PersonaEngine {
       await this.audit({ type: 'stop', contactId: message.contactId, reason: 'chat-stop-command', detail: message.text })
       await this.persist()
       return
+    }
+
+    // 2.5) 自回声保护：通道偶尔会把机器人自己的消息回读成入站（列表预览变化 / 窗口 OCR），
+    // 如果拿它当新消息回复，就会越聊越嗨、自言自语。用最近对话里自己的话比对，命中就静默跳过。
+    if (fromWhitelist && typeof memory.recent === 'function') {
+      try {
+        const recentTurns = await memory.recent(message.contactId, message.contactName, 12)
+        const ownTurns = (recentTurns || []).filter((turn) => turn && turn.role === 'assistant').slice(-6)
+        if (ownTurns.some((turn) => looksLikeOwnText(message.text, turn.text))) {
+          this.deps.logger.debug?.(
+            `[engine] 跳过自回声消息：${message.contactName} ${String(message.text).slice(0, 30)}`,
+          )
+          await this.skip(message, { skip: true, reason: 'self-echo' }, now)
+          return
+        }
+      } catch {
+        // 记忆读取失败不阻断正常回复流程
+      }
     }
 
     // 3) 本地 0-token 判断

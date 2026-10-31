@@ -587,3 +587,31 @@ describe('第二轮开关：人格/私聊/白名单/表情/熔断', () => {
     expect(typeof status.nextOnlineAt === 'number' || status.nextOnlineAt === null).toBe(true)
   })
 })
+
+describe('自回声保护：机器人不会自问自答', () => {
+  it('把自己刚发出的回复回读成入站：不调用模型、不重复发送', async () => {
+    const h = makeHarness({ config: { whitelist } })
+    await h.engine.handleInbound(inbound({ id: 'echo-base', text: '在干嘛呢' }))
+    expect(h.channel.sent.length).toBeGreaterThan(0)
+    const own = (h.channel.sent[0]!.part as { text: string }).text
+    const sentBefore = h.channel.sent.length
+    const llmBefore = h.llm.calls.length
+
+    await h.engine.handleInbound(inbound({ id: 'echo-replay', text: own }))
+    expect(h.channel.sent.length).toBe(sentBefore)
+    expect(h.llm.calls.length).toBe(llmBefore)
+    expect(h.audit.reasons('skip')).toContain('self-echo')
+  })
+
+  it('100 次自回声重复投递都不产生新回复', async () => {
+    const h = makeHarness({ config: { whitelist } })
+    await h.engine.handleInbound(inbound({ id: 'echo-base', text: '在干嘛呢' }))
+    const own = (h.channel.sent[0]!.part as { text: string }).text
+    const sentBefore = h.channel.sent.length
+    for (let i = 0; i < 100; i += 1) {
+      await h.engine.handleInbound(inbound({ id: `echo-${i}`, text: own }))
+    }
+    expect(h.channel.sent.length).toBe(sentBefore)
+    expect(h.llm.calls.length).toBeLessThanOrEqual(1)
+  })
+})

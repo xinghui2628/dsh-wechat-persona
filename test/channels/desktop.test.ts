@@ -214,7 +214,7 @@ describe('DesktopChannel', () => {
     expect(sendCall.args).toContain('100')
     const encoded = sendCall.args[sendCall.args.indexOf('-TextBase64') + 1]!
     expect(Buffer.from(encoded, 'base64').toString('utf8')).toBe('晚上好')
-    expect(harness.channel.lastSentText.get('张三')).toBe('晚上好')
+    expect(harness.channel.lastSentText.get('张三')).toEqual(['晚上好'])
     await harness.channel.stop()
   })
 
@@ -358,6 +358,69 @@ describe('DesktopChannel', () => {
     )
     expect(String(status.detail ?? '')).toContain('连续失败')
     expect(status.lastError).toBeTruthy()
+    expect(harness.messages).toEqual([])
+    await harness.channel.stop()
+  })
+})
+
+describe('自回声保护（机器人不能回自己的话）', () => {
+  const SENT_MAIN = '能啊，这不完整回你了。'
+  const SENT_SECOND = '你这测试挺费劲的哈哈'
+
+  it('自己的消息被 OCR 回读成列表预览时不投递（100 种变体）', () => {
+    const harness = makeDesktopHarness({ runScript: recordRunner(() => LIST_ROW_ZHANGSAN).runner })
+    harness.channel.rememberSentText('张三', SENT_MAIN)
+    harness.channel.rememberSentText('张三', SENT_SECOND)
+
+    const variants: string[] = [SENT_MAIN, SENT_SECOND, '你这测试挺费劲的哈', '能啊这不完整回你了']
+    for (let i = 0; i < 100; i += 1) {
+      const chars = [...SENT_MAIN]
+      const idx = i % chars.length
+      if (i % 3 === 0) chars.splice(idx, 1) // OCR 漏字
+      else if (i % 3 === 1) chars[idx] = '口' // OCR 形近字误认
+      if (i % 4 === 0) chars.push('。') // 标点重复
+      variants.push(chars.join(''))
+    }
+    for (const variant of variants) {
+      expect(harness.channel.isOwnPreview('张三', variant), `应为自己的回声：${variant}`).toBe(true)
+    }
+  })
+
+  it('好友的正常消息不会被误判成自己的回声', () => {
+    const harness = makeDesktopHarness({ runScript: recordRunner(() => LIST_ROW_ZHANGSAN).runner })
+    harness.channel.rememberSentText('张三', SENT_MAIN)
+    for (const text of ['你吃了吗', '在吗', '哈哈哈哈', '今晚吃啥', '好', '？？？']) {
+      expect(harness.channel.isOwnPreview('张三', text), text).toBe(false)
+    }
+  })
+
+  it('read 返回自己刚发过的消息时直接丢弃', async () => {
+    const recorder = recordRunner((script, args) => {
+      if (script === 'user-activity') return USER_IDLE
+      if (script === 'wechat-uia' && args.includes('read')) {
+        return {
+          code: 0,
+          stdout: JSON.stringify({ ok: true, messages: [{ id: 'pc-echo', text: SENT_MAIN, receivedAt: 1_700_000_000_123 }] }),
+          stderr: '',
+        }
+      }
+      return {
+        code: 0,
+        stdout: JSON.stringify({
+          ok: true,
+          rows: [{ name: '张三', found: true, unread: true, preview: '', top: 100, left: 160, height: 80 }],
+        }),
+        stderr: '',
+      }
+    })
+    const harness = makeDesktopHarness({ runScript: recorder.runner })
+    harness.channel.rememberSentText('张三', SENT_MAIN)
+    await harness.start()
+    await waitFor(
+      () => recorder.calls.some((call) => call.script === 'wechat-uia' && call.args.includes('read')),
+      { label: '等待 read 调用' },
+    )
+    await new Promise((resolve) => setTimeout(resolve, 80))
     expect(harness.messages).toEqual([])
     await harness.channel.stop()
   })

@@ -2,7 +2,7 @@
 
 把**你自己注册的微信小号**做成一个有人格、会发图、能联网查资料、省 token、低封号风险的 AI 聊天分身。
 
-> 📖 **新手先看 [docs/使用说明.md](docs/使用说明.md)**：安装/更新/卸载、扫码登录、被踢重登、白名单、在线时段、防封建议、桌面通道前置、FAQ 都在里面；版本更新记录见 [CHANGELOG.md](CHANGELOG.md)。当前版本 **0.2.3**。
+> 📖 **新手先看 [docs/使用说明.md](docs/使用说明.md)**：安装/更新/卸载、扫码登录、被踢重登、白名单、在线时段、防封建议、桌面通道前置、FAQ 都在里面；版本更新记录见 [CHANGELOG.md](CHANGELOG.md)。当前版本 **0.2.4**。
 >
 > 🛠 **环境自检**：`powershell -ExecutionPolicy Bypass -File scripts/pwsh/selfcheck.ps1 -Port <DSH端口>`（检查 Windows/微信窗口/OCR/构建产物/插件 API）。
 > 📚 进阶文档：[架构](docs/ARCHITECTURE.md) · [测试计划](docs/TEST-PLAN.md) · [提示词模板](docs/PROMPTS.md) · [验收标准](docs/ACCEPTANCE.md) · [发布与协作指南](docs/RELEASE-GUIDE.md) · [开发规则](AGENTS.md) · [免责声明](DISCLAIMER.md) · [安全声明](SECURITY.md) · [贡献指南](CONTRIBUTING.md)。
@@ -138,7 +138,7 @@ npm run test:sandbox     # 受限沙箱环境用这个命令；普通环境也�
 > 为什么用 `--ignore-scripts`：本仓库无需要执行的安装脚本；在受限沙箱里带脚本安装可能因 spawn 受限而失败。
 > 测试命令区别：`npm run test:sandbox` 会加载 `test/core/sandbox-preload.mjs` 兼容层，**在受限沙箱里可正常运行**；直接 `npm test` 在受限沙箱中会因 esbuild/vitest 的进程限制（EPERM）失败，这属于预期，不是代码问题。
 
-当前版本 **0.2.3**（2026-10-31：聊天记录读取的不串聊校验、表情能力降级、提示词「像真人聊天」规则；0.2.1：设置界面、人格库/人格市场、桌面脚本视觉驱动重写与稳定性修复），从 0.1.0 升级请先看 [CHANGELOG.md](CHANGELOG.md) 与[配置迁移](#配置迁移)一节。
+当前版本 **0.2.4**（2026-10-31：聊天记录读取的不串聊校验、表情能力降级、提示词「像真人聊天」规则；0.2.1：设置界面、人格库/人格市场、桌面脚本视觉驱动重写与稳定性修复），从 0.1.0 升级请先看 [CHANGELOG.md](CHANGELOG.md) 与[配置迁移](#配置迁移)一节。
 
 ### 2. 安装到 DSH 桌面版 profile
 
