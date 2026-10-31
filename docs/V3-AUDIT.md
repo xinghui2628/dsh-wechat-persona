@@ -92,3 +92,26 @@
 2. **同帧约束需要改 PS1**：`wechat-uia.ps1` 编辑有硬性规则（先改名备份、UTF-8 带 BOM、禁止 PS5.1 管道替换），由 Lead 统一把关。
 3. **发送安全修复不能只加测试**：每条 P0 必须有「门禁 + 状态机 + 回归用例」三件套，且默认配置下宁可拒发。
 4. **公开仓库不可逆**：隐私修复后仍需维护者决定是否改写历史；本文与所有提交信息均不含敏感值。
+
+## 6. 实施进度快照（2026-10-31 交付时）
+
+| 阶段 | 状态 | 证据 |
+| --- | --- | --- |
+| A 审计基线 + 隐私脱敏 + 扫描门禁 + 合成语料 | 已完成 | 本文；`scripts/check-sensitive.mjs`（0 命中）；`test/fixtures/ocr-corpus/`；`docs/OCR-BENCHMARK.md` |
+| B OCR 纯逻辑抽取 + desktop 强类型化 | 已完成 | `src/core/ocr/{types,geometry,normalize,correction,vote}.ts`；`test/core/ocr-pure.test.ts`；`desktop.ts` 无 `@ts-nocheck`/`any` |
+| C 同帧/基线不丢/气泡归属/原子写 + 离线 A/B | 已完成 | `e8316b2`（PS1 同帧、`-Ack` 水位线、pending、原子 Save-State；`core/ocr/{bubbles,baseline,pipeline}.ts`；ack 持久化到 dataDir）；`docs/OCR-BENCHMARK.md §6.5` |
+| D 发送可靠性 P0-1/P0-2/P0-3、P1-4/5/6/7 | 已完成 | `dfbc9c1`；`test/engine/acceptance.test.ts`、`test/server/api.test.ts`、`test/channels/desktop.test.ts` 回归 |
+| E API 鉴权/导入安全 | 已完成 | `364c57b`；`docs/SECURITY.md`；`test/server/api.test.ts` 鉴权/导入用例 |
+| F safeMode/诊断/向导/模拟器 | 已完成 | `f63decc`；`client/client.js`、`src/engine/engine.ts:406-423`、`GET /diagnostics/ocr` |
+| G 文档/CI/发布准备 | 已完成 | `646a2ba`；README 12 节、6 份新文档、`ci.yml` 两 job、`docs/RELEASE-CHECKLIST.md` |
+
+**门禁真数**：`npm run typecheck` 0 错；`npm run test:sandbox` 34 文件 / 548 用例全过；`node scripts/check-sensitive.mjs` 0 命中；`npm run build` 通过。
+
+**OCR 发布门槛第 2 条（可测量改善）**：eval 集（20 图 / 46 条消息，离线等价）v3 CER 21.38% / 整句 47.83% vs v0.2.8 baseline 37.37% / 28.26% → 达成；限定「合成语料 + 离线等价」，真实微信未验证，不得据此宣称真实环境已可靠。
+
+### 残余风险（交付时如实记录）
+
+1. 未用真实微信联系人做端到端/发送验证；PS1 同帧与气泡边距阈值需真机校准（`WXUIA_UPSCALE`/`-PaneLeftRatio` 可调）。
+2. 第二引擎（RapidOCR）在 eval 集上 0 次替换：增益主要来自 WinRT 2x + CJK 归一；融合空间存在（vote-all 上界）但在线 1.4–2.1s/帧不可行。
+3. 真实环境未验证项：safeMode/诊断/向导的实机效果、插件在宿主中「重启后 ack 持久化」的实际行为。
+4. 未 push / 未打 tag / 未发 Release；v0.2.8 历史提交中的实名残留是否改写历史由维护者决定。

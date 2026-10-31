@@ -4,7 +4,56 @@
 
 - 格式参考 [Keep a Changelog（中文）](https://keepachangelog.com/zh-CN/1.1.0/)。
 - 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
-- 最新版本：**0.2.8**（2026-10-31）。安装/更新/卸载与排障见 [docs/使用说明.md](docs/使用说明.md)。
+- 最新版本：**3.0.0**（2026-10-31，开发中/未公开发布）。安装/更新/卸载与排障见 [docs/使用说明.md](docs/使用说明.md)，从 0.2.8 升级见 [docs/MIGRATION-v3.md](docs/MIGRATION-v3.md)，发布门槛见 [docs/RELEASE-CHECKLIST.md](docs/RELEASE-CHECKLIST.md)。
+
+## [3.0.0] - 2026-10-31
+
+> 开发版本：代码、测试与文档已完成，**未推送远程、未打 tag、未发布 Release**（`private: true` 保持不变）。
+
+### 隐私与合规（阶段 A/E）
+
+- 清除 `docs/ACCEPTANCE.md` 残留的真实中文姓名（改为「测试甲」），泛化 `docs/HANDOFF-0.3.0.md` 中的本机环境指纹；`.gitignore` 增补本地数据/截图/环境文件规则。
+- 新增 `scripts/check-sensitive.mjs` 与 `npm run check:sensitive`：对受跟踪文本文件做姓名/wxid/路径/邮箱/手机号/密钥扫描（脱敏输出，命中 exit 1），当前 0 命中。
+- API 鉴权加固：除回环 socket + `x-dsh-wechat-persona` 头外，新增 Host/Origin/Sec-Fetch-Site 校验、可选 Bearer token（`config.apiToken`，SHA-256 + `timingSafeEqual` 恒定时间比较，可落盘到 dataDir 0600 文件）、进程内限速（240 次/分）、请求体 10s 超时、Content-Type 校验。
+- 人格导入安全：schema 白名单 + 深度/数组/字符串长度上限、拒绝原型污染键与路径穿越 id、错误信息不回显原值；新增 `docs/SECURITY.md`（威胁模型/鉴权矩阵/残余风险）。
+
+### OCR 流水线重构（阶段 B/C）
+
+- 纯逻辑抽离到 `src/core/ocr/*`：`types/geometry/normalize/correction/vote/bubbles/baseline/pipeline`，可单测、无 IO；`src/channels/pc/desktop.ts` 移除 `// @ts-nocheck` 与全部 `any`，改为强类型（`tsc --noEmit` 0 错）。
+- **同帧约束**：一次 `Get-WindowShot` 保存 PNG 后，Windows OCR 与 RapidOCR 都识别同一帧（`-KeepImage`），输出行/消息带 `captureId`，不再二次截图错并。
+- **基线不丢消息**：脚本 pending 队列 + `-Ack <captureId>` 水位线，先原子保存（temp+rename）后输出、读取不再截断；TS 侧透传 ack、成功投递后提交水位线并持久化到 dataDir（`desktop-ack.json`），插件重启后不重放已处理帧；消息 id 跨帧稳定。
+- **气泡归属**：`bubbles.ts` 按几何判定 inbound/outbound/uncertain（长气泡越线判 uncertain），投递前拒投 uncertain/outbound 并计数，不再猜。
+- 纠错分级：受控词典只做同长度近形替换，「更长才替换」门槛与姓名/金额/验证码等敏感区段保护；双引擎融合仅对可疑行触发。
+- 合成 OCR 语料 + 基准：`scripts/ocr/*`（语料生成、WinRT/RapidOCR 引擎适配、v0.2.8 baseline 逐行转写、v3 管线离线等价）、`test/fixtures/ocr-corpus/`（40 张合成截图 + manifest + results）、`docs/OCR-BENCHMARK.md`、`docs/OCR-DESIGN.md`。
+
+### 发送可靠性（阶段 D）
+
+- `AbortController`：`pause()`/`stop()`/熔断/`/stop` 立即打断在飞生成与发送；拟人延迟后、每个 part 发送前、每次重试前都复查 `canSend()`；多 part 中途暂停不再继续发。
+- `SendResult.delivery` 三态（`sent` / `not-sent` / `unknown`）：`unknown` 绝不自动重发并计数/审计；PS1 两处「已回车但未确认气泡」回传 `unknown`；`/status` 暴露三态计数。
+- 取消 `trustedOpen` 快发送旁路：桌面发送不再信任 180s 内的 `lastActiveContact`，没有行坐标一律拒绝发送（避免用户切换聊天后发错人）；取消跨联系人误发路径。
+- 暂停期间入站消息 `deferred` 持久化、恢复后按序补处理；启动时检查 paused/breaker；`/test/send` 统一走白名单/暂停/预算/熔断门禁。
+
+### 安全运行模式与体验（阶段 F）
+
+- `safeMode` 安全运行模式（默认 `false`，首次向导引导开启）：真实通道拒绝发送并返回 `not-sent` + 明确原因 + 审计 `safe-mode`，mock 通道照常空转。
+- 只读 OCR 诊断中心：`GET /diagnostics/ocr`（白名单字段、不可用时给原因、无敏感内容）+ 设置页面板。
+- 首次配置向导（默认 mock + 安全模式，只存配置不发送）；人格模拟器入口（`/test/send` 支持 `mockOnly`，非 mock 通道 409）。
+
+### 文档与 CI（阶段 G）
+
+- README 重写为 12 节（含 Mermaid 架构图、配置表、OCR 说明与限定、隐私边界）；新增 `docs/PRIVACY.md`、`docs/MIGRATION-v3.md`（含回滚）、`docs/TROUBLESHOOTING.md`、`docs/CONTRIBUTING.md`、`docs/RELEASE-CHECKLIST.md`；更新 `docs/ARCHITECTURE.md`。
+- CI（`.github/workflows/ci.yml`）：Windows 跑 typecheck → test:sandbox → check-sensitive → build → OCR 冒烟；Linux 显式标记跳过 WinRT 相关项。
+
+### 测试与基准
+
+- `npm run typecheck` 0 错；`npm run test:sandbox` **34 个文件 / 548 个用例**全部通过；`node scripts/check-sensitive.mjs` 0 命中；`npm run build` 通过。
+- 合成语料 eval 集（20 图 / 46 条消息，离线等价口径）：v3 CER **21.38%** / 整句准确率 **47.83%**，同集 v0.2.8 baseline 37.37% / 28.26%（CER −15.99pp、整句 +19.57pp）；增益主要来自 WinRT 2x 首读 + CJK 空格归一。真实微信窗口未验证（需真机授权后按 TEST-PLAN 复测）。
+
+### 未做 / 风险
+
+- 未用真实微信联系人做任何发送或端到端测试；PS1 阈值（同帧/气泡边距）需真机校准。
+- 未推送远程、未打 tag、未创建 Release（需维护者明确批准）。
+- v0.2.8 历史提交中残留的实名（已在当前工作树修复）是否改写 git 历史由维护者决定（公开仓库不可逆）。
 
 ## [0.2.8] - 2026-10-31
 
