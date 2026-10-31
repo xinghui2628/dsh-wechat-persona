@@ -253,3 +253,7 @@ Get-Content "$env:USERPROFILE\.dsh\profiles\desktop\.dsh-wechat-persona\audit.js
   在线时段 08:00–21:00、人格 `builtin-dafeiyu`、`channels.desktop.enabled=true`。
 - 暂停开关保持用户原来的手动状态（`paused=true, pauseReason=manual`）——插件不会自动回复，需在设置页手动开启。
 - 通道恢复后 2 秒轮询正常：列表 3/3 命中、`unread=false`、无 Ctrl+F 搜索框闪烁（`auto` 截图 + 宽松标题匹配生效）、无前台抢占。
+
+> 注（2026-10-31）：为进行真实好友 30 条测试，日预算曾临时调高到 120000 tokens（当日已消耗 67856）；
+> 测试完成后请在设置页把日预算改回 50000。其余生产项（白名单 3 人、08:00–21:00、
+> userActivityIdleMs=1500、builtin-dafeiyu、桌面通道 enabled=true）保持生产值。
