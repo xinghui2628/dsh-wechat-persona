@@ -760,7 +760,7 @@ function Test-IsTargetChat($Snapshot, [string]$ContactName) {
 
 # 用左侧列表里该联系人的最新消息预览，交叉验证「当前打开的聊天」是不是他/她的：
 # 列表预览通常就是聊天窗口里最近一条消息（两边 OCR 都可能出错，用字符覆盖匹配）。
-# 标题栏 OCR 把「张磊」认成「张，伟」这类情况，标题判定会失败，此函数负责兜底。
+# 标题栏 OCR 把「张伟」认成「张，伟」这类情况，标题判定会失败，此函数负责兜底。
 
 function Test-ChatByListPreview($Snapshot, [string]$ContactName) {
     try {
