@@ -354,19 +354,22 @@ public static class WXDriver {
     public static void KeyTap(ushort vk) { SendKeys(new INPUT[] { KeyInput(vk, false), KeyInput(vk, true) }); }
     public static void CtrlA() { SendKeys(new INPUT[] { KeyInput(0x11, false), KeyInput(0x41, false), KeyInput(0x41, true), KeyInput(0x11, true) }); }
     public static void CtrlF() { SendKeys(new INPUT[] { KeyInput(0x11, false), KeyInput(0x46, false), KeyInput(0x46, true), KeyInput(0x11, true) }); }
+    public static void CtrlV() { SendKeys(new INPUT[] { KeyInput(0x11, false), KeyInput(0x56, false), KeyInput(0x56, true), KeyInput(0x11, true) }); }
     public static void PressBackspace() { KeyTap(0x08); }
     public static void PressEnter() { KeyTap(0x0D); }
     public static void PressEsc() { KeyTap(0x1B); }
 
     // 逐 UTF-16 code unit 用 KEYEVENTF_UNICODE 输入中文/emoji，不经过剪贴板。
-    public static void TypeText(string text) {
+    public static void TypeText(string text, int delayMs = 12) {
         if (string.IsNullOrEmpty(text)) return;
-        var list = new List<INPUT>(text.Length * 2);
+        // 逐字符发送并留出间隔：一次性灌入整串时，微信输入框会丢字、重复标点。
         foreach (char ch in text) {
+            var list = new List<INPUT>(2);
             var down = new INPUT(); down.type = 1; down.u.ki.wScan = ch; down.u.ki.dwFlags = KEYEVENTF_UNICODE; list.Add(down);
             var up = new INPUT(); up.type = 1; up.u.ki.wScan = ch; up.u.ki.dwFlags = KEYEVENTF_UNICODE | KEYEVENTF_KEYUP; list.Add(up);
+            SendInput((uint)list.Count, list.ToArray(), Marshal.SizeOf(typeof(INPUT)));
+            if (delayMs > 0) System.Threading.Thread.Sleep(delayMs);
         }
-        SendInput((uint)list.Count, list.ToArray(), Marshal.SizeOf(typeof(INPUT)));
     }
 
     // 尽力把目标窗口切到前台。SetForegroundWindow 受前台锁限制时，用一次 Alt 键解除限制再试。
@@ -1606,16 +1609,64 @@ if ($hwnd -ne [IntPtr]::Zero) { Ensure-UsableWindow $hwnd }
             Start-Sleep -Milliseconds 40
             [WXDriver]::PressBackspace()
             Start-Sleep -Milliseconds 50
-            [WXDriver]::TypeText($ftext)
-            Start-Sleep -Milliseconds 170
+            # 微信输入框对逐字符 Unicode 注入不可靠（标点后第一个字会丢、标点会重复）。
+            # 改用剪贴板粘贴：整段一次粘贴，落字完整；结束后恢复原剪贴板文本。
+            $clipBackup = $null
+            try { $clipBackup = Get-Clipboard -Raw -ErrorAction SilentlyContinue } catch { }
+            $pasted = $false
+            try {
+                Set-Clipboard -Value $ftext
+                Start-Sleep -Milliseconds 80
+                [WXDriver]::CtrlV()
+                Start-Sleep -Milliseconds 260
+                $pasted = $true
+            } catch {
+                Write-Debug-Log ('剪贴板粘贴失败，回退逐字符输入：' + $_.Exception.Message)
+                [WXDriver]::TypeText($ftext, 25)
+                Start-Sleep -Milliseconds 260
+            }
             # 回车前先确认“输入框里真的出现了文字”：这是后面用“输入框已清空”判定发送成功的前提。
             # 若 OCR 没读到输入框文字（typedSeen=false），发送判定会走失败分支，不会误报成功。
             $typedRegion = Get-RegionSnapshot $hwnd 'fast-intext' 0.28 0.775 0.97 0.885 -Ink
             $typedLines = @(Get-InputAreaLines $typedRegion)
             Write-Debug-Log ('快发送键入后输入框行数=' + $typedLines.Count + ' text=' + (($typedLines | ForEach-Object { [string]$_.text }) -join '|'))
+            # 回读校验：Unicode 注入过快时微信输入框会丢字/重复标点，覆盖率不足就清空重打。
+            $needle = Normalize-Text $ftext
+            $typedJoined = [string]::Join('', @($typedLines | ForEach-Object { Normalize-Text ([string]$_.text) }))
+            $covered = 0
+            if ($needle.Length -gt 0) {
+                foreach ($ch in $needle.ToCharArray()) { if ($typedJoined.Contains([string]$ch)) { $covered++ } }
+            }
+            $coverage = if ($needle.Length -gt 0) { $covered / $needle.Length } else { 1.0 }
+            Write-Debug-Log ('快发送输入框回读覆盖率=' + [math]::Round($coverage, 2) + ' 期望长度=' + $needle.Length)
+            if ($coverage -lt 0.8) {
+                Write-Debug-Log '输入框回读不全，清空后重试粘贴/慢速输字'
+                [WXDriver]::CtrlA()
+                Start-Sleep -Milliseconds 60
+                [WXDriver]::PressBackspace()
+                Start-Sleep -Milliseconds 80
+                if ($pasted) {
+                    try {
+                        Set-Clipboard -Value $ftext
+                        Start-Sleep -Milliseconds 80
+                        [WXDriver]::CtrlV()
+                        Start-Sleep -Milliseconds 300
+                    } catch {
+                        [WXDriver]::TypeText($ftext, 30)
+                        Start-Sleep -Milliseconds 300
+                    }
+                } else {
+                    [WXDriver]::TypeText($ftext, 30)
+                    Start-Sleep -Milliseconds 300
+                }
+                $typedRegion = Get-RegionSnapshot $hwnd 'fast-intext' 0.28 0.775 0.97 0.885 -Ink
+                $typedLines = @(Get-InputAreaLines $typedRegion)
+                Write-Debug-Log ('快发送重试后输入框行数=' + $typedLines.Count + ' text=' + (($typedLines | ForEach-Object { [string]$_.text }) -join '|'))
+            }
             # 输入框有字 = OCR 读到行 或 深色像素明显（3x 下键入文本约 200+ 深色像素，空框 0）。
             $typedSeen = (($typedLines.Count -gt 0) -or ([int]$typedRegion.ink -gt 30))
             if (-not $skipEnter) { [WXDriver]::PressEnter() }
+            if ($null -ne $clipBackup) { try { Set-Clipboard -Value $clipBackup } catch { } }
             Start-Sleep -Milliseconds 350
             $postRegion = Get-RegionSnapshot $hwnd 'fast-post' 0.28 0.70 0.99 0.99
             if (-not $forceBubbleFail -and (Test-NewBubble $preRegion $postRegion)) {
@@ -1705,9 +1756,20 @@ if ($hwnd -ne [IntPtr]::Zero) { Ensure-UsableWindow $hwnd }
         Start-Sleep -Milliseconds 50
         [WXDriver]::PressBackspace()
         Start-Sleep -Milliseconds 60
-        [WXDriver]::TypeText($text)
-        Start-Sleep -Milliseconds 120
+        $clipBackup2 = $null
+        try { $clipBackup2 = Get-Clipboard -Raw -ErrorAction SilentlyContinue } catch { }
+        try {
+            Set-Clipboard -Value $text
+            Start-Sleep -Milliseconds 80
+            [WXDriver]::CtrlV()
+            Start-Sleep -Milliseconds 260
+        } catch {
+            Write-Debug-Log ('保守路径剪贴板粘贴失败，回退逐字符输入：' + $_.Exception.Message)
+            [WXDriver]::TypeText($text, 25)
+            Start-Sleep -Milliseconds 260
+        }
         [WXDriver]::PressEnter()
+        if ($null -ne $clipBackup2) { try { Set-Clipboard -Value $clipBackup2 } catch { } }
         Write-Debug-Log '已回车发送，等待气泡'
         Start-Sleep -Milliseconds 1300
         $postSnap = Get-WindowSnapshot $hwnd 'postsend'
