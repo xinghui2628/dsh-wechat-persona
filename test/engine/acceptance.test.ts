@@ -19,7 +19,7 @@ import { defaultConfig } from '../../src/config.ts'
 import type { AuditEvent, AuditEventType, AuditLogLike, AuditSummary, Channel, ChannelStatus, Clock, FileStoreLike, InboundMessage, LlmLike, LlmRequest, LlmResult, Logger, MemoryStoreLike, Notifier, PersonaPack, Random, RiskSignal, RuntimeState, SearchLike, SearchResult, SendResult, StickerCatalogLike, StickerChoice } from '../../src/types.ts'
 import type { WechatPersonaConfig } from '../../src/config.ts'
 import { MemoryStore } from '../../src/core/memory.ts'
-import { PersonaEngine } from '../../src/engine/engine.ts'
+import { PersonaEngine, canRetrySend, resolveSendDelivery } from '../../src/engine/engine.ts'
 
 /* ────────────────────────────── 假依赖 ────────────────────────────── */
 
@@ -28,15 +28,18 @@ const logger: Logger = { debug() {}, info() {}, warn() {}, error() {} }
 class FakeClock implements Clock {
   private current: number
   readonly sleeps: number[] = []
+  /** 测试钩子：每次 sleep 时触发，用来模拟「延迟中用户暂停 / 熔断 / 恢复」等并发场景。 */
+  onSleep: ((ms: number) => void | Promise<void>) | null = null
   constructor(initial: number) {
     this.current = initial
   }
   now(): number {
     return this.current
   }
-  async sleep(ms: number): Promise<void> {
+  async sleep(ms: number, _signal?: AbortSignal): Promise<void> {
     this.sleeps.push(ms)
     this.current += ms
+    if (this.onSleep) await this.onSleep(ms)
   }
   advance(ms: number): void {
     this.current += ms
@@ -96,9 +99,16 @@ class FakeChannel implements Channel {
   state: 'stopped' | 'running' = 'stopped'
   handler: ((message: InboundMessage) => void) | null = null
   riskHandler: ((signal: RiskSignal) => void) | null = null
+  /** 记录每次 send 调用（含被中断/失败的尝试）。 */
   readonly sent: Array<{ contactId: string; part: unknown }> = []
+  /** 记录每次 send 收到的 AbortSignal（P0-1：引擎必须把 signal 传给通道）。 */
+  readonly sendSignals: Array<AbortSignal | undefined> = []
+  /** 依次消费的发送结果；用完后回退为 {ok:true}（用来模拟重试/三态）。 */
+  sendResults: SendResult[] = []
+  startCalls = 0
   stopCalls = 0
   async start(handler: (message: InboundMessage) => void, onRisk: (signal: RiskSignal) => void): Promise<void> {
+    this.startCalls += 1
     this.handler = handler
     this.riskHandler = onRisk
     this.state = 'running'
@@ -107,9 +117,11 @@ class FakeChannel implements Channel {
     this.stopCalls += 1
     this.state = 'stopped'
   }
-  async send(contactId: string, part: unknown): Promise<SendResult> {
+  async send(contactId: string, part: unknown, signal?: AbortSignal): Promise<SendResult> {
     this.sent.push({ contactId, part })
-    return { ok: true }
+    this.sendSignals.push(signal)
+    const queued = this.sendResults.shift()
+    return queued ? { ...queued } : { ok: true }
   }
   status(): ChannelStatus {
     return { id: 'mock', state: this.state, since: 0 }
@@ -625,5 +637,288 @@ describe('自回声保护：机器人不会自问自答', () => {
     await h.engine.handleInbound(inbound({ id: 'short-quote', text: '大吧鱼' }))
     expect(h.channel.sent.length).toBeGreaterThan(sentBefore)
     expect(h.audit.reasons('skip')).not.toContain('self-echo')
+  })
+})
+
+/* ═══════════════════════ P0-2 投递三态工具函数 ═══════════════════════ */
+
+describe('SendResult 投递三态工具函数（P0-2）', () => {
+  it('resolveSendDelivery：成功即 sent；缺省/非法一律保守 unknown', () => {
+    expect(resolveSendDelivery({ ok: true })).toBe('sent')
+    expect(resolveSendDelivery({ ok: false, error: 'x' })).toBe('unknown')
+    expect(resolveSendDelivery({ ok: false, delivery: 'not-sent' })).toBe('not-sent')
+    expect(resolveSendDelivery({ ok: false, delivery: 'unknown' })).toBe('unknown')
+  })
+
+  it('canRetrySend：只有确认未发出才可重试，unknown 一律不重试', () => {
+    expect(canRetrySend({ ok: true })).toBe(false)
+    expect(canRetrySend({ ok: false, error: 'x', delivery: 'unknown' })).toBe(false)
+    expect(canRetrySend({ ok: false, error: 'x', delivery: 'sent' })).toBe(false)
+    expect(canRetrySend({ ok: false, error: 'x', delivery: 'not-sent' })).toBe(true)
+    // 旧版通道：按错误文案保守推断
+    expect(canRetrySend({ ok: false, error: '无法确认目标聊天窗口，已拒绝发送以避免发错人' })).toBe(true)
+    expect(canRetrySend({ ok: false, error: '快发送已回车但气泡未确认且输入框未清空，已跳过保守重发以免重复' })).toBe(false)
+    expect(canRetrySend({ ok: false, error: '脚本异常: timeout' })).toBe(false)
+  })
+})
+
+/* ═══════════════════════ P0-1 暂停门禁 + AbortController ═══════════════════════ */
+
+describe('P0-1 发送门禁：暂停后坚决不发', () => {
+  it('生成结束、拟人延迟中暂停：LLM 已调用但 send 一次都不调用', async () => {
+    const h = makeHarness({ config: { whitelist } })
+    h.clock.onSleep = async (ms) => {
+      // 生成完成后的拟人延迟（typingMs 一定 >= 800）里用户点了暂停
+      if (ms >= 800 && h.llm.calls.length === 1 && h.channel.sent.length === 0) {
+        await h.engine.pause('manual-test')
+      }
+    }
+    await h.engine.handleInbound(inbound())
+    expect(h.llm.calls).toHaveLength(1)
+    expect(h.channel.sent).toHaveLength(0)
+    expect(h.state.paused).toBe(true)
+    expect(h.state.stats.sends).toBe(0)
+    expect(
+      h.audit.events.some(
+        (event) =>
+          event.type === 'skip' && event.reason === 'paused' && String(event.detail ?? '').includes('send-blocked'),
+      ),
+    ).toBe(true)
+    // 暂停时 AbortSignal 已 abort；send 从未被调用（也就没有 signal 传出去）
+    expect(h.channel.sendSignals).toHaveLength(0)
+  })
+
+  it('多 part 之间暂停：第一条已发，后续 part 不再发送', async () => {
+    const h = makeHarness({
+      config: {
+        whitelist,
+        reply: {
+          ...defaultConfig().reply,
+          splitProbability: 1,
+          maxSplitParts: 2,
+          maxChars: 200,
+          stickerProbability: 0,
+          typingMinMs: 800,
+          typingMaxMs: 800,
+        },
+        rateLimit: { ...defaultConfig().rateLimit, minReplyIntervalSec: 0 },
+      },
+    })
+    h.llm.text = '刚在追剧呢，你呢？今天好累，想早点睡。'
+    h.clock.onSleep = async (ms) => {
+      // 第一条 part 已发出后的间隔睡眠里暂停
+      if (h.channel.sent.length === 1 && ms >= 300) {
+        await h.engine.pause('between-parts')
+      }
+    }
+    await h.engine.handleInbound(inbound({ text: '在干嘛呢' }))
+    expect(h.llm.calls).toHaveLength(1)
+    expect(h.channel.sent).toHaveLength(1)
+    expect(h.state.paused).toBe(true)
+  })
+
+  it('重试前暂停：第一次失败（not-sent）后暂停，不再尝试第二次', async () => {
+    const h = makeHarness({ config: { whitelist } })
+    h.channel.sendResults = [{ ok: false, error: '发送前校验失败', delivery: 'not-sent' }]
+    h.clock.onSleep = async (ms) => {
+      if (h.channel.sent.length === 1 && ms >= 400 && ms < 1100) {
+        await h.engine.pause('before-retry')
+      }
+    }
+    await h.engine.handleInbound(inbound())
+    expect(h.channel.sent).toHaveLength(1)
+    expect(h.state.paused).toBe(true)
+    expect(h.state.stats.sends).toBe(0)
+  })
+})
+
+/* ═══════════════════════ P0-2 引擎侧重试策略 ═══════════════════════ */
+
+describe('P0-2 引擎只对「确认未发出」重试', () => {
+  it('delivery=unknown（已按回车但气泡未确认）：只调用一次 send，不重试并记 send-fail/unknown', async () => {
+    const h = makeHarness({ config: { whitelist, reply: { ...defaultConfig().reply, stickerProbability: 0 } } })
+    h.channel.sendResults = [
+      { ok: false, error: '发送后未在聊天区看到消息气泡（已重试 3 次）：在吗', delivery: 'unknown' },
+    ]
+    await h.engine.handleInbound(inbound())
+    expect(h.channel.sent).toHaveLength(1)
+    expect(h.state.stats.sends).toBe(0)
+    const fail = h.audit.events.find((event) => event.type === 'send-fail')
+    expect(fail?.send?.delivery).toBe('unknown')
+    const status = await h.engine.status()
+    expect(status.delivery).toMatchObject({ unknown: 1, sent: 0 })
+  })
+
+  it('delivery=not-sent：重试一次，第二次成功', async () => {
+    const h = makeHarness({ config: { whitelist, reply: { ...defaultConfig().reply, stickerProbability: 0 } } })
+    h.channel.sendResults = [
+      { ok: false, error: '缺少聊天定位信息，已拒绝发送', delivery: 'not-sent' },
+      { ok: true },
+    ]
+    await h.engine.handleInbound(inbound())
+    expect(h.channel.sent).toHaveLength(2)
+    expect(h.state.stats.sends).toBe(1)
+    expect(h.audit.events.some((event) => event.type === 'send' && event.send?.delivery === 'sent')).toBe(true)
+  })
+
+  it('旧版通道（无 delivery）明确未发文案：允许重试一次', async () => {
+    const h = makeHarness({ config: { whitelist, reply: { ...defaultConfig().reply, stickerProbability: 0 } } })
+    h.channel.sendResults = [
+      { ok: false, error: '无法确认目标聊天窗口，已拒绝发送以避免发错人' },
+      { ok: true },
+    ]
+    await h.engine.handleInbound(inbound())
+    expect(h.channel.sent).toHaveLength(2)
+    expect(h.state.stats.sends).toBe(1)
+  })
+
+  it('旧版通道（无 delivery）「回车后气泡未确认」文案：一律不重试（防重复发送）', async () => {
+    const h = makeHarness({ config: { whitelist, reply: { ...defaultConfig().reply, stickerProbability: 0 } } })
+    h.channel.sendResults = [
+      { ok: false, error: '快发送已回车但气泡未确认且输入框未清空，已跳过保守重发以免重复' },
+    ]
+    await h.engine.handleInbound(inbound())
+    expect(h.channel.sent).toHaveLength(1)
+    expect(h.state.stats.sends).toBe(0)
+    expect(h.state.stats.errors).toBe(1)
+  })
+})
+
+/* ═══════════════════════ P1-4 暂停期间消息不丢 ═══════════════════════ */
+
+describe('P1-4 暂停期间入站消息 deferred 持久化 + 恢复补处理', () => {
+  it('暂停时白名单消息写入 deferred-inbound.json，恢复后补处理并回复', async () => {
+    const h = makeHarness({ config: { whitelist }, state: { paused: true, pauseReason: 'manual' } })
+    await h.engine.handleInbound(inbound({ id: 'deferred-1', text: '在吗' }))
+    expect(h.llm.calls).toHaveLength(0)
+    expect(h.channel.sent).toHaveLength(0)
+    expect((await h.engine.status()).deferredCount).toBe(1)
+    const saved = JSON.parse(h.store.files.get('deferred-inbound.json') ?? '{}') as {
+      entries?: Array<{ message: { id: string } }>
+    }
+    expect(saved.entries?.map((entry) => entry.message.id)).toEqual(['deferred-1'])
+    expect(
+      h.audit.events.some(
+        (event) =>
+          event.type === 'skip' && event.reason === 'paused' && String(event.detail ?? '').startsWith('deferred:'),
+      ),
+    ).toBe(true)
+
+    await h.engine.resume()
+    expect(h.state.paused).toBe(false)
+    expect(h.llm.calls).toHaveLength(1)
+    expect(h.channel.sent.length).toBeGreaterThanOrEqual(1)
+    expect((await h.engine.status()).deferredCount).toBe(0)
+    const after = JSON.parse(h.store.files.get('deferred-inbound.json') ?? '{}') as { entries?: unknown[] }
+    expect(after.entries).toEqual([])
+  })
+
+  it('重启后 start() 读取持久化的 deferred 并补处理', async () => {
+    const first = makeHarness({ config: { whitelist }, state: { paused: true, pauseReason: 'manual' } })
+    await first.engine.handleInbound(inbound({ id: 'persist-1', text: '在吗' }))
+    const raw = first.store.files.get('deferred-inbound.json')
+    expect(raw).toBeTruthy()
+
+    const second = makeHarness({ config: { whitelist } })
+    second.store.files.set('deferred-inbound.json', raw as string)
+    await second.engine.start()
+    expect(second.channel.startCalls).toBe(1)
+    expect(second.llm.calls.length).toBeGreaterThanOrEqual(1)
+    expect(second.channel.sent.length).toBeGreaterThanOrEqual(1)
+    expect((await second.engine.status()).deferredCount).toBe(0)
+  })
+})
+
+/* ═══════════════════════ P1-5 手动发送统一门禁 ═══════════════════════ */
+
+describe('P1-5 sendTest 与自动发送统一走门禁', () => {
+  it('正常发送：走通道、计发送数、记 manual-send 审计', async () => {
+    const h = makeHarness({ config: { whitelist } })
+    const result = await h.engine.sendTest('张三', '测试消息')
+    expect(result).toMatchObject({ ok: true, delivery: 'sent' })
+    expect(h.channel.sent).toHaveLength(1)
+    expect(h.state.stats.sends).toBe(1)
+    expect(h.audit.events.some((event) => event.type === 'send' && event.reason === 'manual-send')).toBe(true)
+  })
+
+  it('暂停时拒绝：不调用通道、返回 not-sent、记 send-fail/paused', async () => {
+    const h = makeHarness({ config: { whitelist } })
+    await h.engine.pause('manual-test')
+    const result = await h.engine.sendTest('张三', '测试消息')
+    expect(result.ok).toBe(false)
+    expect(result.delivery).toBe('not-sent')
+    expect(String(result.error)).toContain('已拒绝发送')
+    expect(h.channel.sent).toHaveLength(0)
+    expect(
+      h.audit.events.some((event) => event.type === 'send-fail' && event.reason === 'paused'),
+    ).toBe(true)
+  })
+
+  it('熔断时拒绝', async () => {
+    const h = makeHarness({ config: { whitelist }, state: { breaker: { tripped: true, reason: 'risk:captcha' } } })
+    const result = await h.engine.sendTest('张三', '测试消息')
+    expect(result.ok).toBe(false)
+    expect(result.delivery).toBe('not-sent')
+    expect(String(result.error)).toContain('熔断')
+    expect(h.channel.sent).toHaveLength(0)
+  })
+
+  it('预算耗尽时拒绝', async () => {
+    const h = makeHarness({
+      config: { whitelist },
+      state: { budget: { dayKey: '2026-10-30', spentTokens: 60_000 } },
+    })
+    const result = await h.engine.sendTest('张三', '测试消息')
+    expect(result.ok).toBe(false)
+    expect(String(result.error)).toContain('预算')
+    expect(h.channel.sent).toHaveLength(0)
+  })
+
+  it('白名单外拒绝', async () => {
+    const h = makeHarness({ config: { whitelist } })
+    const result = await h.engine.sendTest('陌生人', '测试消息')
+    expect(result.ok).toBe(false)
+    expect(String(result.error)).toContain('白名单')
+    expect(h.channel.sent).toHaveLength(0)
+  })
+})
+
+/* ═══════════════════════ P1-7 启动时保持暂停/熔断 ═══════════════════════ */
+
+describe('P1-7 start 检查 paused / breaker', () => {
+  it('state.paused=true：start 不启动通道，保持暂停并记审计', async () => {
+    const h = makeHarness({ config: { whitelist }, state: { paused: true, pauseReason: 'manual' } })
+    await h.engine.start()
+    expect(h.channel.state).toBe('stopped')
+    expect(h.channel.handler).toBeNull()
+    expect((await h.engine.status()).paused).toBe(true)
+    expect(h.audit.events.some((event) => event.type === 'start' && event.reason === 'paused')).toBe(true)
+  })
+
+  it('breaker.tripped=true：start 不启动通道', async () => {
+    const h = makeHarness({
+      config: { whitelist },
+      state: { breaker: { tripped: true, reason: 'risk:captcha' } },
+    })
+    await h.engine.start()
+    expect(h.channel.state).toBe('stopped')
+    expect(h.audit.events.some((event) => event.type === 'start' && event.reason === 'breaker')).toBe(true)
+  })
+
+  it('未暂停/未熔断：start 正常启动通道', async () => {
+    const h = makeHarness({ config: { whitelist } })
+    await h.engine.start()
+    expect(h.channel.startCalls).toBe(1)
+    expect(h.channel.state).toBe('running')
+  })
+
+  it('仅预算耗尽（未暂停/未熔断）：start 仍应启动通道，避免重启后永远起不来', async () => {
+    const h = makeHarness({
+      config: { whitelist },
+      state: { budget: { dayKey: '2026-10-30', spentTokens: 60_000 } },
+    })
+    await h.engine.start()
+    expect(h.channel.startCalls).toBe(1)
+    expect(h.channel.state).toBe('running')
   })
 })

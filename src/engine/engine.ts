@@ -20,7 +20,9 @@ import type {
   OutboundPart,
   PersonaPack,
   RiskSignal,
+  SendDelivery,
   SendResult,
+  SkipReason,
   StickerCatalogLike,
 } from '../types.ts'
 import type { WechatPersonaConfig } from '../config.ts'
@@ -64,6 +66,55 @@ function normalizeEchoText(text: unknown): string {
   return String(text ?? '').replace(/[\s，。！？、,.!?；;：:""''（）()【】\[\]…~～-]/g, '')
 }
 
+/** 暂停期间暂存入站消息的持久化文件（P1-4；不塞进 RuntimeState：state.ts 的白名单字段会丢弃新字段）。 */
+const DEFERRED_FILE = 'deferred-inbound.json'
+/** 暂存队列上限，避免长时间暂停把消息无限堆积在磁盘/内存。 */
+const DEFERRED_MAX = 50
+
+/** 一条暂停期间暂存、恢复后补处理的入站消息（持久化结构，需保持向后兼容）。 */
+interface DeferredInboundEntry {
+  message: InboundMessage
+  deferredAt: number
+  reason: string
+}
+
+interface DeferredStoreFile {
+  version: 1
+  entries: DeferredInboundEntry[]
+}
+
+/**
+ * 旧版通道（PS1 未返回 delivery 字段）的错误语义推断（P0-2）：
+ * 只有命中这些「发送前就失败」的原因，才能确定消息没有发出去、允许重试。
+ * 反例（必须按 unknown 处理、绝不重试）：「快发送已回车但气泡未确认…」「发送后未在聊天区
+ * 看到消息气泡…」「脚本异常…」——回车已按，重试可能造成同一条消息发两次。
+ */
+const NOT_SENT_ERROR_PATTERN =
+  /已拒绝发送|已取消发送|已放弃发送|缺少聊天定位|无法确认目标聊天窗口|无法确认已打开|未启动|已禁用|已停止|空消息|发送文本为空|缺少 -?TextBase64|TextBase64 不是合法|无法确认用户键鼠空闲状态|暂停发送中|加载 Win32 封装失败|初始化 Windows OCR 失败|not-sent/
+
+/** 把通道返回值归一化成投递三态：成功即 sent；未知/非法一律保守按 unknown。 */
+export function resolveSendDelivery(result: SendResult): SendDelivery {
+  if (result.ok) return 'sent'
+  const delivery = result.delivery
+  if (delivery === 'sent' || delivery === 'not-sent' || delivery === 'unknown') return delivery
+  return 'unknown'
+}
+
+/** 是否允许重试：只有「确认没发出去」才重试，unknown 一律不重试（防重复发送，P0-2）。 */
+export function canRetrySend(result: SendResult): boolean {
+  if (result.ok) return false
+  if (result.delivery !== undefined) return result.delivery === 'not-sent'
+  const error = typeof result.error === 'string' ? result.error : ''
+  if (error === '') return false
+  return NOT_SENT_ERROR_PATTERN.test(error)
+}
+
+/** 发送门禁（P0-1 / P1-5）：任何一项不满足都不允许调用 channel.send。 */
+interface SendBlock {
+  reason: SkipReason
+  detail: string
+}
+
 /**
  * 判断入站文本是不是机器人自己刚说过的话（通道回读造成）。
  * 列表预览会截断、OCR 会漏字认错字，所以整串之外还要比前缀/后缀与字符重合率。
@@ -91,6 +142,14 @@ export class PersonaEngine {
   private readonly deps: EngineDeps
   private started = false
   private chain: Promise<unknown> = Promise.resolve()
+  /** 暂停/停止/熔断时打断在飞的拟人延迟与发送（P0-1）；恢复时换一个新的。 */
+  private abortController = new AbortController()
+  /** 暂停期间暂存、恢复后按序补处理的入站消息（P1-4）。 */
+  private deferred: DeferredInboundEntry[] = []
+  /** 暂存补处理的单飞锁，避免 start/resume 并发重放同一批消息。 */
+  private flushTask: Promise<void> | null = null
+  /** 发送尝试的投递三态计数（P0-2，随 status 暴露）。 */
+  private readonly deliveryCounts = { sent: 0, notSent: 0, unknown: 0 }
 
   constructor(deps: EngineDeps) {
     this.deps = deps
@@ -111,6 +170,18 @@ export class PersonaEngine {
   async start(): Promise<void> {
     if (this.started) return
     this.started = true
+    this.abortController = new AbortController()
+    // 重启后先把上次暂停期间暂存的消息读回来（未暂停时下面直接补处理）。
+    await this.loadDeferred()
+    // P1-7：启动时若状态仍是暂停/熔断，绝不静默开始收消息/发消息；等主人显式 resume。
+    // 只拦暂停/熔断：预算耗尽不应让通道永远起不来（次日预算会自动恢复）。
+    const blocked = this.canSend({ checkBudget: false })
+    if (blocked) {
+      this.deps.logger.warn('启动时处于暂停/熔断状态，保持暂停不启动通道', `${blocked.reason}: ${blocked.detail}`)
+      await this.audit({ type: 'start', reason: blocked.reason, detail: `blocked: ${blocked.detail}` })
+      await this.persist()
+      return
+    }
     try {
       await this.deps.channel.start(
         (message) => {
@@ -125,10 +196,13 @@ export class PersonaEngine {
       this.deps.logger.error('通道启动失败', error instanceof Error ? error.message : String(error))
       await this.audit({ type: 'error', reason: 'channel-start-failed', detail: String(error) })
     }
+    await this.flushDeferred()
     await this.persist()
   }
 
   async stop(): Promise<void> {
+    // 先中止在飞的拟人延迟/发送，再停通道，避免 stop 与发送竞争（P0-1）。
+    this.abortController.abort()
     try {
       await this.deps.channel.stop()
     } catch (error) {
@@ -141,6 +215,8 @@ export class PersonaEngine {
 
   async pause(reason: string): Promise<void> {
     pauseEngine(this.deps.state, reason, this.deps.clock.now())
+    // P0-1：用户暂停时立即打断在飞的拟人延迟/发送，而不是等当前这条消息发完。
+    this.abortController.abort()
     await this.audit({ type: 'stop', reason, detail: 'manual-pause' })
     await this.persist()
   }
@@ -148,6 +224,8 @@ export class PersonaEngine {
   async resume(): Promise<void> {
     resumeEngine(this.deps.state, { clearBreaker: true })
     resetBreaker(this.deps.state)
+    // 新的 AbortController：恢复后才允许新的发送任务。
+    this.abortController = new AbortController()
     await this.audit({ type: 'resume' })
     if (this.started) {
       try {
@@ -163,6 +241,8 @@ export class PersonaEngine {
         this.deps.logger.warn('恢复后重启通道失败', error instanceof Error ? error.message : String(error))
       }
     }
+    // P1-4：恢复后按序补处理暂停期间暂存的消息。
+    await this.flushDeferred()
     await this.persist()
   }
 
@@ -213,6 +293,8 @@ export class PersonaEngine {
       nextOnlineAt: nextOnlineAt(config, now),
       startedAt: state.stats.startedAt,
       lastActivityAt: state.lastActivityAt,
+      delivery: { ...this.deliveryCounts },
+      deferredCount: this.deferred.length,
     }
   }
 
@@ -225,15 +307,231 @@ export class PersonaEngine {
     await this.deps.audit.clear()
   }
 
-  /** 手动发一条测试消息（工具用；受通道能力限制）。 */
+  /**
+   * 手动发一条测试消息（工具 / 设置页用）。
+   * P1-5：与自动发送共用同一套门禁（暂停 / 熔断 / 预算 / 白名单 / 频控），
+   * 不再绕过引擎直接调用 channel.send。
+   */
   async sendTest(contactId: string, text: string): Promise<SendResult> {
-    const result = await this.deps.channel.send(contactId, { kind: 'text', text })
+    const blocked = this.canSend({ contactId, checkWhitelist: true, checkRate: true })
+    if (blocked) {
+      this.deps.logger.warn('手动发送被门禁拒绝', `${blocked.reason}: ${blocked.detail}`)
+      await this.audit({
+        type: 'send-fail',
+        contactId,
+        reason: blocked.reason,
+        send: {
+          kind: 'text',
+          chars: text.length,
+          ok: false,
+          error: `已拒绝发送：${blocked.detail}`,
+          delivery: 'not-sent',
+        },
+      })
+      return { ok: false, error: `已拒绝发送：${blocked.detail}`, delivery: 'not-sent' }
+    }
+    const startedAt = this.deps.clock.now()
+    let result: SendResult
+    try {
+      result = await this.deps.channel.send(contactId, { kind: 'text', text }, this.abortController.signal)
+    } catch (error) {
+      result = {
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+        delivery: 'unknown',
+      }
+    }
+    const delivery = resolveSendDelivery(result)
+    this.countDelivery(delivery)
+    const delivered = delivery === 'sent'
+    if (delivered) {
+      const now = this.deps.clock.now()
+      const counter = normalizeCounter(this.deps.state.rate[contactId], now)
+      this.deps.state.rate[contactId] = recordReply(counter, now)
+      this.deps.state.stats.sends += 1
+      this.deps.state.lastActivityAt = now
+    }
     await this.audit({
-      type: result.ok ? 'send' : 'send-fail',
+      type: delivered ? 'send' : 'send-fail',
       contactId,
-      send: { kind: 'text', chars: text.length, ok: result.ok, error: result.error },
+      reason: delivered ? 'manual-send' : 'manual-send-failed',
+      send: {
+        kind: 'text',
+        chars: text.length,
+        ok: delivered,
+        error: result.error,
+        delivery,
+        durationMs: this.deps.clock.now() - startedAt,
+      },
     })
-    return result
+    await this.persist()
+    return { ...result, ok: delivered, delivery }
+  }
+
+  /* ──────────────────────── 发送门禁 / 暂存补处理 ──────────────────────── */
+
+  /**
+   * 统一发送门禁（P0-1 / P1-5）：暂停、熔断、预算、白名单、频控任一不满足都拒绝发送。
+   * 自动回复在拟人延迟后、每个 part 发出前、每次重试前调用；手动发送（sendTest）也走这里。
+   */
+  canSend(options: { contactId?: string; contactName?: string; checkWhitelist?: boolean; checkRate?: boolean; checkBudget?: boolean } = {}): SendBlock | null {
+    const { config, state } = this.deps
+    // 先看 AbortSignal：pause()/stop()/熔断会 abort，这是最实时的“已暂停”信号。
+    if (this.abortController.signal.aborted) {
+      return { reason: 'paused', detail: '引擎已暂停或停止，等待恢复后再发送' }
+    }
+    if (state.paused) {
+      return { reason: 'paused', detail: `引擎已暂停${state.pauseReason ? `：${state.pauseReason}` : ''}` }
+    }
+    if (state.breaker.tripped) {
+      return { reason: 'breaker', detail: `熔断已触发${state.breaker.reason ? `：${state.breaker.reason}` : ''}` }
+    }
+    const now = this.deps.clock.now()
+    // 预算不阻碍 engine.start()：否则预算耗尽当次重启后通道永远起不来（次日也不会自愈）。
+    if (options.checkBudget !== false && budgetPhase(config, normalizeBudget(state.budget, now), now) === 'exhausted') {
+      return { reason: 'budget-hard-stop', detail: '今日 token 预算已用尽' }
+    }
+    const contactId = options.contactId?.trim()
+    if (contactId && options.checkWhitelist) {
+      if (!matchWhitelist(config, contactId, options.contactName ?? '')) {
+        return { reason: 'not-whitelisted', detail: `联系人 ${contactId} 不在白名单内` }
+      }
+    }
+    if (contactId && options.checkRate) {
+      const counter = normalizeCounter(state.rate[contactId], now)
+      const lowActivityDay = evaluateSchedule(config, now).lowActivityDay
+      const decision = checkRate(config, counter, now, lowActivityDay)
+      if (decision.skip) return { reason: decision.reason, detail: decision.detail ?? '触发发送频控' }
+    }
+    return null
+  }
+
+  /** 带 AbortSignal 的 sleep：暂停/停止时立即醒来，不把暂停拖到延迟结束（P0-1）。 */
+  private async sleep(ms: number, signal?: AbortSignal): Promise<void> {
+    if (signal?.aborted) return
+    let onAbort: (() => void) | undefined
+    const aborted = new Promise<void>((resolve) => {
+      onAbort = () => resolve()
+      signal?.addEventListener('abort', onAbort, { once: true })
+    })
+    try {
+      await Promise.race([this.deps.clock.sleep(ms, signal), aborted])
+    } catch {
+      // 打断 / 时钟异常不应让回复流程崩溃
+    } finally {
+      if (onAbort) signal?.removeEventListener('abort', onAbort)
+    }
+  }
+
+  private countDelivery(delivery: SendDelivery): void {
+    if (delivery === 'sent') this.deliveryCounts.sent += 1
+    else if (delivery === 'not-sent') this.deliveryCounts.notSent += 1
+    else this.deliveryCounts.unknown += 1
+  }
+
+  /** 发送被门禁拦下：记 skip（区别于“发送失败”，不污染错误计数）。 */
+  private async recordSendBlocked(message: InboundMessage, blocked: SendBlock, now: number): Promise<void> {
+    this.deps.state.stats.skips += 1
+    await this.audit({
+      type: 'skip',
+      contactId: message.contactId,
+      contactName: message.contactName,
+      msgId: message.id,
+      reason: blocked.reason,
+      detail: `send-blocked: ${blocked.detail}`,
+      extra: { kind: message.kind, tokens: 0, at: now, sendBlocked: true },
+    })
+    await this.persist()
+  }
+
+  /** 暂停期间哪些消息需要暂存（P1-4）：白名单单聊（或关闭白名单限制的单聊）、显式放行的群聊。 */
+  private shouldDeferWhilePaused(message: InboundMessage, fromWhitelist: boolean): boolean {
+    const { config } = this.deps
+    if (message.chatType === 'single') return fromWhitelist || config.whitelistOnly === false
+    return fromWhitelist && config.reply.groupChatEnabled === true
+  }
+
+  /** 暂停期间把入站消息标记为 deferred 并持久化，恢复后按序补处理（P1-4）。 */
+  private async deferInbound(message: InboundMessage, now: number, detail: string): Promise<void> {
+    const exists = this.deferred.some(
+      (entry) => entry.message.id === message.id && entry.message.contactId === message.contactId,
+    )
+    if (!exists) {
+      this.deferred.push({ message, deferredAt: now, reason: detail })
+      while (this.deferred.length > DEFERRED_MAX) this.deferred.shift()
+      await this.saveDeferred()
+    }
+    this.deps.state.stats.skips += 1
+    await this.audit({
+      type: 'skip',
+      contactId: message.contactId,
+      contactName: message.contactName,
+      msgId: message.id,
+      reason: 'paused',
+      detail: `deferred: ${detail}`,
+      extra: { kind: message.kind, tokens: 0, at: now, deferred: true },
+    })
+    await this.persist()
+  }
+
+  private async saveDeferred(): Promise<void> {
+    try {
+      const payload: DeferredStoreFile = { version: 1, entries: this.deferred }
+      await this.deps.store.writeJson(DEFERRED_FILE, payload)
+    } catch (error) {
+      this.deps.logger.warn('暂存入站消息落盘失败', error instanceof Error ? error.message : String(error))
+    }
+  }
+
+  private async loadDeferred(): Promise<void> {
+    try {
+      const data = await this.deps.store.readJson<DeferredStoreFile>(DEFERRED_FILE)
+      if (!data || !Array.isArray(data.entries)) return
+      this.deferred = data.entries
+        .filter(
+          (entry): entry is DeferredInboundEntry =>
+            Boolean(
+              entry &&
+                entry.message &&
+                typeof entry.message.id === 'string' &&
+                typeof entry.message.contactId === 'string' &&
+                (entry.message.kind === 'text' || entry.message.kind === 'sticker'),
+            ),
+        )
+        .slice(-DEFERRED_MAX)
+    } catch (error) {
+      this.deps.logger.warn('读取暂存入站消息失败', error instanceof Error ? error.message : String(error))
+    }
+  }
+
+  /** 恢复后补处理暂存消息（单飞，避免 start/resume 并发重放）。 */
+  private async flushDeferred(): Promise<void> {
+    if (this.flushTask) return this.flushTask
+    this.flushTask = this.flushDeferredInner().finally(() => {
+      this.flushTask = null
+    })
+    return this.flushTask
+  }
+
+  private async flushDeferredInner(): Promise<void> {
+    if (this.deferred.length === 0) return
+    const entries = this.deferred.slice()
+    this.deferred = []
+    await this.saveDeferred()
+    let blockedAt: number | null = null
+    for (let index = 0; index < entries.length; index += 1) {
+      // 补处理途中若再次暂停/熔断，剩余消息留在队列里等下次恢复。
+      if (this.canSend()) {
+        blockedAt = index
+        break
+      }
+      await this.handleInbound(entries[index]!.message)
+    }
+    if (blockedAt !== null) {
+      this.deferred = [...entries.slice(blockedAt), ...this.deferred]
+      await this.saveDeferred()
+    }
+    await this.persist()
   }
 
   /* ────────────────────────── 风控熔断 ────────────────────────── */
@@ -267,6 +565,8 @@ export class PersonaEngine {
     // 立即暂停所有自动化：熔断标记 + 暂停状态，双重保障（任一被清掉也不会继续发消息）。
     pauseEngine(state, `risk:${signal.kind}`, clock.now())
     state.pausedAt = clock.now()
+    // P0-1：熔断必须立刻打断在飞回复，不能等当前这条发完。
+    this.abortController.abort()
     try {
       await this.audit({
         type: 'risk',
@@ -358,6 +658,8 @@ export class PersonaEngine {
     if (fromWhitelist && isStopCommand(message.text)) {
       pauseEngine(state, 'chat-stop-command', now)
       state.pausedAt = now
+      // P0-1：/stop 也要立刻打断当前在飞回复（生成完、拟人延迟中、发送循环中）。
+      this.abortController.abort()
       await this.audit({ type: 'stop', contactId: message.contactId, reason: 'chat-stop-command', detail: message.text })
       await this.persist()
       return
@@ -412,6 +714,8 @@ export class PersonaEngine {
       }
       pauseEngine(state, halt.reason, now)
       state.pausedAt = now
+      // P0-1：命中禁止话题触发暂停时，同时打断在飞回复。
+      this.abortController.abort()
       await this.audit({
         type: 'risk',
         contactId: message.contactId,
@@ -431,6 +735,11 @@ export class PersonaEngine {
       return
     }
     if (gate.decision.skip) {
+      // P1-4：暂停期间白名单消息不丢——记 skip 的同时暂存，恢复后按序补处理。
+      if (gate.decision.reason === 'paused' && this.shouldDeferWhilePaused(message, fromWhitelist)) {
+        await this.deferInbound(message, now, gate.decision.detail ?? 'engine-paused')
+        return
+      }
       await this.skip(message, gate.decision, now)
       return
     }
@@ -653,27 +962,58 @@ export class PersonaEngine {
       }
       planParts.push(part)
     }
-    await this.deps.clock.sleep(plan.typingMs)
+    const sendSignal = this.abortController.signal
+    // 拟人延迟也要能被打断：暂停/停止时立即醒来，不把暂停拖到延迟结束（P0-1）。
+    await this.sleep(plan.typingMs, sendSignal)
 
-    // 11) 发送（每个 part 最多重试 1 次；任何一条失败即中止本批，避免半截刷屏）
+    // 11) 发送
+    //   P0-1：拟人延迟结束后、每个 part 发出前、每次重试前都重新过发送门禁
+    //         （暂停/熔断/预算可能在“生成完 → 延迟中”发生）；
+    //   P0-2：只有确认「没发出去」（delivery='not-sent'）才允许重试，unknown 绝不重试。
+    //   任何一条发送失败即中止本批，避免半截刷屏。
     let sent = 0
     let stickerSent: string | null = null
     for (let index = 0; index < planParts.length; index += 1) {
       const part = planParts[index] as OutboundPart
       if (index > 0) {
-        await this.deps.clock.sleep(300 + Math.floor(this.deps.random.next() * 700))
+        await this.sleep(300 + Math.floor(this.deps.random.next() * 700), sendSignal)
+      }
+      const preSend = this.canSend()
+      if (preSend) {
+        await this.recordSendBlocked(message, preSend, clock.now())
+        break
       }
       const startedAt = clock.now()
-      let sendResult: SendResult = { ok: false, error: 'not-sent' }
+      let sendResult: SendResult = { ok: false, error: 'not-sent', delivery: 'not-sent' }
+      let blockedByGate = false
       for (let attempt = 0; attempt < 2; attempt += 1) {
-        try {
-          sendResult = await channel.send(message.contactId, part)
-        } catch (error) {
-          sendResult = { ok: false, error: error instanceof Error ? error.message : String(error) }
+        // 每次真正调用通道前都复查门禁（重试可能跨越 pause/熔断）。
+        const blocked = this.canSend()
+        if (blocked) {
+          sendResult = { ok: false, error: `send-blocked: ${blocked.detail}`, delivery: 'not-sent' }
+          await this.recordSendBlocked(message, blocked, clock.now())
+          blockedByGate = true
+          break
         }
+        try {
+          sendResult = await channel.send(message.contactId, part, sendSignal)
+        } catch (error) {
+          // 异常时无法确认是否已发出 → unknown（不重试）。
+          sendResult = {
+            ok: false,
+            error: error instanceof Error ? error.message : String(error),
+            delivery: 'unknown',
+          }
+        }
+        const delivery = resolveSendDelivery(sendResult)
+        this.countDelivery(delivery)
         if (sendResult.ok) break
-        await this.deps.clock.sleep(400 + Math.floor(this.deps.random.next() * 600))
+        if (sendSignal.aborted) break
+        if (attempt >= 1) break
+        if (!canRetrySend(sendResult)) break
+        await this.sleep(400 + Math.floor(this.deps.random.next() * 600), sendSignal)
       }
+      if (blockedByGate) break
       if (sendResult.ok) {
         sent += 1
         if (part.kind === 'sticker') stickerSent = part.stickerId
@@ -686,6 +1026,7 @@ export class PersonaEngine {
             chars: part.kind === 'text' ? part.text.length : undefined,
             stickerId: part.kind === 'sticker' ? part.stickerId : undefined,
             ok: true,
+            delivery: 'sent',
             durationMs: clock.now() - startedAt,
           },
         })
@@ -701,6 +1042,7 @@ export class PersonaEngine {
             stickerId: part.kind === 'sticker' ? part.stickerId : undefined,
             ok: false,
             error: sendResult.error,
+            delivery: resolveSendDelivery(sendResult),
             durationMs: clock.now() - startedAt,
           },
         })

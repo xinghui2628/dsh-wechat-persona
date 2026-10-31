@@ -1090,6 +1090,21 @@ describe('Host HTTP API：测试与运行时操作', () => {
     expect(env.engine!.sent).toEqual([{ contactId: 'wxid_alice', text: '测试' }])
   })
 
+  it('POST /test/send 暂停时返回 409 且不调用引擎发送（P1-5）', async () => {
+    const env = await makeEnv()
+    env.engine!.statusValue = makeEngineStatus({ paused: true, pauseReason: 'manual' })
+    expectFail(await call(env, 'POST', '/test/send', { contactId: 'wxid_alice', text: '测试' }), 409, /暂停/)
+    expect(env.engine!.sent).toEqual([])
+  })
+
+  it('POST /test/send 透传投递三态拒绝结果（P0-2/P1-5）', async () => {
+    const env = await makeEnv()
+    env.engine!.sendResult = { ok: false, error: '已拒绝发送：今日 token 预算已用尽', delivery: 'not-sent' }
+    const json = expectOk(await call(env, 'POST', '/test/send', { contactId: 'wxid_alice', text: '测试' }))
+    expect(json.result).toMatchObject({ ok: false, delivery: 'not-sent' })
+    expect(env.engine!.sent).toEqual([{ contactId: 'wxid_alice', text: '测试' }])
+  })
+
   it('POST /pause 与 POST /resume 切换暂停状态', async () => {
     const env = await makeEnv()
     const paused = expectOk(await call(env, 'POST', '/pause', { reason: '手动暂停' }))

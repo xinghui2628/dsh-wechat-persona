@@ -1210,6 +1210,16 @@ export function createPersonaApi(deps: PersonaApiDeps): PersonaApi {
         if (text === '') return failJson(400, 'text 不能为空')
         const engine = currentEngine()
         if (!engine) return failJson(409, '引擎未启动，无法发送测试消息')
+        // P1-5：暂停期间手动发送与自动发送一样被门禁拒绝（引擎 sendTest 内部还有一层
+        // canSend 兜底：熔断/预算/白名单/频控；这里提前返回明确的 409，方便工具/设置页提示）。
+        let paused = false
+        try {
+          const status = await engine.status()
+          paused = status.paused === true
+        } catch {
+          paused = false
+        }
+        if (paused) return failJson(409, '引擎已暂停，已拒绝发送', 'paused')
         let result: SendResult
         try {
           result = await engine.sendTest(contactId.slice(0, 128), text.slice(0, 4000))

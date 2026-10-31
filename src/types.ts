@@ -35,9 +35,23 @@ export type OutboundPart =
   | { kind: 'text'; text: string }
   | { kind: 'sticker'; stickerId: string; file: string }
 
+/**
+ * 发送投递三态（P0-2，任务书 9.2 相关）：
+ * - `sent`：确认已投递（通道看到气泡 / 脚本明确成功）；
+ * - `not-sent`：确认没有投出去（发送前校验失败、通道未启动、未按回车等），可安全重试；
+ * - `unknown`：已执行发送动作但无法确认结果（典型：脚本已按回车、气泡却未确认），
+ *   重试可能造成重复发送，引擎必须保守地不重试。
+ */
+export type SendDelivery = 'sent' | 'not-sent' | 'unknown'
+
 export interface SendResult {
   ok: boolean
   error?: string
+  /**
+   * 投递确认状态。旧版通道可能不返回该字段：引擎按错误语义保守推断，
+   * 无法证明「未发送」的一律按 `unknown` 处理（宁可漏发一次，不重复发错一次）。
+   */
+  delivery?: SendDelivery
 }
 
 /**
@@ -485,6 +499,8 @@ export interface AuditSendInfo {
   stickerId?: string
   ok: boolean
   error?: string
+  /** 投递三态（P0-2）：审计里保留结果，便于事后排查重复发送/未送达。 */
+  delivery?: SendDelivery
   durationMs?: number
 }
 
@@ -545,6 +561,13 @@ export interface EngineDeps {
   saveState(): Promise<void>
 }
 
+/** 发送投递三态累计计数（status 对外可见，P0-2）。 */
+export interface SendDeliveryCounts {
+  sent: number
+  notSent: number
+  unknown: number
+}
+
 /** 供 DSH 工具 / 服务查询的只读状态快照。 */
 export interface EngineStatus {
   personaName: string
@@ -565,6 +588,10 @@ export interface EngineStatus {
   nextOnlineAt?: number | null
   startedAt: number
   lastActivityAt?: number
+  /** 发送尝试的投递三态计数（P0-2：sent / notSent / unknown）。 */
+  delivery?: SendDeliveryCounts
+  /** 暂停期间暂存、等待恢复后按序补处理的消息条数（P1-4）。 */
+  deferredCount?: number
 }
 
 /** memory.ts 暴露的接口（engine 依赖）。 */

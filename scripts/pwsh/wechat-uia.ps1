@@ -63,9 +63,15 @@ try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}
 
 # ── 基础输出与通用小工具 ─────────────────────────────────────────────────
 function Write-Result([hashtable]$Payload) { $Payload | ConvertTo-Json -Compress -Depth 6 }
-function Fail-With([string]$Message) {
+# 失败输出。$Delivery 可选：'unknown' 表示「已执行发送动作但无法确认结果」（典型：已按回车、
+# 气泡未确认）。引擎只对明确「未发出」的失败重试，unknown 绝不重试，避免同一条消息发两次。
+function Fail-With([string]$Message, [string]$Delivery = '') {
     Write-Debug-Log ("FAIL: " + $Message)
-    Write-Result @{ ok = $false; error = $Message }
+    if ([string]::IsNullOrWhiteSpace($Delivery)) {
+        Write-Result @{ ok = $false; error = $Message }
+    } else {
+        Write-Result @{ ok = $false; error = $Message; delivery = $Delivery }
+    }
     exit 0
 }
 function Now-Id() { [DateTimeOffset]::Now.ToUnixTimeSeconds() }
@@ -1732,7 +1738,7 @@ if ($hwnd -ne [IntPtr]::Zero) { Ensure-UsableWindow $hwnd }
                         $fastDone = $true
                     } else {
                         Write-Debug-Log '快发送气泡未确认且输入框未清空，不回退保守路径（避免重复发送）'
-                        Write-Result @{ ok = $false; error = '快发送已回车但气泡未确认且输入框未清空，已跳过保守重发以免重复' }
+                        Write-Result @{ ok = $false; error = '快发送已回车但气泡未确认且输入框未清空，已跳过保守重发以免重复'; delivery = 'unknown' }
                         exit 0
                     }
                 }
@@ -1823,7 +1829,7 @@ if ($hwnd -ne [IntPtr]::Zero) { Ensure-UsableWindow $hwnd }
         if (-not $verified) {
             $preview = $text
             if ($preview.Length -gt 12) { $preview = $preview.Substring(0, 12) + '…' }
-            Fail-With "发送后未在聊天区看到消息气泡（已重试 3 次）：$preview"
+            Fail-With "发送后未在聊天区看到消息气泡（已重试 3 次）：$preview" 'unknown'
         }
         Write-Debug-Log '发送成功（OCR 已确认气泡出现）'
         Write-Result @{ ok = $true }
