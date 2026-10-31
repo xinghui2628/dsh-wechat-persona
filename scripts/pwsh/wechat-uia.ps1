@@ -1713,6 +1713,9 @@ if ($hwnd -ne [IntPtr]::Zero) { Ensure-UsableWindow $hwnd }
         }
     }
 
+    # 读取聊天记录时把截图放大倍数提高一档（最近邻放大），
+    # 减少「大肥鱼」被认成「大吧鱼」这类形近字误读；只影响 read，不影响发送。
+    if ($Action -eq 'read') { $script:Upscale = [math]::Max([int]$script:Upscale, 3) }
     if ($Action -eq 'read' -and $NoSearch) {
         # 只认“当前已经打开的会话”：标题 OCR 命中、或插件通过 list 的绿底选中行传回的 CurrentContact 与目标一致；
         # 两者都不成立时直接放弃读取，绝不 Ctrl+F 搜索（避免抢前台和搜索框闪烁）。

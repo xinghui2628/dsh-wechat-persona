@@ -298,7 +298,7 @@ export const Config: z<WechatPersonaConfig> = z.object({
     reasoningEffort: z.union([z.const('low'), z.const('medium'), z.const('high')]).default('low').description('思考等级，默认 low 省 token'),
     maxTokens: z.number().default(160).description('单次生成 token 上限'),
     splitProbability: z.number().default(0.35).description('拆成 2–3 条发送的概率'),
-    maxSplitParts: z.number().default(3).description('最多拆成几条（2–3）'),
+    maxSplitParts: z.number().default(2).description('最多拆成几条（2–3）'),
     stickerProbability: z.number().default(0.25).description('回复追加表情包的概率'),
     stickerNoRepeatCount: z.number().default(8).description('最近 N 次不重复同一表情包'),
     typingMinMs: z.number().default(800).description('“正在输入”最短毫秒数'),

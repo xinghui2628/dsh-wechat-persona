@@ -97,6 +97,31 @@ describe('planHumanReply', () => {
     expect(plan.parts.length).toBe(1)
   })
 
+  it('默认配置最多拆 2 条（要求：一次最多两句话，别刷屏）', () => {
+    expect(testConfig().reply.maxSplitParts).toBe(2)
+  })
+
+  it('200 种文本变体都只拆成 ≤2 条消息（不刷屏、不浪费 token）', () => {
+    const tails = ['好的呀', '哈哈哈哈', '行', '没问题', '等我一下', '你说得对', '吃了吗', '晚安', '笑死', '不至于']
+    for (let i = 0; i < 200; i += 1) {
+      const sentence = tails[i % tails.length]
+      const text = `${sentence}。${sentence}。${sentence}。${sentence}。${sentence}。`
+      const plan = planHumanReply(text, {
+        config: humanizeConfig((config) => {
+          config.reply.splitProbability = 1
+          config.reply.maxSplitParts = 2
+        }),
+        random: new SeqRandom([0.1, 0.2, 0.3, 0.4, 0.5]),
+        stickers: noStickers,
+        recentStickerIds: [],
+        emotion: 'neutral',
+      })
+      const texts = plan.parts.filter((part) => part.kind === 'text')
+      expect(texts.length, `第 ${i} 种文本被拆成 ${texts.length} 条`).toBeLessThanOrEqual(2)
+      expect(plan.splitCount, `第 ${i} 种 splitCount`).toBeLessThanOrEqual(2)
+    }
+  })
+
   it('maxChars 先截断再拆条', () => {
     const plan = planHumanReply('一二三四五六七八', {
       config: humanizeConfig((config) => {

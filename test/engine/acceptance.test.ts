@@ -614,4 +614,16 @@ describe('自回声保护：机器人不会自问自答', () => {
     expect(h.channel.sent.length).toBe(sentBefore)
     expect(h.llm.calls.length).toBeLessThanOrEqual(1)
   })
+
+  it('好友复述一个短词（如「大吧鱼」）不会被当成自回声，必须正常回复', async () => {
+    const h = makeHarness({ config: { whitelist } })
+    h.llm.text = '大吧鱼？我这名字还能被你叫歪，行吧'
+    await h.engine.handleInbound(inbound({ id: 'short-base', text: '咱俩定个暗号' }))
+    const sentBefore = h.channel.sent.length
+    // 拉开最小回复间隔，排除限频跳过的干扰（只验证自回声保护不误杀）
+    await h.clock.sleep(60_000)
+    await h.engine.handleInbound(inbound({ id: 'short-quote', text: '大吧鱼' }))
+    expect(h.channel.sent.length).toBeGreaterThan(sentBefore)
+    expect(h.audit.reasons('skip')).not.toContain('self-echo')
+  })
 })

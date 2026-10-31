@@ -74,9 +74,11 @@ function looksLikeOwnText(inbound: unknown, own: unknown): boolean {
   const b = normalizeEchoText(own)
   if (a.length < 2 || b.length < 2) return false
   if (a === b) return true
-  if (b.length >= 4 && (a.includes(b) || b.includes(a))) return true
+  // 短消息（≤4 字）只在完全相同才算回声：否则「大吧鱼」这种复述自己名字的短句
+  // 会被「大吧鱼？我这名字还能被你叫歪…」里的包含关系误杀，导致正常消息不回。
+  if (a.length >= 5 && b.length >= 5 && (a.includes(b) || b.includes(a))) return true
   const head = Math.min(a.length, b.length, 12)
-  if (head >= 4 && (a.startsWith(b.slice(0, head)) || b.startsWith(a.slice(0, head)))) return true
+  if (head >= 6 && (a.startsWith(b.slice(0, head)) || b.startsWith(a.slice(0, head)))) return true
   if (a.length >= 6 && b.length >= 6) {
     const chars = [...new Set(a)]
     const common = chars.filter((ch) => b.includes(ch)).length
