@@ -425,3 +425,63 @@ describe('自回声保护（机器人不能回自己的话）', () => {
     await harness.channel.stop()
   })
 })
+
+describe('列表预览截断补全（OCR 只读到半句话时用 read 补全全文）', () => {
+  it('预览被截断时优先投递 read 读到的完整文本（100 种截断变体）', async () => {
+    for (let i = 0; i < 100; i += 1) {
+      const full = `我想拉高你的幽默度，第${i}次测试`
+      const cut = 1 + (i % 5)
+      const truncated = [...full].slice(0, Math.max(1, [...full].length - cut)).join('')
+      const recorder = recordRunner((script, args) => {
+        if (script === 'user-activity') return USER_IDLE
+        if (script === 'wechat-uia' && args.includes('read')) {
+          return {
+            code: 0,
+            stdout: JSON.stringify({ ok: true, messages: [{ id: `pc-${i}`, text: full, receivedAt: 1_700_000_000_000 + i }] }),
+            stderr: '',
+          }
+        }
+        return {
+          code: 0,
+          stdout: JSON.stringify({
+            ok: true,
+            rows: [{ name: '张三', found: true, unread: true, preview: truncated, top: 100, left: 160, height: 80 }],
+          }),
+          stderr: '',
+        }
+      })
+      const harness = makeDesktopHarness({ runScript: recorder.runner })
+      harness.channel.handler = (message) => harness.messages.push(message)
+      await harness.channel.readInboundOnce()
+      expect(harness.messages, `第 ${i} 次：预览=${truncated}`).toHaveLength(1)
+      expect(harness.messages[0].text).toBe(full)
+      expect(harness.messages[0].id).toBe(`pc-${i}`)
+    }
+  })
+
+  it('read 校验失败时退回列表预览，不丢消息', async () => {
+    const recorder = recordRunner((script, args) => {
+      if (script === 'user-activity') return USER_IDLE
+      if (script === 'wechat-uia' && args.includes('read')) {
+        return { code: 0, stdout: JSON.stringify({ ok: false, error: '当前未打开「张三」的聊天（NoSearch）' }), stderr: '' }
+      }
+      return {
+        code: 0,
+        stdout: JSON.stringify({
+          ok: true,
+          rows: [{ name: '张三', found: true, unread: true, preview: '在吗', top: 100, left: 160, height: 80, selected: true }],
+        }),
+        stderr: '',
+      }
+    })
+    const harness = makeDesktopHarness({ runScript: recorder.runner })
+    harness.channel.handler = (message) => harness.messages.push(message)
+    await harness.channel.readInboundOnce()
+    expect(harness.messages).toHaveLength(1)
+    expect(harness.messages[0].text).toBe('在吗')
+    const readCall = recorder.calls.find((call) => call.script === 'wechat-uia' && call.args.includes('read'))!
+    // 当前打开的会话用 -NoSearch 读取，绝不 Ctrl+F 搜索
+    expect(readCall.args).toContain('-NoSearch')
+    expect(readCall.args).toContain('-CurrentContact')
+  })
+})

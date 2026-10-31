@@ -301,6 +301,10 @@ export class DesktopChannel {
     }
 
     const needRead = [];
+    // 未读预览先不直接投递：列表预览是 OCR 结果，消息稍长就会被截断
+    // （实测「我想拉高你的幽默度」只读到「我想拉高你的幽」丢了「默度」），
+    // 只拿预览去回复会让模型对着半句话回「啥意思」。先读一次全文，读不到再退回预览。
+    const previewRows = [];
     for (const row of parsed.rows) {
       if (!row || !row.found) {
         // 列表里没认出来的联系人不要触发 read：read 会走 Enter-Chat（Ctrl+F 搜索 + 抢前台），
@@ -314,7 +318,7 @@ export class DesktopChannel {
           this.logger.debug?.(`[desktop] 跳过自己的消息预览：${row.name} ${row.preview.slice(0, 30)}`);
           continue;
         }
-        this.emitPreview(row.name, row.preview);
+        previewRows.push({ name: row.name, preview: row.preview, selected: !!row.selected });
       } else if (row.unread) {
         needRead.push(row.name);
       }
@@ -337,6 +341,48 @@ export class DesktopChannel {
       this.lastOpenReadAt.set(openName, Date.now());
       this.logger.debug?.(`[desktop] 当前打开的会话低频轮询读取：${openName}`);
     }
+
+    // 预览校验：最多取 2 条未读预览去读窗口全文（避免一次轮询读太多），
+    // 读到的全文若比预览更完整就用全文；读不到就退回预览投递，保证不漏消息。
+    const previewFallbacks = [];
+    for (let index = 0; index < previewRows.length; index += 1) {
+      const item = previewRows[index];
+      if (index >= 2) {
+        previewFallbacks.push(item);
+        continue;
+      }
+      const args = [
+        '-Action', 'read',
+        '-WindowTitle', cfg.windowTitle || '微信',
+        '-Contact', item.name,
+        '-MaxMessages', '10',
+      ];
+      if (item.selected || item.name === current) {
+        // 会话已经打开时只读窗口，不触发 Ctrl+F 搜索。
+        args.push('-NoSearch', '-CurrentContact', item.name);
+      }
+      const read = await this.runScript('wechat-uia', args);
+      const data = this.parseJson(read);
+      const messages = data && data.ok === true && Array.isArray(data.messages) ? data.messages : [];
+      let verified = null;
+      for (const message of messages) {
+        const text = String(message?.text || '').trim();
+        if (!text) continue;
+        if (this.isOwnText(item.name, text)) continue;
+        verified = { text, id: message?.id };
+      }
+      if (!verified) {
+        if (data && data.ok === false && data.error) {
+          this.logger.debug?.(`[desktop] 预览校验读取失败，退回预览：${item.name} ${String(data.error).slice(0, 60)}`);
+        }
+        previewFallbacks.push(item);
+        continue;
+      }
+      const preview = item.preview.trim();
+      const useFull = verified.text.length >= preview.length || verified.text.includes(preview) || preview.includes(verified.text);
+      this.emitMessage(item.name, useFull ? verified.text : preview, verified.id);
+    }
+    for (const item of previewFallbacks) this.emitPreview(item.name, item.preview);
 
     for (const name of needRead.filter(Boolean)) {
       if (this.stopped) return;
