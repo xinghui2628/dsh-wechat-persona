@@ -17,7 +17,7 @@
 ## 0. 一句话现状
 
 - 项目：DSH（DeepSeek Harness）插件 `dsh-wechat-persona` —— 把**自己的微信小号**变成「有人格的 AI 聊天分身」，被动回复白名单好友。
-- 当前版本：**v0.2.8**（2026-10-31 发布），已推送 GitHub 公开仓库：https://github.com/xinghui2628/dsh-wechat-persona
+- 当前版本：**v0.2.8**（2026-10-31 发布），已推送 GitHub 公开仓库：`https://github.com/<维护者账号>/dsh-wechat-persona`
 - 代码状态：`master` 最新提交 `9db6c5b`，工作树 clean；**416 个单测全绿**（30 个测试文件）；CI 最近三次全绿。
 - 生产配置已恢复（每日 5 万 token、白名单 3 人、08:00–21:00）；当前是晚上，引擎 `online=false`、`budgetPhase=exhausted`，**明早 08:00 自动上线**。
 - 用户意图：**下一个大版本 0.3.0，提示词改动会很多**，希望新会话接手；用户是纯 GitHub 新手，解释要一步一步、给按钮级指引。
@@ -30,13 +30,13 @@
 | 项 | 值 |
 |---|---|
 | 本地路径 | `C:\Users\<用户名>\OneDrive\文档\deepseek-harness\default-workspace\dsh-wechat-persona` |
-| 远程 | `https://github.com/xinghui2628/dsh-wechat-persona.git`（origin，Public） |
+| 远程 | `https://github.com/<维护者账号>/dsh-wechat-persona.git`（origin，Public） |
 | master HEAD | `9db6c5b feat: OCR 双引擎投票（RapidOCR）+ 常用词字典纠错，版本 0.2.8` |
 | 历史 | 20 个提交，单线历史（曾用 orphan 重建以清除个人数据） |
 | tag | `v0.2.8`（最新）、`v0.2.3` |
 | GitHub Release | 只有 `v0.2.3`（Pre-release）；**v0.2.8 还没建 Release**（0.3.0 发版时一并处理或补一个） |
-| 提交作者 | 全部 `Cosmo w <302537918+xinghui2628@users.noreply.github.com>`（GitHub 显示公开昵称 Cosmo w；真实邮箱已 Private） |
-| Collaborator | `Bowen-Han66`（第二作者，邀请 pending，对方接受后生效） |
+| 提交作者 | 统一为维护者账号 + GitHub noreply 邮箱（`<维护者账号> <noreply@users.noreply.github.com>`；不写真名/真实邮箱） |
+| Collaborator | `<协作者账号>`（第二作者，邀请 pending，对方接受后生效） |
 | CI | `.github/workflows/ci.yml`：windows-latest + Node 22 + `TZ: Asia/Shanghai`；`npm ci --ignore-scripts \|\| npm install --ignore-scripts` → typecheck → test:sandbox → build |
 
 **重要**：`dist/` 不提交（gitignore），安装/运行前必须 `npm run build`；DSH 里跑的是构建后的 dist，改完 `src/` 必须重载插件。
@@ -47,14 +47,14 @@
 
 | 项 | 值 |
 |---|---|
-| DSH | 桌面版 0.2.1-rc.3（GUI 端口每次重启可能变化，**以运行时 context 的 Web GUI URL 为准**，本次是 `http://127.0.0.1:57124`） |
+| DSH | 桌面版 0.2.1-rc.3（GUI 端口每次重启可能变化，**以运行时 context 的 Web GUI URL 为准**，本次是 `http://127.0.0.1:<DSH端口>`） |
 | 插件 API 基址 | `http://127.0.0.1:<DSH端口>/dsh-wechat-persona/api`，**必带请求头 `x-dsh-wechat-persona: 1`** |
 | 插件安装方式 | `C:\Users\<用户名>\.dsh\profiles\desktop\package.json` 里 `link:` 指向本仓库，`node_modules/dsh-wechat-persona` 是 Junction |
 | Node | 本机 v26.13.0（CI 用 22；package.json `engines.node >= 22`） |
-| 微信 | PC 微信 4.1.x，`D:\Program Files\Tencent\Weixin\Weixin.exe`，窗口标题「微信」，Qt 自绘窗口 |
+| 微信 | PC 微信 4.1.x，`<微信安装目录>\Weixin.exe`（默认安装在 `Program Files\Tencent\Weixin`），窗口标题「微信」，Qt 自绘窗口 |
 | 屏幕 | 逻辑 2048×1152，125% 缩放；OCR 语言包 `zh-Hans-CN` |
-| Python | `D:\python\python.exe`（3.14），已装 `rapidocr_onnxruntime 1.2.3`、`onnxruntime 1.31.1`、`opencv-python 5.0.0.93`、`numpy 2.5.4`（**这些不是仓库依赖**，见 §9 第 8 条） |
-| 网络 | 系统代理 `127.0.0.1:7897`（Clash 类）；git push 需要 `git -c http.proxy=http://127.0.0.1:7897 push ...` |
+| Python | `<本机 Python 路径>\python.exe`（3.14），已装 `rapidocr_onnxruntime 1.2.3`、`onnxruntime 1.31.1`、`opencv-python 5.0.0.93`、`numpy 2.5.4`（**这些不是仓库依赖**，见 §9 第 8 条） |
+| 网络 | 系统代理 `127.0.0.1:<本地代理端口>`（Clash 类）；git push 需要 `git -c http.proxy=http://127.0.0.1:<本地代理端口> push ...` |
 | 数据目录 dataDir | `C:\Users\<用户名>\.dsh\profiles\desktop\.dsh-wechat-persona\`（**不入库、不打包、不泄露**） |
 | 日志 | 插件启动日志 `%TEMP%\dsh-wechat-persona-debug.log`；脚本调试日志 `%TEMP%\wxuia-engine-debug.log`；审计 `dataDir\audit.jsonl` |
 
@@ -321,9 +321,9 @@ CI          windows-latest / Node 22 / TZ=Asia/Shanghai / 绿
    ```powershell
    git add -A
    git commit -m "feat: ...，版本 0.3.0"
-   git -c http.proxy=http://127.0.0.1:7897 push origin master
+   git -c http.proxy=http://127.0.0.1:<本地代理端口> push origin master
    git tag -a v0.3.0 -m "v0.3.0 - 一句话摘要"
-   git -c http.proxy=http://127.0.0.1:7897 push origin v0.3.0
+   git -c http.proxy=http://127.0.0.1:<本地代理端口> push origin v0.3.0
    ```
    （PowerShell 会把 git 的 stderr 显示成 NativeCommandError 并 exit 1，**只要看到 `master -> master` 就是成功**。）
 6. 重载插件，让新 dist + 新 API 生效：
@@ -377,9 +377,9 @@ CI          windows-latest / Node 22 / TZ=Asia/Shanghai / 绿
 - 自己的长消息左边缘能到 0.55w，判断自话用**中心点**（paneCenter）比右边缘更稳。
 
 ### 10.4 git / GitHub
-- `git push` 直连常失败（`Connection was reset`），必须 `-c http.proxy=http://127.0.0.1:7897`；或看系统代理是否在跑。
-- 历史上用 orphan 分支重建过 history（清个人数据）；提交作者已统一为 `Cosmo w <noreply>`；**不要 push 旧 archive 分支**。
-- 仓库 Public；`release` 只有 v0.2.3（pre-release）；tag 有 v0.2.3/v0.2.8；Collaborator Bowen-Han66 是 pending invite。
+- `git push` 直连常失败（`Connection was reset`），必须 `-c http.proxy=http://127.0.0.1:<本地代理端口>`；或看系统代理是否在跑。
+- 历史上用 orphan 分支重建过 history（清个人数据）；提交作者已统一为维护者账号 + GitHub noreply 邮箱；**不要 push 旧 archive 分支**。
+- 仓库 Public；`release` 只有 v0.2.3（pre-release）；tag 有 v0.2.3/v0.2.8；协作者邀请（`<协作者账号>`）是 pending invite。
 - 隐私红线见 §11。
 
 ### 10.5 0.2.x 已修复的 bug 根因速查（防止回归）
@@ -422,7 +422,7 @@ CI          windows-latest / Node 22 / TZ=Asia/Shanghai / 绿
 | **0.3.0 提示词大版本** | 待做（本文档目的） | 见 §5.3 方案 |
 | v0.2.8 GitHub Release | 未建 | tag 已推；可在 0.3.0 发布时顺带补，或单独建一个 `v0.2.8` Release |
 | 30 条真实好友测试 | 未完成 | 需用户在场配合；合规要求：用白名单 3 人、手机微信发消息、看 audit；临时调高预算/限频 |
-| Bowen-Han66 Collaborator | pending | 对方需在 GitHub 接受邀请 |
+| 协作者 GitHub 邀请 | pending | 对方需在 GitHub 接受邀请 |
 | 手机通道（phone-adb） | 代码有但近年未重点验证 | 0.3.0 若做「能力感知提示词」需确认其能力声明 |
 | 表情包/图片/语音发送 | 桌面通道明确不支持 | 0.3.0 可只在提示词/文档层面说明，不做 UIA 实现 |
 | 可选：RapidOCR 依赖安装脚本 | 未做 | 0.3.0 可加 `scripts/setup-ocr.ps1` 或写进首检提示 |

@@ -54,7 +54,8 @@
     "test:watch": "vitest --pool=threads",
     "verify": "npm run typecheck && npm run test",
     "verify:api": "node scripts/verify-api.mjs",
-    "verify:all": "npm run typecheck && npm run test:sandbox && npm run build && npm run verify:api"
+    "verify:all": "npm run typecheck && npm run test:sandbox && npm run build && npm run verify:api",
+    "check:sensitive": "node scripts/check-sensitive.mjs"
   },
   "dependencies": {
     "@deepseek-ai/schemastery": "^3.18.4"

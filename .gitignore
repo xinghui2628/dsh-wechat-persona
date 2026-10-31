@@ -26,3 +26,14 @@ dev-notes/
 # Python 缓存
 __pycache__/
 *.pyc
+
+# 用户数据 / 本地产物（v3.0.0 隐私与发布加固）
+data/
+shots/
+*.sent.json
+*uia-state.json
+.env
+.env.*
+coverage/
+*.zip
+*.7z

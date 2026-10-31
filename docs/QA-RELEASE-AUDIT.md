@@ -261,6 +261,7 @@
 - `.gitignore:6-15` 覆盖 `.dsh-wechat-persona/`、`inbound.jsonl`、`outbox.jsonl`、`audit.jsonl`、`audit.1.jsonl`、`alerts.jsonl`、`drafts.jsonl`、`state.json`、`memory/`；`:17-20` 覆盖 `.dsh-tmp/`、`*.log`；`:21-25` 覆盖 `backups/`、`dev-notes/`。
 - 实测 `backups/`、`dev-notes/` 未被 git 跟踪（真名内容仅在本机，见 M1 第 5 条）。
 - `dist/`（78 文件，已用 `wechat` 验证扫描有效）、`client/`、`locale/`、`persona/`、`personas/`、`docs/`、`README/CHANGELOG/cordis.patch.yml` 均无真实昵称/真实 wxid/手机号/token/apikey 命中；`test/` 只用虚构名（`wxid_alice`/`wxid_bob`/`wxid_zhangsan`/`张三`）。
+- **v3.0.0 发布前复核修正（2026-10-31，privacy-fixer）**：上面「公开面内容洁净」的结论当时基于人工 grep，漏检了 `docs/ACCEPTANCE.md:304` 的 **1 处真实中文姓名**（OCR 实机记录里的好友备注名），已在 v3.0.0 脱敏为虚构名「测试甲」。同轮还泛化了 `docs/HANDOFF-0.3.0.md` 里的本机环境指纹（安装路径、本地端口、维护者/协作者账号），并新增机器门禁 `scripts/check-sensitive.mjs`（`npm run check:sensitive`，扫描 `git ls-files` 全部受跟踪文本文件，当前 **0 命中**）；后续发布以该门禁结果为准，人工 grep 只作补充。
 
 ### P5 安装方式 A 与真实安装一致、可照做
 - 实测 `~/.dsh/profiles/desktop/package.json:11`：`"dsh-wechat-persona": "link:C:/Users/<用户名>/OneDrive/…/dsh-wechat-persona"`；`:35` 的 `dsh.profile.bundles` 含 `"dsh-wechat-persona"` —— 与 `README.md:142-146` 完全对应。
