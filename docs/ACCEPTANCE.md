@@ -255,8 +255,8 @@ Get-Content "$env:USERPROFILE\.dsh\profiles\desktop\.dsh-wechat-persona\audit.js
 - 通道恢复后 2 秒轮询正常：列表 3/3 命中、`unread=false`、无 Ctrl+F 搜索框闪烁（`auto` 截图 + 宽松标题匹配生效）、无前台抢占。
 
 > 注（2026-10-31）：为进行真实好友 30 条测试，日预算曾临时调高到 120000 tokens（当日已消耗 67856）；
-> 测试完成后请在设置页把日预算改回 50000。其余生产项（白名单 3 人、08:00–21:00、
-> userActivityIdleMs=1500、builtin-dafeiyu、桌面通道 enabled=true）保持生产值。
+> 收尾时已通过 `/config` 改回 **50000**（2026-10-31 15:50 复核：dailyTokens=50000）。其余生产项（白名单 3 人、08:00–21:00、
+> userActivityIdleMs=1500、builtin-dafeiyu、桌面通道 enabled=true）保持生产值；插件已重载到 0.2.3（`/health` version=0.2.3）。
 
 ## 13. v0.2.3 四项限制修复证据（2026-10-31）
 
