@@ -313,7 +313,7 @@ Select-String -Path README.md,CHANGELOG.md -Pattern '29 个测试文件|388' -En
 ## 附录 C：本次未复核项（不构成通过结论）
 
 1. `verify:api` 24/24、`docs/ACCEPTANCE.md` 中的人工验收勾选 —— 未运行测试/构建。
-2. 「本机 DSH 桌面版 0.2.1-rc.3」（`README.md:337`、`docs/ACCEPTANCE.md:112`）—— 宿主在 `app.asar` 内，无法离线读取实际版本；`D:\deepseek harness\version` 显示 `44.7.0`（Electron 壳版本，与 DSH 语义版本不同），未能佐证。
+2. 「本机 DSH 桌面版 0.2.1-rc.3」（`README.md:337`、`docs/ACCEPTANCE.md:112`）—— 宿主在 `app.asar` 内，无法离线读取实际版本；`<DSH 安装目录>\version` 显示 `44.7.0`（Electron 壳版本，与 DSH 语义版本不同），未能佐证。
 3. 宿主 `plugin_manager action=install_bundle` 的动作名与参数 —— 宿主代码在 asar 内不可读；`~/.dsh/profiles/desktop/.plugin-manager/logs/` 可证明 plugin_manager 确实执行过 git/pnpm 安装操作，但未记录动作名。
 4. 桌面通道的真实微信发送/OCR 全链路 —— 按审计约束未操作微信。
 5. `docs/CHANNELS.md:268-293` 的「真实环境验证清单 13 项」中标注 ⚠️ 的部分是否已实机验证 —— 无法从代码侧确认，建议维护者在发布说明中明确「哪些场景已实测、哪些仍是预期」。
