@@ -2,7 +2,7 @@
 
 把**你自己注册的微信小号**做成一个有人格、会发图、能联网查资料、省 token、低封号风险的 AI 聊天分身。
 
-> 📖 **新手先看 [docs/使用说明.md](docs/使用说明.md)**：安装/更新/卸载、扫码登录、被踢重登、白名单、在线时段、防封建议、桌面通道前置、FAQ 都在里面；版本更新记录见 [CHANGELOG.md](CHANGELOG.md)。当前版本 **0.2.1**。
+> 📖 **新手先看 [docs/使用说明.md](docs/使用说明.md)**：安装/更新/卸载、扫码登录、被踢重登、白名单、在线时段、防封建议、桌面通道前置、FAQ 都在里面；版本更新记录见 [CHANGELOG.md](CHANGELOG.md)。当前版本 **0.2.2**。
 >
 > 🛠 **环境自检**：`powershell -ExecutionPolicy Bypass -File scripts/pwsh/selfcheck.ps1 -Port <DSH端口>`（检查 Windows/微信窗口/OCR/构建产物/插件 API）。
 > 📚 进阶文档：[架构](docs/ARCHITECTURE.md) · [测试计划](docs/TEST-PLAN.md) · [提示词模板](docs/PROMPTS.md) · [验收标准](docs/ACCEPTANCE.md) · [开发规则](AGENTS.md)。
@@ -111,7 +111,7 @@ dsh-wechat-persona/
 │   ├── TEST-PLAN.md         # 分层测试与 12 个必查场景
 │   ├── PROMPTS.md           # 给 AI/贡献者的提示词模板
 │   ├── CHANNELS.md          # 四通道配置与风险
-│   ├── ACCEPTANCE.md        # 验收对账（含 0.2.1 证据）
+│   ├── ACCEPTANCE.md        # 验收对账（含 0.2.2 证据）
 │   └── PLAN.md              # 历史实现计划（部分项未实现，最新进展见 CHANGELOG）
 ├── CHANGELOG.md            # 更新记录（Keep a Changelog 中文）
 ├── LICENSE                 # MIT
@@ -134,7 +134,7 @@ npm run test:sandbox     # 受限沙箱环境用这个命令；普通环境也�
 > 为什么用 `--ignore-scripts`：本仓库无需要执行的安装脚本；在受限沙箱里带脚本安装可能因 spawn 受限而失败。
 > 测试命令区别：`npm run test:sandbox` 会加载 `test/core/sandbox-preload.mjs` 兼容层，**在受限沙箱里可正常运行**；直接 `npm test` 在受限沙箱中会因 esbuild/vitest 的进程限制（EPERM）失败，这属于预期，不是代码问题。
 
-当前版本 **0.2.1**（含设置界面、人格库/人格市场、桌面脚本视觉驱动重写与稳定性修复），从 0.1.0 升级请先看 [CHANGELOG.md](CHANGELOG.md) 与[配置迁移](#配置迁移)一节。
+当前版本 **0.2.2**（2026-10-31：提示词新增「像真人聊天」规则，回复更自然；0.2.1：设置界面、人格库/人格市场、桌面脚本视觉驱动重写与稳定性修复），从 0.1.0 升级请先看 [CHANGELOG.md](CHANGELOG.md) 与[配置迁移](#配置迁移)一节。
 
 ### 2. 安装到 DSH 桌面版 profile
 
@@ -474,7 +474,7 @@ npm run build         # tsc -> dist/
 
 ## 版本与更新记录
 
-- 当前版本：**0.2.1**（2026-10-31）
+- 当前版本：**0.2.2**（2026-10-31）
 - 完整更新记录：[CHANGELOG.md](CHANGELOG.md)（含 0.2.0 新增/变更/修复与 0.1.0 MVP 基线）
 - 面向使用者的完整手册：[docs/使用说明.md](docs/使用说明.md)
 - 通道配置与风险：[docs/CHANNELS.md](docs/CHANNELS.md) · 验收对账：[docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)

@@ -79,7 +79,7 @@ interface HostConfigEditor {
 /* ────────────────────────── 插件元信息 ────────────────────────── */
 
 /** 插件版本（与 package.json 保持一致）。 */
-const PLUGIN_VERSION = '0.2.1'
+const PLUGIN_VERSION = '0.2.2'
 
 export const name = 'dsh-wechat-persona'
 
