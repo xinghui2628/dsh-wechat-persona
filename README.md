@@ -13,6 +13,10 @@
 > 3. 插件不做身份冒充的欺骗性用途；对外回复会尽可能体现“AI 助手/小号”的设定边界，**不得用于假装真人骗取信任、钱财或隐私**。
 > 4. 插件只处理配置中的**白名单单聊**，不读取、不存储、不转发任何非白名单内容；支付、转账、验证码、登录凭据等敏感话题会被本地规则拦截并暂停。
 > 5. 使用前请自行确认所在地区法律法规与平台规则允许的范围。
+> 6. 本项目**免费开源、不收费、不接商业定制、不承诺技术支持 SLA**；**与腾讯/微信官方没有任何关系**，项目名中的 “wechat” 仅说明兼容对象。
+> 7. 数据流向：配置/记忆/审计日志都在本机；回复需要调用**你自己配置的 LLM 服务**，相关消息内容会发送给该服务商；项目**不内置遥测、不上报数据**。
+>
+> 完整条款：[免责声明 DISCLAIMER.md](DISCLAIMER.md) · [安全声明 SECURITY.md](SECURITY.md) · [贡献指南 CONTRIBUTING.md](CONTRIBUTING.md) · [作者与贡献者 CONTRIBUTORS.md](CONTRIBUTORS.md)
 
 ---
 
@@ -432,6 +436,8 @@ node scripts/verify-live.mjs   # 探测运行中宿主的设置界面 API；404 
 - 回复不涉及冒充身份欺骗、不索要隐私、不引导转账。
 - 本地审计日志（含 token 用量）可一键清空；记忆与状态都存在本地（默认 DSH 数据目录，可用 `dataDir` 指定）。
 - 插件不注册账号、不自动加好友、不群发、不进群。
+- 数据流：配置/记忆/审计只在本机；回复所需消息内容会发送给你配置的 LLM 服务商；**无内建遥测**。详见 [SECURITY.md](SECURITY.md)。
+- 项目免费开源，不收费、不接商业定制；与腾讯/微信官方无任何关系（详见 [DISCLAIMER.md](DISCLAIMER.md)）。
 
 ## 故障排查
 
@@ -453,7 +459,7 @@ node scripts/verify-live.mjs   # 探测运行中宿主的设置界面 API；404 
 
 ```powershell
 npm run typecheck     # tsc --noEmit（0 错误）
-npm run test:sandbox  # 受限沙箱环境可用；30 个测试文件 / 399 用例
+npm run test:sandbox  # 受限沙箱环境可用；30 个测试文件 / 400 用例
 npm test              # 普通环境用；受限沙箱会因 esbuild EPERM 失败（预期）
 npm run build         # tsc -> dist/
 ```
@@ -469,7 +475,7 @@ npm run build         # tsc -> dist/
 - [x] windows-vm 通道（IPC 参考 agent）
 - [x] 通道 Web 控制面板 → 已由 v0.2.0 设置界面「微信分身」实现（10 标签页 + Host API）
 - [x] 人格库与人格市场（v0.2.0：4 个内置人格、v2 人格包、SillyTavern 角色卡导入、远程索引）
-- [x] 桌面通道（desktop）视觉驱动脚本重写（截图 + OCR + 坐标操作；真实微信待实机校准）
+- [x] 桌面通道（desktop）视觉驱动脚本重写（截图 + OCR + 坐标操作；已在真实微信 4.1.x 实机验证）
 - [ ] 表情包情绪识别模型（当前为规则 + 关键词）
 
 ## 版本与更新记录
@@ -481,8 +487,20 @@ npm run build         # tsc -> dist/
 
 升级步骤见上文[更新与卸载](#6-更新与卸载)；配置差异见[配置迁移](#配置迁移)。
 
+## 作者与贡献者
+
+- **第一作者 / 维护者**：<你的名字或 GitHub 用户名>
+- **第二作者 / 共同维护**：<第二作者名字>
+- 其他贡献者：见 [CONTRIBUTORS.md](CONTRIBUTORS.md) 与 GitHub Contributors 页
+
+如果你是第二作者或贡献者，协作与署名方式见 [docs/RELEASE-GUIDE.md](docs/RELEASE-GUIDE.md) §5（Collaborator 权限、`Co-authored-by` 提交、CONTRIBUTORS/CITATION 记录）。
+
 ## License
 
 [MIT](LICENSE) © 2026 dsh-wechat-persona contributors
 
-本插件通过自动化方式操作微信客户端/手机通知，**违反《微信软件许可及服务协议》**，账号可能被限制、封禁，风险由使用者自行承担；详见文首「重要声明」。
+- **MIT 允许任何人（含商业）使用、修改、分发，但必须保留版权声明，且软件按“现状”提供、作者不承担任何责任。**
+- 完整免责条款见 [DISCLAIMER.md](DISCLAIMER.md)；安全与数据流见 [SECURITY.md](SECURITY.md)。
+- 若你希望禁止他人商业使用，需要改用「源可用」的非商业许可（不是 OSI 开源，会降低传播），取舍见 [docs/RELEASE-GUIDE.md](docs/RELEASE-GUIDE.md) §6。
+
+本插件通过自动化方式操作微信客户端/手机通知，**违反《微信软件许可及服务协议》**，账号可能被限制、封禁，风险由使用者自行承担；详见文首「重要声明」与 [DISCLAIMER.md](DISCLAIMER.md)。

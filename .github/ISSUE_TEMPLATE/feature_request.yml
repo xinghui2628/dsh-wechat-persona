@@ -1,0 +1,31 @@
+name: 功能建议（Feature request）
+description: 建议一个新功能或改进
+title: "[feat] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        本项目是个人学习/研究项目，维护精力有限；描述清楚场景和收益会大大提高被采纳的概率。
+        涉及微信自动化的功能请说明安全边界（如何保证不发错人/不读错人）。
+  - type: textarea
+    id: problem
+    attributes:
+      label: 你想解决什么问题？
+      description: 现在的痛点是什么（尽量具体：什么场景、多久一次、造成什么影响）
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 你建议怎么做？
+      description: 可以给方案或参考实现；说明对默认配置/兼容性的影响
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 备选方案 / 你考虑过的取舍
+  - type: dropdown
+    id: scope
+    attributes:
+      label: 影响范围
+      options: [桌面通道, 引擎/回复策略, 人格/提示词, 设置界面, 文档, 其他]

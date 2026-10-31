@@ -22,6 +22,12 @@
 - `npm run typecheck`、`npm run test:sandbox`（30 文件 / 400 用例）、`npm run build` 通过。
 - 脚本层 10 轮 list+send 压测：list 10/10、send 10/10，list P50/P95 = 1977/2071 ms，send P50/P95 = 2763/3475 ms（见 docs/ACCEPTANCE.md §13）。
 
+### 开源与社区文件（发布准备）
+- 新增 `DISCLAIMER.md`（完整免责声明：与腾讯无关、账号风险、无担保、数据流向、禁止用途）、`SECURITY.md`（数据存储/流向、安全使用建议、私密漏洞报告渠道、支持范围）、`CONTRIBUTING.md`（开发环境/提交规范/PR 流程/隐私红线）、`CONTRIBUTORS.md`（第一作者/第二作者/贡献者署名）、`CITATION.cff`（学术引用与作者列表）。
+- 新增 `.github/`：Bug/Feature Issue 模板、Issue 配置（引导先读 FAQ、漏洞走私密渠道）、PR 模板（测试与隐私检查清单）、CI（Windows 上 typecheck + test:sandbox + build）。
+- 新增 `docs/RELEASE-GUIDE.md`：GitHub 玩法、发布检查清单、标签/Release/Topics/分支保护、第二作者与 `Co-authored-by` 协作方式、防利益损失与备份建议。
+- README 顶部「重要声明」补充：免费开源/不收费/与腾讯无关系/数据流向；新增「作者与贡献者」章节与免责/安全/贡献/发布指南链接。
+
 ## [0.2.2] - 2026-10-31
 
 ### 提示词与拟人体验优化

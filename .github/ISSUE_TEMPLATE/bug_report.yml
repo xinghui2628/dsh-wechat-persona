@@ -1,0 +1,43 @@
+name: Bug 报告（Bug report）
+description: 报告一个 bug（请先搜索是否已有同类 Issue）
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        谢谢反馈！报告前请确认：
+        1. 已阅读 [使用说明](docs/使用说明.md) 与 [已知限制](docs/使用说明.md#104-已知限制)；
+        2. **不要**贴真实好友名 / wxid / 手机号 / API Key / 含用户名的完整路径，截图请先脱敏。
+  - type: input
+    id: version
+    attributes:
+      label: 版本
+      description: 插件版本（设置页「插件信息」/ `package.json`）与 DSH 版本
+      placeholder: "0.2.3 / DSH 0.2.1-rc.3"
+    validations:
+      required: true
+  - type: dropdown
+    id: channel
+    attributes:
+      label: 通道
+      options: [mock, desktop, phone-adb, windows-vm, 不确定]
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: 现象与复现步骤
+      description: 做了什么、期望什么、实际什么；可附脱敏后的日志片段（WXUIA_DEBUG=1 的日志）
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: 环境
+      description: Windows 版本、微信 PC 版本、显示缩放、OCR 语言包、Node 版本
+  - type: textarea
+    id: extra
+    attributes:
+      label: 其他
+      description: 截图（已脱敏）、审计日志片段、相关配置（去掉 API Key）

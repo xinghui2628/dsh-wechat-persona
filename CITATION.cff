@@ -1,0 +1,20 @@
+cff-version: 1.2.0
+message: "如果本文档或本项目对你的研究/学习有帮助，请按以下格式引用。"
+title: "dsh-wechat-persona: 微信小号 AI 人格聊天分身（DeepSeek Harness 插件）"
+type: software
+version: 0.2.3
+date-released: "2026-10-31"
+license: MIT
+authors:
+  - family-names: "<你的姓>"
+    given-names: "<你的名>"
+    alias: "<your-github-username>"
+  - family-names: "<第二作者姓>"
+    given-names: "<第二作者名>"
+    alias: "<coauthor-github-username>"
+repository-code: "https://github.com/<your-github-username>/dsh-wechat-persona"
+abstract: >-
+  一个在 DeepSeek Harness 中运行的微信小号 AI 人格聊天分身插件：
+  支持人格化回复、拟人化节奏、按联系人记忆、token 预算、风控熔断，
+  桌面通道通过 Windows 辅助功能/截图 OCR 在真实微信 PC 客户端上完成列表识别、
+  发送判定与防串聊读取。

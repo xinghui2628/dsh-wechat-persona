@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 使用问题 / 安装帮助
+    url: https://github.com/<your-github-username>/dsh-wechat-persona/discussions
+    about: 先看 docs/使用说明.md 和 FAQ；仍解决不了再到 Discussions 提问（不要贴隐私数据）
+  - name: 安全漏洞（私密报告）
+    url: https://github.com/<your-github-username>/dsh-wechat-persona/security/advisories/new
+    about: 请勿在公开 Issue 披露漏洞细节，见 SECURITY.md
