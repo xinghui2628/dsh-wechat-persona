@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * desktop 通道（PC 微信）：视觉驱动（截图 + Windows OCR + 点击/键入）。
  *
@@ -6,11 +5,15 @@
  * - 读取优先走「会话列表扫描」：一次 list 拿到未读行 + 预览文字，直接作为入站消息，
  *   避免逐个打开聊天；列表没命中或预览为空时回退到 read 脚本。
  * - 发送优先走「行坐标快路径」：把 list 拿到的 top/left/height 传给脚本，直接点会话行；
- *   没有行坐标时只允许在「当前已打开聊天」的情况下发送，否则拒绝以避免发错人。
+ *   v3.0.0 起没有行坐标一律拒绝发送（不再信任 lastActiveContact，避免用户切聊天后发错人）。
  * - 用户键鼠活跃 / 空闲门槛：发送前检查 user-activity.ps1 的 idle 毫秒，过短则让路。
  * - 所有自动化都在独立 powershell 子进程里执行，契约：stdout 单行 JSON。
  *
  * 注意：本文件由源文件事故后重写，保持精简；如需扩展请优先保证脚本契约兼容。
+ *
+ * v3.0.0 重构：原先内联的 OCR 纯函数（噪声评估/词典纠错/双引擎投票）已迁移到
+ * src/core/ocr/{normalize,correction,vote}.ts，并保留同名 re-export 不破坏外部导入。
+ * 本文件负责「IO 编排 + 通道状态机」，不再承担 OCR 算法。
  */
 
 import { spawn } from 'node:child_process';
@@ -19,6 +22,35 @@ import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { readFileSync, writeFileSync } from 'node:fs';
+
+import type { ChannelDeps } from '../channel.ts';
+import type { WechatPersonaConfig } from '../../config.ts';
+import {
+  DEFAULT_CORRECTION_WORDS,
+  correctOcrText,
+  looksGarbled,
+  pickBetterText,
+} from '../../core/ocr/correction.ts';
+import { textOverlapRatio } from '../../core/ocr/normalize.ts';
+import { mergeEngineVote } from '../../core/ocr/vote.ts';
+import type {
+  ChannelCapabilities,
+  ChannelId,
+  ChannelState,
+  ChannelStatus,
+  FileStoreLike,
+  InboundHandler,
+  InboundMessage,
+  Logger,
+  OutboundPart,
+  SendDelivery,
+  SendResult,
+} from '../../types.ts';
+
+// 兼容 v0.2.8 对外导出：纯函数实现已迁到 src/core/ocr/*，这里继续 re-export。
+export { correctOcrText, looksGarbled, pickBetterText, textOverlapRatio, mergeEngineVote };
+/** 兼容 v0.2.8 导出名：桌面通道的常用词纠错词典（实现见 core/ocr/correction.ts）。 */
+export const DEFAULT_OCR_DICT: readonly string[] = DEFAULT_CORRECTION_WORDS;
 
 const POLL_INTERVAL_MS = 2000;
 const SCRIPT_TIMEOUT_MS = 90000;
@@ -40,13 +72,56 @@ export type DesktopScriptRunner = (
   args: string[],
 ) => DesktopScriptResult | Promise<DesktopScriptResult>;
 
+/** 构造参数（测试可注入假脚本运行器与轮询间隔）。 */
+export interface DesktopChannelOptions {
+  config?: WechatPersonaConfig;
+  deps?: ChannelDeps;
+  runScript?: DesktopScriptRunner;
+  pollIntervalMs?: number;
+}
+
+/** 会话列表里一行聊天的定位信息（来自 wechat-uia list）。 */
+interface ChatRowBounds {
+  top: number;
+  left: number;
+  height: number;
+}
+
+/** wechat-uia list 返回的 rows[] 条目。 */
+interface DesktopListRow {
+  found?: boolean;
+  name?: string;
+  top?: number;
+  left?: number;
+  height?: number;
+  unread?: boolean;
+  preview?: string;
+  selected?: boolean;
+}
+
+/** wechat-uia read/send 返回的 messages[] 条目。 */
+interface DesktopScriptMessage {
+  id?: string;
+  text?: string;
+}
+
+/** wechat-uia 脚本的单行 JSON 输出（字段按需可选）。 */
+interface DesktopScriptPayload {
+  ok?: boolean;
+  error?: string;
+  rows?: DesktopListRow[];
+  messages?: DesktopScriptMessage[];
+  /** v3.0.0：发送结果三态（脚本回车后无法确认气泡时给 unknown，引擎据此不自动重发）。 */
+  delivery?: SendDelivery;
+}
+
 /** 解析 user-activity.ps1 的 stdout（纯数字 / {"idleMs":N} / idle=N）；解析不出返回 null。 */
 export function parseIdleMs(stdout: string): number | null {
   const text = String(stdout || '').trim();
   if (!text) return null;
   if (text.startsWith('{')) {
     try {
-      const json = JSON.parse(text);
+      const json = JSON.parse(text) as { idleMs?: unknown; idle?: unknown; idle_ms?: unknown };
       const value = Number(json?.idleMs ?? json?.idle ?? json?.idle_ms);
       if (Number.isFinite(value)) return value;
     } catch { /* 继续按文本解析 */ }
@@ -55,124 +130,51 @@ export function parseIdleMs(stdout: string): number | null {
   return match ? Number(match[1]) : null;
 }
 
-// OCR 噪声评估：Windows OCR 对生僻字/形近字经常给出残缺的偏旁部首（讠、刂、亻、扌…），
-// 或把中文错认成零散 ASCII。命中这些特征时用更高放大倍数再读一次，按噪声分投票选优，
-// 对应「多通道/多帧 OCR 投票」的业界做法，可显著降低「大肥鱼→大吧鱼」这类误读。
-const OCR_NOISE_CHARS = /[讠刂亻扌氵忄宀纟灬丨丿乛龴]/g;
-
-/** 文本的 OCR 噪声分：越低保真度越高。 */
-export function ocrNoiseScore(text) {
-  const raw = String(text || '').trim();
-  if (!raw) return 100;
-  const chinese = (raw.match(/[\u4e00-\u9fff]/g) || []).length;
-  const noise = (raw.match(OCR_NOISE_CHARS) || []).length;
-  const ascii = (raw.match(/[a-zA-Z0-9]/g) || []).length;
-  const ratio = chinese > 0 ? (noise + ascii * 0.5) / chinese : 0;
-  return noise + ascii * 0.5 + (chinese === 0 ? 10 : 0) + ratio * 30;
-}
-
-/** 读取到的文本是否可疑（疑似 OCR 误读），可疑时触发二次高倍识别。 */
-export function looksGarbled(text) {
-  const raw = String(text || '').trim();
-  if (!raw) return false;
-  if ((raw.match(OCR_NOISE_CHARS) || []).length > 0) return true;
-  const chinese = (raw.match(/[\u4e00-\u9fff]/g) || []).length;
-  const ascii = (raw.match(/[a-zA-Z]/g) || []).length;
-  if (chinese >= 2 && ascii >= Math.max(2, chinese / 3)) return true;
-  return ocrNoiseScore(raw) >= 8;
-}
-
-/** 两段候选文本里选更可信的一段：噪声低者优先，噪声接近时取更完整的。 */
-export function pickBetterText(a, b) {
-  const x = String(a || '').trim();
-  const y = String(b || '').trim();
-  if (!x) return y;
-  if (!y) return x;
-  const sx = ocrNoiseScore(x);
-  const sy = ocrNoiseScore(y);
-  if (Math.abs(sx - sy) >= 1) return sx < sy ? x : y;
-  return y.length > x.length ? y : x;
-}
-
-// ── 常用词字典纠错（性价比最高的离线方案）──────────────────────────────
-// Windows OCR 对常见词里的形近字容易认错（大肥鱼→大吧鱼、幽默度→幽黑度）。
-// 用一份小规模、强领域的词典做「同长度、只差一个字」的受控替换：只改高频词，
-// 不动普通文本，避免误伤；词表可由调用方追加（例如白名单联系人名）。
-export const DEFAULT_OCR_DICT = [
-  '大肥鱼', '本鱼', '幽默度', '幽默', '暗号', '哦鲸鲸', '拉高', '表情包', '红包', '转账',
-  '聊天', '微信', '测试', '机器人', '人格', '分身', '白名单', '空闲', '预算', '审计',
-  '消息', '好友', '语音', '图片', '截图', '识别', '误读', '形近字', '吐槽', '键盘',
-];
-
-/** 用常用词词典纠正 OCR 形近字（只替换高频词，同长度且至多差一个字）。 */
-export function correctOcrText(text, extraWords = []) {
-  const src = String(text || '');
-  if (!src) return src;
-  // 只对长度≥3的词做「差一个字」替换：2 字词只差一个字就等于改掉一半，
-  // 太容易误伤正常文本（如「今天」被改成「聊天」），所以 2 字词只做精确匹配（等于不替换）。
-  const words = [...new Set([...(DEFAULT_OCR_DICT || []), ...(extraWords || [])])]
-    .filter((w) => typeof w === 'string' && w.length >= 3 && w.length <= 6 && /^[\u4e00-\u9fff]+$/.test(w))
-    .sort((a, b) => b.length - a.length);
-  const chars = src.split('');
-  const used = new Array(chars.length).fill(false);
-  for (const word of words) {
-    const len = word.length;
-    for (let i = 0; i + len <= chars.length; i++) {
-      let conflict = false;
-      for (let k = 0; k < len; k++) { if (used[i + k]) { conflict = true; break; } }
-      if (conflict) continue;
-      const frag = chars.slice(i, i + len).join('');
-      if (frag === word) continue;
-      if (!/^[\u4e00-\u9fff]+$/.test(frag)) continue;
-      let matched = 0;
-      for (let k = 0; k < len; k++) { if (frag[k] === word[k]) matched++; }
-      if (matched < len - 1) continue;
-      for (let k = 0; k < len; k++) { chars[i + k] = word[k]; used[i + k] = true; }
-    }
-  }
-  return chars.join('');
-}
-
-/** 两段文本的字符重合度（多重集交集*2/总长），用于双引擎 OCR 结果投票。 */
-export function textOverlapRatio(a, b) {
-  const x = String(a || '').replace(/[\s\p{P}]+/gu, '');
-  const y = String(b || '').replace(/[\s\p{P}]+/gu, '');
-  if (!x || !y) return 0;
-  const counts = new Map();
-  for (const ch of x) counts.set(ch, (counts.get(ch) || 0) + 1);
-  let common = 0;
-  for (const ch of y) {
-    const n = counts.get(ch) || 0;
-    if (n > 0) { counts.set(ch, n - 1); common++; }
-  }
-  return (2 * common) / (x.length + y.length);
-}
-
-/** 双引擎投票：系统 OCR 与第二引擎（RapidOCR）文本重合度高时，取更完整/噪声更低的一份。 */
-export function mergeEngineVote(winText, engineText) {
-  const win = String(winText || '').trim();
-  const eng = String(engineText || '').trim();
-  if (!eng) return win;
-  if (!win) return eng;
-  if (textOverlapRatio(win, eng) < 0.35) return win;
-  const sw = ocrNoiseScore(win);
-  const se = ocrNoiseScore(eng);
-  if (eng.length > win.length + 1) return eng;
-  if (eng.length >= win.length && se < sw - 0.5) return eng;
-  return win;
+/** 校验脚本返回的 delivery 字段；非法/缺失返回 undefined（喂给引擎走「按错误文案保守推断」分支）。 */
+function normalizeSendDelivery(value: unknown): SendDelivery | undefined {
+  return value === 'sent' || value === 'not-sent' || value === 'unknown' ? value : undefined;
 }
 
 export class DesktopChannel {
-  id: any = 'desktop';
+  readonly id: ChannelId = 'desktop';
   // 桌面视觉驱动目前只能发文本：表情/图片/语音没有 UIA 实现。
   // 声明后引擎会自动把表情概率降为 0，避免「选了表情→发送被拒→错误计数」。
-  capabilities: any = { stickers: false, images: false, voice: false };
+  readonly capabilities: ChannelCapabilities = { stickers: false, images: false, voice: false };
 
-  constructor({ config, deps, runScript, pollIntervalMs }: any = {}) {
-    this.config = config;
-    this.deps = deps;
-    this.logger = deps.logger;
-    this.store = deps.store;
+  config!: WechatPersonaConfig;
+  deps!: ChannelDeps;
+  logger!: Logger;
+  store!: FileStoreLike;
+  handler?: InboundHandler;
+  injectedRunner: DesktopScriptRunner | null = null;
+  pollIntervalMs = POLL_INTERVAL_MS;
+  state: ChannelState = 'stopped';
+  detail = 'not started';
+  lastError?: string;
+  since = 0;
+  lastInboundAt?: number;
+  lastSendAt?: number;
+  stopped = true;
+  timer: ReturnType<typeof setInterval> | null = null;
+  busy = false;
+  failures = 0;
+  pauseUntil = 0;
+  lastRows = new Map<string, ChatRowBounds>();
+  lastActiveContact = '';
+  lastActiveContactAt = 0;
+  // 当前打开的会话收到新消息时不会出现未读红点（聊天窗口已打开=已读），
+  // 列表里的绿底选中行文字 OCR 也常常认不出来，所以对最近交互的会话做低频轮询读取，避免漏回。
+  lastOpenReadAt = new Map<string, number>();
+  inFlight = new Set<string>();
+  // 自己刚发出的文本（按联系人）：防止把「自己的回复」误判成对方的新消息。
+  lastSentText = new Map<string, string[]>();
+
+  constructor(options: DesktopChannelOptions = {}) {
+    const { config, deps, runScript, pollIntervalMs } = options;
+    this.config = config as WechatPersonaConfig;
+    this.deps = deps as ChannelDeps;
+    this.logger = (deps as ChannelDeps).logger;
+    this.store = (deps as ChannelDeps).store;
     this.injectedRunner = typeof runScript === 'function' ? runScript : null;
     this.pollIntervalMs = Number(pollIntervalMs) > 0 ? Number(pollIntervalMs) : POLL_INTERVAL_MS;
     this.state = 'stopped';
@@ -198,32 +200,32 @@ export class DesktopChannel {
     this.loadSentState();
   }
 
-  loadSentState() {
+  loadSentState(): void {
     try {
       const raw = readFileSync(SENT_STATE_PATH, 'utf8');
-      const obj = JSON.parse(raw);
+      const obj = JSON.parse(raw) as Record<string, unknown>;
       for (const [name, value] of Object.entries(obj || {})) {
-        const list = Array.isArray(value) ? value : [value];
-        const texts = list.filter((x) => typeof x === 'string' && x);
+        const list: unknown[] = Array.isArray(value) ? value : [value];
+        const texts = list.filter((x): x is string => typeof x === 'string' && x.length > 0);
         if (texts.length > 0) this.lastSentText.set(name, texts.slice(-MAX_SENT_HISTORY));
       }
     } catch { /* 首次运行或文件损坏，忽略 */ }
   }
 
-  saveSentState() {
+  saveSentState(): void {
     try {
-      const obj = {};
+      const obj: Record<string, string[]> = {};
       for (const [name, texts] of this.lastSentText) obj[name] = texts;
       writeFileSync(SENT_STATE_PATH, JSON.stringify(obj), 'utf8');
     } catch { /* 写临时文件失败不影响主流程 */ }
   }
 
-  normalizeText(text) {
+  normalizeText(text: string): string {
     return String(text || '').replace(/[\s，。！？、,.!?；;：:""''（）()【】\[\]…~～-]/g, '');
   }
 
   /** 记录一条刚发送的文本（保留最近 MAX_SENT_HISTORY 条，供自回声识别用）。 */
-  rememberSentText(label, text) {
+  rememberSentText(label: string, text: string): string[] {
     const trimmed = String(text || '').slice(0, 200);
     const history = this.lastSentText.get(label) || [];
     const next = [...history.filter((item) => item !== trimmed), trimmed].slice(-MAX_SENT_HISTORY);
@@ -232,12 +234,12 @@ export class DesktopChannel {
   }
 
   /** 预览文字是否是我们自己刚发出去的消息（避免自问自答/自言自语）。 */
-  isOwnPreview(name, preview) {
+  isOwnPreview(name: string, preview: string): boolean {
     return this.isOwnText(name, preview);
   }
 
   /** 一段文字是否是我们自己刚发过的内容（带 OCR 容错）。 */
-  isOwnText(name, text) {
+  isOwnText(name: string, text: string): boolean {
     const own = this.lastSentText.get(name);
     if (!own || own.length === 0) return false;
     const p = this.normalizeText(text);
@@ -251,7 +253,7 @@ export class DesktopChannel {
    * 「你」→「亻克」、「复读」→「亻读」），所以整串相等之外还要比较前缀和字符重合率。
    * 宁可把好友的短回复漏掉一次，也不要把自己的话当成对方消息来自言自语。
    */
-  looksLikeOwnText(p, s) {
+  looksLikeOwnText(p: string, s: string): boolean {
     if (p.length < 2 || s.length < 2) return false;
     if (p === s) return true;
     if (s.length >= 4 && (s.includes(p) || p.includes(s))) return true;
@@ -266,11 +268,11 @@ export class DesktopChannel {
     return false;
   }
 
-  scriptPath(name) {
+  scriptPath(name: DesktopScriptName): string {
     return fileURLToPath(new URL(`../../../scripts/pwsh/${name}.ps1`, import.meta.url));
   }
 
-  runScript(name, args) {
+  runScript(name: DesktopScriptName, args: string[], signal?: AbortSignal): Promise<DesktopScriptResult> {
     if (this.injectedRunner) {
       return Promise.resolve(this.injectedRunner(name, args));
     }
@@ -283,32 +285,64 @@ export class DesktopChannel {
       );
       let out = '';
       let err = '';
+      let settled = false;
+      const finish = (result: DesktopScriptResult): void => {
+        if (settled) return;
+        settled = true;
+        resolve(result);
+      };
       const timer = setTimeout(() => {
         try { child.kill(); } catch { /* ignore */ }
-        resolve({ code: -1, stdout: out, stderr: err || 'timeout' });
+        finish({ code: -1, stdout: out, stderr: err || 'timeout' });
       }, SCRIPT_TIMEOUT_MS);
-      child.stdout.on('data', (d) => { out += d.toString('utf8'); });
-      child.stderr.on('data', (d) => { err += d.toString('utf8'); });
-      child.on('error', (e) => { clearTimeout(timer); resolve({ code: -1, stdout: out, stderr: String(e) }); });
-      child.on('close', (code) => { clearTimeout(timer); resolve({ code: code ?? -1, stdout: out, stderr: err }); });
+      const onAbort = (): void => {
+        clearTimeout(timer);
+        try { child.kill(); } catch { /* ignore */ }
+        finish({ code: -1, stdout: out, stderr: err || 'aborted' });
+      };
+      if (signal) {
+        if (signal.aborted) {
+          onAbort();
+        } else {
+          signal.addEventListener('abort', onAbort, { once: true });
+        }
+      }
+      child.stdout.on('data', (chunk: Buffer) => { out += chunk.toString('utf8'); });
+      child.stderr.on('data', (chunk: Buffer) => { err += chunk.toString('utf8'); });
+      child.on('error', (error: Error) => {
+        clearTimeout(timer);
+        signal?.removeEventListener('abort', onAbort);
+        finish({ code: -1, stdout: out, stderr: String(error) });
+      });
+      child.on('close', (code: number | null) => {
+        clearTimeout(timer);
+        signal?.removeEventListener('abort', onAbort);
+        finish({ code: code ?? -1, stdout: out, stderr: err });
+      });
     });
   }
 
-  parseJson(result) {
+  parseJson(result: DesktopScriptResult): DesktopScriptPayload | null {
     const line = String(result.stdout || '')
       .split(/\r?\n/)
       .map((s) => s.trim())
       .filter((s) => s.startsWith('{') && s.endsWith('}'))
       .pop();
     if (!line) return null;
-    try { return JSON.parse(line); } catch { return null; }
+    try {
+      const parsed: unknown = JSON.parse(line);
+      if (!parsed || typeof parsed !== 'object') return null;
+      return parsed as DesktopScriptPayload;
+    } catch {
+      return null;
+    }
   }
 
   /**
    * OCR 二次识别投票：读取到的文本可疑时，用 -Upscale 4 再读一遍，取噪声更低/更完整的一份。
    * 第一遍不确定就不硬猜，多读一帧再投票，比拿错字去回复便宜得多。
    */
-  async recheckGarbledText(name, args, text) {
+  async recheckGarbledText(name: string, args: string[], text: string): Promise<string> {
     if (!looksGarbled(text)) return correctOcrText(text, this.contactNames());
     let best = text;
     // 多帧投票：可疑时换不同放大倍数各读一帧，取噪声最低/最完整的一份。
@@ -354,11 +388,11 @@ export class DesktopChannel {
     return correctOcrText(best, this.contactNames());
   }
 
-  contactNames() {
+  contactNames(): string[] {
     return (this.config.whitelist || []).map((w) => w.name || w.id).filter(Boolean);
   }
 
-  async start(handler) {
+  async start(handler: InboundHandler): Promise<void> {
     const cfg = this.config.channels.desktop;
     if (!this.config.enabled) {
       this.lastError = '桌面通道已禁用';
@@ -391,16 +425,16 @@ export class DesktopChannel {
     await this.tick();
   }
 
-  async stop() {
+  async stop(): Promise<void> {
     this.stopped = true;
     if (this.timer) { clearInterval(this.timer); this.timer = null; }
     this.setState('stopped', 'stopped');
     this.logger.info?.('[desktop] 已停止');
   }
 
-  status(): any {
+  status(): ChannelStatus {
     return {
-      id: 'desktop',
+      id: this.id,
       state: this.state,
       detail: this.detail,
       lastError: this.lastError,
@@ -410,13 +444,13 @@ export class DesktopChannel {
     };
   }
 
-  setState(state, detail) {
+  setState(state: ChannelState, detail: string): void {
     this.state = state;
     this.detail = detail;
     this.since = Date.now();
   }
 
-  async tick() {
+  async tick(): Promise<void> {
     if (this.stopped || this.busy) return;
     this.busy = true;
     try {
@@ -438,7 +472,7 @@ export class DesktopChannel {
     }
   }
 
-  async readInboundOnce() {
+  async readInboundOnce(): Promise<void> {
     const contacts = this.contactNames();
     if (!contacts.length) return;
     const cfg = this.config.channels.desktop;
@@ -457,11 +491,11 @@ export class DesktopChannel {
       throw new Error(`list 失败 code=${list.code} ${String(list.stderr || '').slice(0, 200)}`);
     }
 
-    const needRead = [];
+    const needRead: string[] = [];
     // 未读预览先不直接投递：列表预览是 OCR 结果，消息稍长就会被截断
     // （实测「我想拉高你的幽默度」只读到「我想拉高你的幽」丢了「默度」），
     // 只拿预览去回复会让模型对着半句话回「啥意思」。先读一次全文，读不到再退回预览。
-    const previewRows = [];
+    const previewRows: Array<{ name: string; preview: string; selected: boolean }> = [];
     for (const row of parsed.rows) {
       if (!row || !row.found) {
         // 列表里没认出来的联系人不要触发 read：read 会走 Enter-Chat（Ctrl+F 搜索 + 抢前台），
@@ -469,25 +503,28 @@ export class DesktopChannel {
         this.logger.debug?.(`[desktop] list 未识别联系人，跳过 read：${row?.name ?? '?'}`);
         continue;
       }
-      this.lastRows.set(row.name, { top: row.top || 0, left: row.left || 0, height: row.height || 0 });
+      const rowName = String(row.name || '');
+      if (!rowName) continue;
+      this.lastRows.set(rowName, { top: row.top || 0, left: row.left || 0, height: row.height || 0 });
       if (row.unread && typeof row.preview === 'string' && row.preview.trim().length > 0) {
-        if (this.isOwnPreview(row.name, row.preview)) {
-          this.logger.debug?.(`[desktop] 跳过自己的消息预览：${row.name} ${row.preview.slice(0, 30)}`);
+        if (this.isOwnPreview(rowName, row.preview)) {
+          this.logger.debug?.(`[desktop] 跳过自己的消息预览：${rowName} ${row.preview.slice(0, 30)}`);
           continue;
         }
-        previewRows.push({ name: row.name, preview: row.preview, selected: !!row.selected });
+        previewRows.push({ name: rowName, preview: row.preview, selected: !!row.selected });
       } else if (row.unread) {
-        needRead.push(row.name);
+        needRead.push(rowName);
       }
     }
 
     // 当前打开的会话收到新消息时列表不会有未读红点（聊天窗口已打开=已读），
     // 列表 OCR 里的绿底选中行文字也常常识别不出来，所以对「当前正在看的会话」做低频轮询读取，
     // 否则「回完一条后对方继续发」会一直漏回。脚本用 -NoSearch 只读已打开的聊天，绝不会 Ctrl+F 搜索。
-    const selectedRow = parsed.rows.find((row) => row && row.found && row.selected);
-    const openName = selectedRow ? String(selectedRow.name) : '';
-    const noSearchNames = new Set();
+    const selectedRow = parsed.rows.find((row) => !!row && !!row.found && !!row.selected);
+    const openName = selectedRow ? String(selectedRow.name || '') : '';
+    const noSearchNames = new Set<string>();
     if (
+      selectedRow &&
       openName &&
       !selectedRow.unread &&
       Date.now() - (this.lastOpenReadAt.get(openName) || 0) > 8000 &&
@@ -501,14 +538,14 @@ export class DesktopChannel {
 
     // 预览校验：最多取 2 条未读预览去读窗口全文（避免一次轮询读太多），
     // 读到的全文若比预览更完整就用全文；读不到就退回预览投递，保证不漏消息。
-    const previewFallbacks = [];
+    const previewFallbacks: Array<{ name: string; preview: string; selected: boolean }> = [];
     for (let index = 0; index < previewRows.length; index += 1) {
       const item = previewRows[index];
       if (index >= 2) {
         previewFallbacks.push(item);
         continue;
       }
-      const args = [
+      const args: string[] = [
         '-Action', 'read',
         '-WindowTitle', cfg.windowTitle || '微信',
         '-Contact', item.name,
@@ -520,8 +557,9 @@ export class DesktopChannel {
       }
       const read = await this.runScript('wechat-uia', args);
       const data = this.parseJson(read);
-      const messages = data && data.ok === true && Array.isArray(data.messages) ? data.messages : [];
-      let verified = null;
+      const messages: DesktopScriptMessage[] =
+        data && data.ok === true && Array.isArray(data.messages) ? data.messages : [];
+      let verified: { text: string; id?: string } | null = null;
       for (const message of messages) {
         const text = String(message?.text || '').trim();
         if (!text) continue;
@@ -544,7 +582,7 @@ export class DesktopChannel {
 
     for (const name of needRead.filter(Boolean)) {
       if (this.stopped) return;
-      const args = [
+      const args: string[] = [
         '-Action', 'read',
         '-WindowTitle', cfg.windowTitle || '微信',
         '-Contact', name,
@@ -575,20 +613,20 @@ export class DesktopChannel {
     }
   }
 
-  emitPreview(name, preview) {
+  emitPreview(name: string, preview: string): void {
     const text = preview.trim();
     const id = 'preview-' + createHash('sha1').update(`${name}|${text}|${Math.floor(Date.now() / 60000)}`).digest('hex').slice(0, 16);
     this.emitMessage(name, text, id);
   }
 
-  emitMessage(name, text, rawId) {
+  emitMessage(name: string, text: string, rawId?: string): void {
     const id = rawId || 'msg-' + createHash('sha1').update(`${name}|${text}`).digest('hex').slice(0, 16);
     const key = `${name}|${id}`;
     if (this.inFlight.has(key)) return;
     this.inFlight.add(key);
     if (this.inFlight.size > 200) this.inFlight.clear();
     this.lastInboundAt = Date.now();
-    const message = {
+    const message: InboundMessage = {
       id,
       contactId: name,
       contactName: name,
@@ -605,7 +643,7 @@ export class DesktopChannel {
     }
   }
 
-  async send(contactId, part) {
+  async send(contactId: string, part: OutboundPart, signal?: AbortSignal): Promise<SendResult> {
     if (part?.kind !== 'text') {
       return { ok: false, error: '桌面通道暂不支持发送表情（UIA 表情面板未实现）' };
     }
@@ -620,11 +658,15 @@ export class DesktopChannel {
     const whitelistEntry = (this.config.whitelist || []).find((w) => w.id === contactId);
     const label = whitelistEntry?.name ? whitelistEntry.name : contactId;
     const row = this.lastRows.get(label) || this.lastRows.get(contactId);
-    const trustedCurrent =
-      Date.now() - this.lastActiveContactAt < 180000 ? this.lastActiveContact : '';
-
-    if (!row && trustedCurrent !== label) {
-      return { ok: false, error: `缺少聊天定位信息（既不是当前会话也没有行坐标），已拒绝发送以避免发错人：${contactId}` };
+    // v3.0.0 安全修复（REL-P0-3）：不再把「最近 180s 内活跃过的会话」当作可发送目标。
+    // 用户可能在生成/拟人延迟期间切走聊天，只凭 lastActiveContact 会把消息发进别人的会话；
+    // 这里要求必须拿到 list 的行坐标，脚本再用标题 OCR + 绿底选中双重校验。
+    // 定位不到就拒绝：宁可少发一次，也绝不发错人。
+    if (!row) {
+      return {
+        ok: false,
+        error: `缺少聊天定位信息（会话列表里没有 ${contactId} 的行坐标），已拒绝发送以避免发错人`,
+      };
     }
 
     if (this.pauseUntil > Date.now()) {
@@ -647,25 +689,29 @@ export class DesktopChannel {
       return { ok: false, error };
     }
 
-    const args = [
+    const args: string[] = [
       '-Action', 'send',
       '-WindowTitle', cfg.windowTitle || '微信',
       '-Contact', label,
       '-TextBase64', Buffer.from(text, 'utf8').toString('base64'),
-      '-CurrentContact', trustedCurrent,
     ];
+    // 不传 -CurrentContact：脚本侧 trustedOpen 分支会跳过标题 OCR，属于 v0.2.8 的跨联系人误发根因之一，
+    // v3.0.0 起发送必须走「行坐标 + 标题校验」路径（定位失败由脚本返回 not-sent）。
     if (row) {
       args.push('-RowTop', String(row.top), '-RowLeft', String(row.left), '-RowHeight', String(row.height));
     }
 
-    const result = await this.runScript('wechat-uia', args);
+    const result = await this.runScript('wechat-uia', args, signal);
     const data = this.parseJson(result);
+    const delivery = normalizeSendDelivery(data?.delivery);
     if (!data || data.ok !== true) {
       const error = data?.error || `发送脚本失败 code=${result.code} ${String(result.stderr || '').slice(0, 200)}`;
       this.lastError = error;
       this.setState('degraded', error);
-      this.logger.warn?.(`[desktop] 发送 ${contactId} 失败：${error}`);
-      return { ok: false, error };
+      this.logger.warn?.(`[desktop] 发送 ${contactId} 失败（delivery=${delivery ?? 'unknown'}）：${error}`);
+      const failure: SendResult = { ok: false, error };
+      if (delivery) failure.delivery = delivery;
+      return failure;
     }
     this.lastSendAt = Date.now();
     this.lastActiveContact = label;
@@ -673,10 +719,10 @@ export class DesktopChannel {
     this.rememberSentText(label, text);
     this.saveSentState();
     this.logger.debug?.(`[desktop] 已发送给 ${contactId}（${text.length} 字）`);
-    return { ok: true };
+    return { ok: true, delivery: 'sent' };
   }
 
-  async userIdleMs() {
+  async userIdleMs(): Promise<number> {
     try {
       const result = await this.runScript('user-activity', []);
       if (!result || result.code !== 0) return -1;

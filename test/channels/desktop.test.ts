@@ -204,7 +204,7 @@ describe('DesktopChannel', () => {
     // start 的首轮 tick 应已通过 list 拿到「张三」行坐标。
 
     const result = await harness.channel.send('wxid_zhangsan', { kind: 'text', text: '晚上好' })
-    expect(result).toEqual({ ok: true })
+    expect(result).toEqual({ ok: true, delivery: 'sent' })
     expect(harness.channel.status().lastSendAt).toBeTypeOf('number')
 
     const sendCall = recorder.calls.filter((call) => call.script === 'wechat-uia').at(-1)!
@@ -214,6 +214,8 @@ describe('DesktopChannel', () => {
     expect(sendCall.args).toContain('张三')
     expect(sendCall.args).toContain('-RowTop')
     expect(sendCall.args).toContain('100')
+    // P0-3：发送不再传 -CurrentContact（否则脚本 trustedOpen 会跳过标题 OCR 校验）。
+    expect(sendCall.args).not.toContain('-CurrentContact')
     const encoded = sendCall.args[sendCall.args.indexOf('-TextBase64') + 1]!
     expect(Buffer.from(encoded, 'base64').toString('utf8')).toBe('晚上好')
     expect(harness.channel.lastSentText.get('张三')).toEqual(['晚上好'])
@@ -250,6 +252,39 @@ describe('DesktopChannel', () => {
     await harness.start()
     const result = await harness.channel.send('wxid_zhangsan', { kind: 'text', text: '发不出去' })
     expect(result).toEqual({ ok: false, error: '找不到输入框' })
+    await harness.channel.stop()
+  })
+
+  it('脚本返回 delivery 三态时原样透传（unknown 交引擎决定不重发）', async () => {
+    const recorder = recordRunner((script) => {
+      if (script === 'user-activity') return USER_IDLE
+      if (script === 'wechat-uia') {
+        return { code: 0, stdout: '{"ok":false,"error":"回车后未确认气泡","delivery":"unknown"}', stderr: '' }
+      }
+      return UIA_OK
+    })
+    const harness = makeDesktopHarness({ runScript: recorder.runner })
+    harness.channel.lastRows.set('张三', { top: 100, left: 160, height: 80 })
+    await harness.start()
+    const result = await harness.channel.send('wxid_zhangsan', { kind: 'text', text: '在吗' })
+    expect(result).toEqual({ ok: false, error: '回车后未确认气泡', delivery: 'unknown' })
+    await harness.channel.stop()
+  })
+
+  it('P0-3：最近活跃会话恰好是目标联系人、但没有行坐标时也拒绝发送', async () => {
+    const recorder = recordRunner((script) => {
+      if (script === 'user-activity') return USER_IDLE
+      return { code: 0, stdout: JSON.stringify({ ok: true, rows: [] }), stderr: '' }
+    })
+    const harness = makeDesktopHarness({ runScript: recorder.runner })
+    await harness.start()
+    // 模拟 v0.2.8 的信任路径：上一次成功发送给张三，lastActiveContact 在 180s 窗口内。
+    harness.channel.lastActiveContact = '张三'
+    harness.channel.lastActiveContactAt = Date.now()
+    const result = await harness.channel.send('wxid_zhangsan', { kind: 'text', text: '在吗' })
+    expect(result.ok).toBe(false)
+    expect(result.error).toContain('缺少聊天定位信息')
+    expect(recorder.calls.filter((call) => call.args.includes('send'))).toEqual([])
     await harness.channel.stop()
   })
 
@@ -567,7 +602,8 @@ describe('OCR 常用词字典纠错（离线，不联网）', () => {
       const garbled2 = `我想拉高你的幽默${variants[(i + 3) % variants.length]}，第${i}次测试`
       expect(correctOcrText(garbled), `第 ${i} 次`).toBe(`我想拉高你的幽默度，第${i}次测试`)
       expect(correctOcrText(garbled2), `第 ${i} 次(尾字)`).toBe(`我想拉高你的幽默度，第${i}次测试`)
-      expect(correctOcrText(`咱俩定个暗号，我说大${variants[(i + 5) % variants.length]}鱼`), `第 ${i} 次(人名)`)
+      // v3.0.0：人格名/联系人名不再硬编码进默认真词表（隐私与可配置性），由调用方经 extraWords 传入。
+      expect(correctOcrText(`咱俩定个暗号，我说大${variants[(i + 5) % variants.length]}鱼`, ['大肥鱼']), `第 ${i} 次(人名)`)
         .toBe('咱俩定个暗号，我说大肥鱼')
     }
   })
