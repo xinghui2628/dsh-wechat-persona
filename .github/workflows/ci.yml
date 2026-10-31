@@ -1,28 +1,137 @@
+# CI：离线门禁 + 质量检查
+#
+# 设计原则（v3.0.0）：
+# - 全部步骤离线可跑：不访问真实微信、不调用任何外部 LLM / 搜索服务、不操作桌面窗口。
+# - 主链路（Windows）：依赖安装 → 类型检查 → 沙箱测试 → 敏感信息扫描 → 构建 → OCR bench 冒烟。
+# - OCR bench 冒烟只读 test/fixtures/ocr-corpus 下的合成图；WinRT 引擎或 Python/Pillow
+#   在本机不可用时显式打印 ::notice:: 并跳过（marked skip），不让 CI 因环境缺失而红。
+# - Linux runner 上 WinRT OCR 不可能可用，bench 冒烟步骤显式 marked skip（见 linux-guard job）。
+# - 本仓库 private:true，CI 不负责发布；发布由维护者手动执行（见 docs/RELEASE-CHECKLIST.md）。
 name: CI
 
 on:
   push:
-    branches: [master, main]
+    branches: [master, main, 'feat/**']
   pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TZ: Asia/Shanghai
+  # bench 的变体预处理与 RapidOCR 都通过该变量定位 Python（缺失时 bench 冒烟会跳过）
+  OCR_BENCH_PYTHON: python
 
 jobs:
-  verify:
+  verify-windows:
+    name: verify (windows-latest, Node 22)
     runs-on: windows-latest
-    # 插件的在线时段/每日预算/限频都按本地时区（Asia/Shanghai）计算；
-    # GitHub 托管 runner 默认 UTC，会让依赖时钟的测试失败，这里统一时区。
-    env:
-      TZ: Asia/Shanghai
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: '22'
           cache: npm
-      - name: Install
-        run: npm ci --ignore-scripts || npm install --ignore-scripts
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
       - name: Typecheck
         run: npm run typecheck
-      - name: Test
+
+      - name: Sandbox tests
         run: npm run test:sandbox
-      - name: Build
+
+      - name: Sensitive data scan
+        run: node scripts/check-sensitive.mjs
+
+      - name: Build (tsc emit)
         run: npm run build
+
+      - name: OCR bench smoke (offline, WinRT; marked skip when unavailable)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          # 前置探测 1：WinRT 中文 OCR（Windows OCR 语言包）
+          $probeOk = $false
+          $img = Get-ChildItem -Path 'test/fixtures/ocr-corpus/images' -Filter '*.png' -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+          if ($null -ne $img -and (Test-Path 'scripts/pwsh/ocr-winrt.ps1')) {
+            $probeLines = & powershell -NoProfile -ExecutionPolicy Bypass -File 'scripts/pwsh/ocr-winrt.ps1' -Path $img.FullName 2>$null
+            if ($LASTEXITCODE -eq 0 -and $probeLines) {
+              try {
+                $probe = ($probeLines | Select-Object -Last 1) | ConvertFrom-Json
+                $probeOk = ($probe.ok -eq $true)
+              } catch {
+                $probeOk = $false
+              }
+            }
+          }
+          if (-not $probeOk) {
+            Write-Host '::notice title=OCR bench smoke skipped::WinRT OCR 不可用（runner 缺中文 OCR 语言包或非 Windows 桌面）→ 显式跳过离线 OCR bench 冒烟（marked skip）'
+            exit 0
+          }
+
+          # 前置探测 2：bench 生成 upscale2x / gray_contrast 变体需要 Python + Pillow
+          $pillowOk = $false
+          try {
+            & python -c "import PIL; print(PIL.__version__)" *> $null
+            $pillowOk = ($LASTEXITCODE -eq 0)
+          } catch {
+            $pillowOk = $false
+          }
+          if (-not $pillowOk) {
+            Write-Host '::notice title=OCR bench smoke skipped::缺少 Python+Pillow（bench 变体预处理依赖）→ 显式跳过离线 OCR bench 冒烟（marked skip）'
+            exit 0
+          }
+
+          # 真跑 1 张 clear 场景的 WinRT 原始图（不联网、不截图、不发送）
+          node scripts/ocr/bench.mjs --engine=winrt --limit=1 --scenario=clear --pipeline=raw --out-dir=test/fixtures/ocr-corpus/results/ci
+          if ($LASTEXITCODE -ne 0) { throw "OCR bench smoke 失败（exit=$LASTEXITCODE）" }
+          Write-Host '::notice title=OCR bench smoke passed::离线 OCR bench 冒烟通过（winrt × clear × 1 张，pipeline=raw）'
+
+      - name: Summary
+        if: always()
+        shell: pwsh
+        run: |
+          Write-Host "## CI 结果" >> $env:GITHUB_STEP_SUMMARY
+          Write-Host "- 类型检查 / 沙箱测试 / 敏感信息扫描 / 构建：见上方各步骤" >> $env:GITHUB_STEP_SUMMARY
+          Write-Host "- OCR bench 冒烟为离线、只读合成语料；环境不满足时以 marked skip 方式跳过" >> $env:GITHUB_STEP_SUMMARY
+
+  linux-guard:
+    name: guard (ubuntu-latest, Node 22)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Sensitive data scan
+        run: node scripts/check-sensitive.mjs
+
+      - name: OCR bench smoke (Linux 显式跳过)
+        run: |
+          echo "::notice title=OCR bench smoke skipped::WinRT OCR 仅 Windows 可用；Linux runner 上显式跳过离线 OCR bench 冒烟（marked skip）。"
+          echo "这不是失败：桌面通道本身也只在 Windows 上受支持（见 docs/TROUBLESHOOTING.md）。"
