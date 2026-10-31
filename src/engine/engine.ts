@@ -10,6 +10,7 @@
  */
 
 import type {
+  ChannelStatus,
   EngineDeps,
   EngineStatus,
   InboundMessage,
@@ -116,6 +117,15 @@ interface SendBlock {
 }
 
 /**
+ * 安全运行模式拦截的审计 reason（Phase F）。
+ *
+ * types.ts 的 SkipReason 是封闭联合类型且本轮不允许修改（避免与并行改动冲突），
+ * 但审计日志本身是 JSON、设置页对未知 reason 会原样展示，所以这里用窄化 cast
+ * 让它以 'safe-mode' 落盘，同时保持 TS 契约不破。
+ */
+const SAFE_MODE_SKIP_REASON = 'safe-mode' as unknown as SkipReason
+
+/**
  * 判断入站文本是不是机器人自己刚说过的话（通道回读造成）。
  * 列表预览会截断、OCR 会漏字认错字，所以整串之外还要比前缀/后缀与字符重合率。
  * 安全原则：宁可漏回一条，也不自问自答。
@@ -175,7 +185,7 @@ export class PersonaEngine {
     await this.loadDeferred()
     // P1-7：启动时若状态仍是暂停/熔断，绝不静默开始收消息/发消息；等主人显式 resume。
     // 只拦暂停/熔断：预算耗尽不应让通道永远起不来（次日预算会自动恢复）。
-    const blocked = this.canSend({ checkBudget: false })
+    const blocked = this.canSend({ checkBudget: false, checkSafeMode: false })
     if (blocked) {
       this.deps.logger.warn('启动时处于暂停/熔断状态，保持暂停不启动通道', `${blocked.reason}: ${blocked.detail}`)
       await this.audit({ type: 'start', reason: blocked.reason, detail: `blocked: ${blocked.detail}` })
@@ -295,6 +305,25 @@ export class PersonaEngine {
       lastActivityAt: state.lastActivityAt,
       delivery: { ...this.deliveryCounts },
       deferredCount: this.deferred.length,
+      // Phase F：安全运行模式（types.ts 的 EngineStatus 未扩展，API 层按结构可选读取）。
+      safeMode: config.safeMode === true,
+    } as EngineStatus & { safeMode: boolean }
+  }
+
+  /**
+   * OCR / 读屏诊断（Phase F，只读）：数据完全来自通道 `status()` 暴露的可选 `ocr` 字段
+   * （Desktop 通道由读屏管线填充）。types.ts 的 ChannelStatus 暂未包含该字段（避免与
+   * 并行改动冲突），这里按 duck-typing 读取；没有数据时返回 ocr:null，由 API 层降级为
+   * available:false + 原因。**绝不触发截图/读屏、不落盘任何截图**。
+   */
+  ocrDiagnostics(): { channelId: string; channelState: string; capturedAt: number; ocr: unknown } {
+    const status = this.deps.channel.status() as ChannelStatus & { ocr?: unknown }
+    const raw = (status as unknown as Record<string, unknown>).ocr
+    return {
+      channelId: this.deps.channel.id,
+      channelState: status.state,
+      capturedAt: this.deps.clock.now(),
+      ocr: raw === undefined ? null : raw,
     }
   }
 
@@ -374,7 +403,7 @@ export class PersonaEngine {
    * 统一发送门禁（P0-1 / P1-5）：暂停、熔断、预算、白名单、频控任一不满足都拒绝发送。
    * 自动回复在拟人延迟后、每个 part 发出前、每次重试前调用；手动发送（sendTest）也走这里。
    */
-  canSend(options: { contactId?: string; contactName?: string; checkWhitelist?: boolean; checkRate?: boolean; checkBudget?: boolean } = {}): SendBlock | null {
+  canSend(options: { contactId?: string; contactName?: string; checkWhitelist?: boolean; checkRate?: boolean; checkBudget?: boolean; checkSafeMode?: boolean } = {}): SendBlock | null {
     const { config, state } = this.deps
     // 先看 AbortSignal：pause()/stop()/熔断会 abort，这是最实时的“已暂停”信号。
     if (this.abortController.signal.aborted) {
@@ -385,6 +414,14 @@ export class PersonaEngine {
     }
     if (state.breaker.tripped) {
       return { reason: 'breaker', detail: `熔断已触发${state.breaker.reason ? `：${state.breaker.reason}` : ''}` }
+    }
+    // 安全运行模式（Phase F）：默认关闭；开启后只允许 mock 通道空转，真实通道一律拒发。
+    // engine.start() 不受此限制（接收消息是安全的），所以 start 传 checkSafeMode:false。
+    if (options.checkSafeMode !== false && config.safeMode === true && this.deps.channel.id !== 'mock') {
+      return {
+        reason: SAFE_MODE_SKIP_REASON,
+        detail: `安全模式已开启：禁止向真实通道（${String(this.deps.channel.id)}）发送消息，仅允许 mock 通道空转`,
+      }
     }
     const now = this.deps.clock.now()
     // 预算不阻碍 engine.start()：否则预算耗尽当次重启后通道永远起不来（次日也不会自愈）。

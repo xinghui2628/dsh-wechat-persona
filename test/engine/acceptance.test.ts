@@ -16,7 +16,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { defaultConfig } from '../../src/config.ts'
-import type { AuditEvent, AuditEventType, AuditLogLike, AuditSummary, Channel, ChannelStatus, Clock, FileStoreLike, InboundMessage, LlmLike, LlmRequest, LlmResult, Logger, MemoryStoreLike, Notifier, PersonaPack, Random, RiskSignal, RuntimeState, SearchLike, SearchResult, SendResult, StickerCatalogLike, StickerChoice } from '../../src/types.ts'
+import type { AuditEvent, AuditEventType, AuditLogLike, AuditSummary, Channel, ChannelId, ChannelStatus, Clock, FileStoreLike, InboundMessage, LlmLike, LlmRequest, LlmResult, Logger, MemoryStoreLike, Notifier, PersonaPack, Random, RiskSignal, RuntimeState, SearchLike, SearchResult, SendResult, StickerCatalogLike, StickerChoice } from '../../src/types.ts'
 import type { WechatPersonaConfig } from '../../src/config.ts'
 import { MemoryStore } from '../../src/core/memory.ts'
 import { PersonaEngine, canRetrySend, resolveSendDelivery } from '../../src/engine/engine.ts'
@@ -95,10 +95,12 @@ class FakeStore implements FileStoreLike {
 }
 
 class FakeChannel implements Channel {
-  readonly id = 'mock' as const
+  readonly id: ChannelId
   state: 'stopped' | 'running' = 'stopped'
   handler: ((message: InboundMessage) => void) | null = null
   riskHandler: ((signal: RiskSignal) => void) | null = null
+  /** Phase F：模拟通道在 status() 里暴露的 OCR 诊断字段（desktop 通道由读屏管线填充）。 */
+  ocr: Record<string, unknown> | null = null
   /** 记录每次 send 调用（含被中断/失败的尝试）。 */
   readonly sent: Array<{ contactId: string; part: unknown }> = []
   /** 记录每次 send 收到的 AbortSignal（P0-1：引擎必须把 signal 传给通道）。 */
@@ -107,6 +109,9 @@ class FakeChannel implements Channel {
   sendResults: SendResult[] = []
   startCalls = 0
   stopCalls = 0
+  constructor(id: ChannelId = 'mock') {
+    this.id = id
+  }
   async start(handler: (message: InboundMessage) => void, onRisk: (signal: RiskSignal) => void): Promise<void> {
     this.startCalls += 1
     this.handler = handler
@@ -124,7 +129,9 @@ class FakeChannel implements Channel {
     return queued ? { ...queued } : { ok: true }
   }
   status(): ChannelStatus {
-    return { id: 'mock', state: this.state, since: 0 }
+    const snapshot: ChannelStatus & { ocr?: unknown } = { id: this.id, state: this.state, since: 0 }
+    if (this.ocr) snapshot.ocr = this.ocr
+    return snapshot
   }
 }
 
@@ -252,13 +259,15 @@ function makeHarness(options: {
   config?: Partial<WechatPersonaConfig>
   search?: boolean
   state?: Partial<RuntimeState>
+  /** Phase F：通道 id（默认 mock；safeMode 用例需要真实通道 id 才能触发拦截）。 */
+  channelId?: ChannelId
 } = {}): Harness {
   const now = options.now ?? new Date('2026-10-30T12:00:00+08:00').getTime()
   const config = { ...defaultConfig(), ...(options.config ?? {}) } as WechatPersonaConfig
   const clock = new FakeClock(now)
   const random = new FakeRandom()
   const store = new FakeStore()
-  const channel = new FakeChannel()
+  const channel = new FakeChannel(options.channelId ?? 'mock')
   const llm = new FakeLlm()
   const search = new FakeSearch()
   const notifier = new FakeNotifier()
@@ -920,5 +929,81 @@ describe('P1-7 start 检查 paused / breaker', () => {
     await h.engine.start()
     expect(h.channel.startCalls).toBe(1)
     expect(h.channel.state).toBe('running')
+  })
+})
+
+/* ═══════════════ Phase F：安全运行模式 safeMode（真实通道拒绝发送） ═══════════════ */
+
+describe('Phase F safeMode：安全运行模式拒绝真实发送', () => {
+  const safeConfig = {
+    whitelist,
+    safeMode: true,
+    reply: { ...defaultConfig().reply, stickerProbability: 0 },
+  }
+
+  it('safeMode + 真实通道：生成后不调用 channel.send，审计记 safe-mode', async () => {
+    const h = makeHarness({ config: safeConfig, channelId: 'desktop' })
+    await h.engine.handleInbound(inbound())
+    expect(h.llm.calls).toHaveLength(1) // 照常生成了回复
+    expect(h.channel.sent).toHaveLength(0) // 但绝不发送
+    expect(h.state.stats.sends).toBe(0)
+    expect((await h.engine.status()).safeMode).toBe(true)
+    const blockEvent = h.audit.events.find((event) => event.type === 'skip' && event.reason === 'safe-mode')
+    expect(blockEvent).toBeTruthy()
+    expect(String(blockEvent && blockEvent.detail)).toContain('安全模式')
+  })
+
+  it('safeMode + mock 通道：允许 mock 空转发送', async () => {
+    const h = makeHarness({ config: safeConfig })
+    await h.engine.handleInbound(inbound())
+    expect(h.channel.sent.length).toBeGreaterThan(0)
+    expect(h.state.stats.sends).toBeGreaterThan(0)
+    expect(h.audit.events.some((event) => event.type === 'skip' && event.reason === 'safe-mode')).toBe(false)
+  })
+
+  it('safeMode 下 sendTest 也拒绝真实通道：delivery=not-sent、错误含「安全模式」', async () => {
+    const h = makeHarness({ config: safeConfig, channelId: 'desktop' })
+    const result = await h.engine.sendTest('张三', '测试')
+    expect(result.ok).toBe(false)
+    expect(result.delivery).toBe('not-sent')
+    expect(String(result.error)).toContain('安全模式')
+    expect(h.channel.sent).toHaveLength(0)
+    expect(h.audit.events.some((event) => event.type === 'send-fail' && event.reason === 'safe-mode')).toBe(true)
+  })
+
+  it('默认配置 safeMode=false：真实通道照常发送（升级兼容）', async () => {
+    const h = makeHarness({
+      config: { whitelist, reply: { ...defaultConfig().reply, stickerProbability: 0 } },
+      channelId: 'desktop',
+    })
+    await h.engine.handleInbound(inbound())
+    expect((await h.engine.status()).safeMode).toBe(false)
+    expect(h.channel.sent.length).toBeGreaterThan(0)
+  })
+})
+
+/* ═══════════════ Phase F：OCR 诊断只读透传（engine.ocrDiagnostics） ═══════════════ */
+
+describe('Phase F OCR 诊断：engine.ocrDiagnostics() 只读透传', () => {
+  it('通道 status().ocr 存在时原样透传（不截图、不落盘）', () => {
+    const h = makeHarness({ config: { whitelist } })
+    h.channel.ocr = {
+      captureId: 'cap-1',
+      engines: ['winrt', 'tesseract'],
+      lines: 12,
+      uncertainCount: 2,
+      durationMs: 345,
+      lastReadAt: 1000,
+      lastError: 'none',
+    }
+    const diagnostics = h.engine.ocrDiagnostics()
+    expect(diagnostics.channelId).toBe('mock')
+    expect(diagnostics.channelState).toBe('stopped')
+    expect(diagnostics.ocr).toMatchObject({ captureId: 'cap-1', lines: 12, engines: ['winrt', 'tesseract'] })
+  })
+
+  it('通道未提供 ocr 时返回 null（api 层据此降级 available:false）', () => {
+    const h = makeHarness({ config: { whitelist } })
+    expect(h.engine.ocrDiagnostics().ocr).toBeNull()
   })
 })

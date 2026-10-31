@@ -1136,6 +1136,15 @@
         testSend: function (payload) {
           return request('POST', 'test/send', payload, { timeoutMs: SAVE_TIMEOUT_MS })
         },
+        /** Phase F：人格模拟器——强制 mockOnly，服务端在非 mock 通道直接 409 拒绝。 */
+        testMockSend: function (payload) {
+          const body = Object.assign({ mockOnly: true }, payload || {})
+          return request('POST', 'test/send', body, { timeoutMs: SAVE_TIMEOUT_MS })
+        },
+        /** Phase F：OCR / 读屏诊断（只读；通道未提供时返回 available:false）。 */
+        getOcrDiagnostics: function () {
+          return request('GET', 'diagnostics/ocr')
+        },
         pause: function (reason) {
           return request('POST', 'pause', reason ? { reason: reason } : {})
         },
@@ -3536,6 +3545,22 @@
             },
             h(
               'div',
+              { className: 'dwp-row' },
+              h(Switch, {
+                checked: draft.safeMode === true,
+                onChange: function (value) { set('safeMode', value) },
+                label: '安全运行模式（禁止真实发送）',
+              }),
+              h(Badge, { tone: draft.safeMode === true ? 'success' : 'neutral' }, draft.safeMode === true ? '已开启' : '未开启'),
+            ),
+            h(
+              'div',
+              { className: 'dwp-hint' },
+              '开启后：只要当前通道不是 mock，引擎就拒绝一切真实发送（自动回复与手动测试都返回「已拒绝发送：…安全模式…」），只允许 mock 空转。默认关闭以保持升级兼容，首次配置向导会建议开启；修改后点下方「保存预算与安全设置」生效。',
+            ),
+            h('div', { className: 'dwp-divider' }),
+            h(
+              'div',
               { className: 'dwp-grid2' },
               h(Field, {
                 label: '违禁词',
@@ -3666,6 +3691,26 @@
         const summary = logs.data && logs.data.summary ? logs.data.summary : null
         const status = s.status || null
 
+        // Phase F：OCR / 读屏诊断（只读，不触发截图；通道未提供时显示原因）。
+        const [ocr, setOcr] = React.useState(null)
+        const [ocrBusy, setOcrBusy] = React.useState(false)
+        const [ocrError, setOcrError] = React.useState('')
+        const refreshOcr = React.useCallback(function () {
+          setOcrBusy(true)
+          setOcrError('')
+          api.getOcrDiagnostics()
+            .then(function (response) {
+              setOcr(response && response.diagnostics ? response.diagnostics : null)
+            })
+            .catch(function (error) {
+              setOcrError(errorMessage(error))
+            })
+            .finally(function () {
+              setOcrBusy(false)
+            })
+        }, [])
+        React.useEffect(function () { refreshOcr() }, [refreshOcr])
+
         return h(
           'div',
           null,
@@ -3757,6 +3802,41 @@
                 ),
               ),
             ),
+            h(
+              'div',
+              null,
+              h(SectionTitle, null, '人格模拟器（仅 mock 通道）'),
+              h(
+                'div',
+                { className: 'dwp-hint' },
+                '用「直接发送一条消息」里的联系人与内容，以 mockOnly 发到 mock 通道：服务端在非 mock 通道会直接 409 拒绝，保证绝不触达真实微信。',
+              ),
+              h(
+                Button,
+                {
+                  variant: 'ghost',
+                  busy: busy,
+                  disabled: !trimText(sendContact) || !trimText(sendText) || !(status && status.channelId === 'mock'),
+                  onClick: function () {
+                    run(async function () {
+                      try {
+                        const response = await api.testMockSend({ contactId: trimText(sendContact), text: sendText })
+                        const result = response && response.result ? response.result : response
+                        if (result && result.ok) {
+                          s.showBanner({ text: '模拟器已发送到 mock 通道，结果见下方日志', tone: 'success' })
+                        } else {
+                          s.showBanner({ text: '模拟器发送失败：' + errorMessage((result && result.error) || '未知原因'), tone: 'error' })
+                        }
+                        reloadLogs()
+                      } catch (error) {
+                        s.fail(error)
+                      }
+                    })
+                  },
+                },
+                status && status.channelId === 'mock' ? '发送到 mock 通道' : '当前通道不是 mock，模拟器已禁用',
+              ),
+            ),
             h('div', { className: 'dwp-divider' }),
             h(
               'div',
@@ -3802,6 +3882,39 @@
                 },
               }),
             ),
+          ),
+          h(
+            Card,
+            {
+              title: 'OCR 诊断（只读）',
+              desc: '最近一次读屏结果的结构化摘要（只读，不触发截图；不含截图与聊天原文）。',
+              extra: h(Button, { size: 'sm', busy: ocrBusy, onClick: refreshOcr }, '刷新'),
+            },
+            ocrError ? h('div', { className: 'dwp-errorBox' }, '读取 OCR 诊断失败：' + ocrError) : null,
+            !ocr && !ocrError ? h('div', { className: 'dwp-hint' }, '正在读取 OCR 诊断…') : null,
+            ocr && !ocr.available
+              ? h(
+                  'div',
+                  { className: 'dwp-row' },
+                  h(Badge, { tone: 'warn' }, '不可用'),
+                  h('span', { className: 'dwp-hint' }, ocr.reason || '通道未提供 OCR 诊断数据'),
+                )
+              : null,
+            ocr && ocr.available
+              ? h(
+                  'div',
+                  { className: 'dwp-grid2' },
+                  h(KeyValue, null, '通道', (ocr.channelId || '—') + (ocr.channelState ? ' · ' + ocr.channelState : '')),
+                  h(KeyValue, null, '双引擎', ocr.dualEngine ? '是' : '否'),
+                  h(KeyValue, null, '采集批次', ocr.captureId || '—'),
+                  h(KeyValue, null, '引擎', ocr.engines && ocr.engines.length ? ocr.engines.join(' / ') : '—'),
+                  h(KeyValue, null, '识别行数', ocr.lines === undefined ? '—' : String(ocr.lines)),
+                  h(KeyValue, null, 'uncertain 行数', ocr.uncertainCount === undefined ? '—' : String(ocr.uncertainCount)),
+                  h(KeyValue, null, '耗时', ocr.durationMs === undefined ? '—' : formatDuration(ocr.durationMs)),
+                  h(KeyValue, null, '最后读取', ocr.lastReadAt === undefined ? '—' : formatDateTime(ocr.lastReadAt)),
+                  ocr.lastError ? h(KeyValue, null, '最后错误', ocr.lastError) : null,
+                )
+              : null,
           ),
           h(
             Card,
@@ -4090,6 +4203,124 @@
             data.changelog
               ? h(MarkdownLite, { text: data.changelog })
               : h(EmptyState, null, help.status === 'error' ? 'Host 未提供更新日志。' : '暂无更新日志。'),
+          ),
+        )
+      }
+
+      // =====================================================================
+      // 首次配置向导（Phase F）：未完成首次配置时显示；全程默认不真实发送
+      // =====================================================================
+      const ONBOARDING_STEPS = [
+        {
+          title: '确认插件已加载',
+          body: '插件已在 DSH 中加载成功；版本与运行状态见页面顶部。没加载成功时请先到 DSH → 插件里开启本插件。',
+        },
+        {
+          title: '选择通道',
+          body: '建议先用 mock 模拟通道验证人格与回复链路；确认无误后再切到真实通道（手机 ADB / Windows 虚拟机 / 本机桌面）。',
+        },
+        {
+          title: '开启安全模式',
+          body: '安全模式开启后，只要通道不是 mock，引擎就拒绝一切真实发送（自动回复与手动测试都会被拒），只允许 mock 空转。首次配置强烈建议开启。',
+        },
+        {
+          title: '白名单与在线时段',
+          body: '只回复白名单里的联系人，在线时段外完全静默。保存完成后可在左侧「白名单」「在线时段」标签页继续完善。',
+        },
+      ]
+
+      function OnboardingWizard(props) {
+        const s = props.shared
+        const base = s.config || {}
+        const [step, setStep] = React.useState(0)
+        const [channel, setChannel] = React.useState(base.activeChannel === 'desktop' ? 'desktop' : 'mock')
+        const [safeMode, setSafeMode] = React.useState(true)
+        const [saving, setSaving] = React.useState(false)
+        const [error, setError] = React.useState('')
+        const total = ONBOARDING_STEPS.length
+        const current = ONBOARDING_STEPS[step]
+
+        function finish() {
+          setSaving(true)
+          setError('')
+          const next = Object.assign({}, base, { activeChannel: channel, safeMode: safeMode, onboardingDone: true })
+          s.saveConfig(next)
+            .then(function () {
+              setSaving(false)
+              s.showBanner({
+                text: safeMode ? '首次配置完成，安全模式已开启（可随时在「预算与安全」中关闭）' : '首次配置完成（安全模式未开启，请确认通道设置）',
+                tone: safeMode ? 'success' : 'warn',
+              })
+              s.setTab('overview')
+            })
+            .catch(function (failure) {
+              setSaving(false)
+              setError(errorMessage(failure))
+              s.fail(failure)
+            })
+        }
+
+        return h(
+          Card,
+          {
+            title: '首次配置向导（' + (step + 1) + '/' + total + '）',
+            desc: '按步骤确认后开始使用；向导全程不会发送任何真实消息。',
+            extra: s.readOnly ? h(Badge, { tone: 'warn' }, '配置只读') : null,
+          },
+          h(SectionTitle, null, current.title),
+          h('div', { className: 'dwp-hint' }, current.body),
+          step === 1
+            ? h(Field, {
+                label: '运行通道',
+                hint: '先用 mock 验证；之后在「概览」或配置里切换真实通道。',
+                control: h(Select, {
+                  options: CHANNELS,
+                  value: channel,
+                  onChange: function (value) { setChannel(value) },
+                }),
+              })
+            : null,
+          step === 2
+            ? h(Switch, {
+                checked: safeMode === true,
+                onChange: function (value) { setSafeMode(value) },
+                label: '开启安全运行模式（禁止真实发送，仅 mock 空转）',
+              })
+            : null,
+          error ? h('div', { className: 'dwp-errorBox' }, '保存失败：' + error) : null,
+          h(
+            'div',
+            { className: 'dwp-actions' },
+            step > 0 ? h(Button, { variant: 'ghost', disabled: saving, onClick: function () { setStep(step - 1) } }, '上一步') : null,
+            step < total - 1
+              ? h(Button, { variant: 'primary', onClick: function () { setStep(step + 1) } }, '下一步')
+              : null,
+            step === total - 1
+              ? h(Button, { variant: 'primary', busy: saving, disabled: s.readOnly, onClick: finish }, '完成配置')
+              : null,
+            h(
+              Button,
+              {
+                variant: 'ghost',
+                disabled: saving || s.readOnly,
+                onClick: function () {
+                  setSaving(true)
+                  setError('')
+                  const next = Object.assign({}, base, { onboardingDone: true })
+                  s.saveConfig(next)
+                    .then(function () {
+                      setSaving(false)
+                      s.showBanner({ text: '已跳过首次配置向导，可随时在标签页里继续配置', tone: 'warn' })
+                    })
+                    .catch(function (failure) {
+                      setSaving(false)
+                      setError(errorMessage(failure))
+                      s.fail(failure)
+                    })
+                },
+              },
+              '跳过向导',
+            ),
           ),
         )
       }
@@ -4412,6 +4643,7 @@
                 })
               : null,
             readOnlyMessage ? h(Banner, { message: readOnlyMessage }) : null,
+            config && config.onboardingDone !== true ? h(OnboardingWizard, { shared: shared }) : null,
             h(
               'div',
               { className: 'dwp-body' },
