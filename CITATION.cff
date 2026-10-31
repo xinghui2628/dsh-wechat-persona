@@ -8,9 +8,8 @@ license: MIT
 authors:
   - given-names: "Cosmo w"
     alias: "xinghui2628"
-  - family-names: "<第二作者姓>"
-    given-names: "<第二作者名>"
-    alias: "<coauthor-github-username>"
+  - given-names: "Bowen-Han66"
+    alias: "Bowen-Han66"
 repository-code: "https://github.com/xinghui2628/dsh-wechat-persona"
 abstract: >-
   一个在 DeepSeek Harness 中运行的微信小号 AI 人格聊天分身插件：

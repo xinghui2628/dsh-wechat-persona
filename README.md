@@ -490,7 +490,7 @@ npm run build         # tsc -> dist/
 ## 作者与贡献者
 
 - **第一作者 / 维护者**：Cosmo w（GitHub: [@xinghui2628](https://github.com/xinghui2628)）
-- **第二作者 / 共同维护**：<第二作者名字>
+- **第二作者 / 共同维护**：Bowen-Han66（GitHub: [@Bowen-Han66](https://github.com/Bowen-Han66)）
 - 其他贡献者：见 [CONTRIBUTORS.md](CONTRIBUTORS.md) 与 GitHub Contributors 页
 
 如果你是第二作者或贡献者，协作与署名方式见 [docs/RELEASE-GUIDE.md](docs/RELEASE-GUIDE.md) §5（Collaborator 权限、`Co-authored-by` 提交、CONTRIBUTORS/CITATION 记录）。
