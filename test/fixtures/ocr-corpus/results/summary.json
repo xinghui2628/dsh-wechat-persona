@@ -1,0 +1,643 @@
+{
+ "generatedAt": "2026-10-31T14:52:36.797Z",
+ "bench": "ocr-benchmark",
+ "version": "v3.0.0",
+ "command": "node scripts/ocr/bench.mjs --engine=all --pipeline=all",
+ "env": {
+  "platform": "win32",
+  "node": "v26.13.0",
+  "python": "3.14.2",
+  "pillow": "13.0.0",
+  "rapidocr": "available",
+  "winrt": "available (Windows OCR zh-Hans-CN)",
+  "os": "Microsoft Windows [�汾 10.0.22631.5768]"
+ },
+ "corpus": {
+  "manifest": "test\\fixtures\\ocr-corpus\\manifest.json",
+  "seed": 20261031,
+  "scenarioCount": 20,
+  "imageCount": 40,
+  "scenarios": [
+   "clear",
+   "small_font",
+   "low_contrast",
+   "gaussian_blur",
+   "scale_100",
+   "scale_125",
+   "scale_150",
+   "scale_175",
+   "long_bubble",
+   "repeat_two",
+   "bilingual",
+   "numbers",
+   "emoji",
+   "dark_mode",
+   "occluded",
+   "multi_message",
+   "short_msgs",
+   "stretched",
+   "noisy",
+   "ai_disclaimer"
+  ]
+ },
+ "variants": [
+  {
+   "id": "orig",
+   "label": "原图"
+  },
+  {
+   "id": "upscale2x",
+   "label": "2x 放大（LANCZOS）"
+  },
+  {
+   "id": "gray_contrast",
+   "label": "灰度+对比度增强（1.6x）"
+  }
+ ],
+ "runs": [
+  {
+   "engine": "winrt",
+   "variant": "orig",
+   "file": "2026-10-31_14-48-39-winrt-orig.json",
+   "totals": {
+    "images": 40,
+    "okImages": 40,
+    "failedImages": 0,
+    "cer": 0.31216361679224974,
+    "sentenceAcc": 0.3181818181818182,
+    "linePrecision": 0.7373737373737373,
+    "lineRecall": 0.7525773195876289,
+    "lineF1": 0.7448979591836734,
+    "missRate": 0.24742268041237114,
+    "falseRate": 0.2222222222222222,
+    "dupRate": 0,
+    "splitRate": 0.04040404040404041,
+    "p50Ms": 26,
+    "p95Ms": 37,
+    "gtLines": 97,
+    "ocrLines": 99,
+    "tp": 73,
+    "fp": 22,
+    "dup": 0,
+    "frag": 4,
+    "fn": 24
+   }
+  },
+  {
+   "engine": "winrt",
+   "variant": "upscale2x",
+   "file": "2026-10-31_14-48-39-winrt-upscale2x.json",
+   "totals": {
+    "images": 40,
+    "okImages": 40,
+    "failedImages": 0,
+    "cer": 0.2163616792249731,
+    "sentenceAcc": 0.4659090909090909,
+    "linePrecision": 0.8404255319148937,
+    "lineRecall": 0.8144329896907216,
+    "lineF1": 0.8272251308900525,
+    "missRate": 0.18556701030927836,
+    "falseRate": 0.1276595744680851,
+    "dupRate": 0,
+    "splitRate": 0.031914893617021274,
+    "p50Ms": 36,
+    "p95Ms": 49,
+    "gtLines": 97,
+    "ocrLines": 94,
+    "tp": 79,
+    "fp": 12,
+    "dup": 0,
+    "frag": 3,
+    "fn": 18
+   }
+  },
+  {
+   "engine": "winrt",
+   "variant": "gray_contrast",
+   "file": "2026-10-31_14-48-39-winrt-gray_contrast.json",
+   "totals": {
+    "images": 40,
+    "okImages": 40,
+    "failedImages": 0,
+    "cer": 0.310010764262648,
+    "sentenceAcc": 0.25,
+    "linePrecision": 0.7608695652173914,
+    "lineRecall": 0.7216494845360825,
+    "lineF1": 0.7407407407407408,
+    "missRate": 0.27835051546391754,
+    "falseRate": 0.22826086956521738,
+    "dupRate": 0,
+    "splitRate": 0.010869565217391304,
+    "p50Ms": 26,
+    "p95Ms": 37,
+    "gtLines": 97,
+    "ocrLines": 92,
+    "tp": 70,
+    "fp": 21,
+    "dup": 0,
+    "frag": 1,
+    "fn": 27
+   }
+  },
+  {
+   "engine": "rapid",
+   "variant": "orig",
+   "file": "2026-10-31_14-48-39-rapid-orig.json",
+   "totals": {
+    "images": 40,
+    "okImages": 40,
+    "failedImages": 0,
+    "cer": 0.06566200215285253,
+    "sentenceAcc": 0.8295454545454546,
+    "linePrecision": 0.9574468085106383,
+    "lineRecall": 0.9278350515463918,
+    "lineF1": 0.9424083769633509,
+    "missRate": 0.07216494845360824,
+    "falseRate": 0.010638297872340425,
+    "dupRate": 0,
+    "splitRate": 0.031914893617021274,
+    "p50Ms": 1425,
+    "p95Ms": 1947,
+    "gtLines": 97,
+    "ocrLines": 94,
+    "tp": 90,
+    "fp": 1,
+    "dup": 0,
+    "frag": 3,
+    "fn": 7
+   }
+  },
+  {
+   "engine": "rapid",
+   "variant": "upscale2x",
+   "file": "2026-10-31_14-48-39-rapid-upscale2x.json",
+   "totals": {
+    "images": 40,
+    "okImages": 40,
+    "failedImages": 0,
+    "cer": 0.07642626480086114,
+    "sentenceAcc": 0.7727272727272727,
+    "linePrecision": 0.9285714285714286,
+    "lineRecall": 0.9381443298969072,
+    "lineF1": 0.9333333333333333,
+    "missRate": 0.061855670103092786,
+    "falseRate": 0.02040816326530612,
+    "dupRate": 0,
+    "splitRate": 0.05102040816326531,
+    "p50Ms": 1774,
+    "p95Ms": 2224,
+    "gtLines": 97,
+    "ocrLines": 98,
+    "tp": 91,
+    "fp": 2,
+    "dup": 0,
+    "frag": 5,
+    "fn": 6
+   }
+  },
+  {
+   "engine": "rapid",
+   "variant": "gray_contrast",
+   "file": "2026-10-31_14-48-39-rapid-gray_contrast.json",
+   "totals": {
+    "images": 40,
+    "okImages": 40,
+    "failedImages": 0,
+    "cer": 0.07427341227125941,
+    "sentenceAcc": 0.8068181818181818,
+    "linePrecision": 0.9680851063829787,
+    "lineRecall": 0.9381443298969072,
+    "lineF1": 0.9528795811518325,
+    "missRate": 0.061855670103092786,
+    "falseRate": 0.010638297872340425,
+    "dupRate": 0,
+    "splitRate": 0.02127659574468085,
+    "p50Ms": 1501,
+    "p95Ms": 1977,
+    "gtLines": 97,
+    "ocrLines": 94,
+    "tp": 91,
+    "fp": 1,
+    "dup": 0,
+    "frag": 2,
+    "fn": 6
+   }
+  },
+  {
+   "engine": "baseline-v0.2.8",
+   "variant": "orig",
+   "file": "2026-10-31_14-48-39-baseline-v028-orig.json",
+   "totals": {
+    "images": 40,
+    "okImages": 40,
+    "failedImages": 0,
+    "messages": 88,
+    "cerRaw": 0.28417653390742736,
+    "cerPost": 0.28094725511302476,
+    "sentenceAccRaw": 0.3181818181818182,
+    "sentenceAccPost": 0.32954545454545453,
+    "changedMessages": 3,
+    "improvedMessages": 2,
+    "worsenedMessages": 0,
+    "byScenario": {
+     "clear": {
+      "cerRaw": 0.12121212121212122,
+      "cerPost": 0.12121212121212122,
+      "sentenceAccRaw": 0.25,
+      "sentenceAccPost": 0.25,
+      "changed": 1,
+      "improved": 0,
+      "worsened": 0
+     },
+     "small_font": {
+      "cerRaw": 0.7714285714285715,
+      "cerPost": 0.7714285714285715,
+      "sentenceAccRaw": 0,
+      "sentenceAccPost": 0,
+      "changed": 0,
+      "improved": 0,
+      "worsened": 0
+     },
+     "low_contrast": {
+      "cerRaw": 0.32432432432432434,
+      "cerPost": 0.32432432432432434,
+      "sentenceAccRaw": 0.25,
+      "sentenceAccPost": 0.25,
+      "changed": 0,
+      "improved": 0,
+      "worsened": 0
+     },
+     "gaussian_blur": {
+      "cerRaw": 1,
+      "cerPost": 1,
+      "sentenceAccRaw": 0,
+      "sentenceAccPost": 0,
+      "changed": 0,
+      "improved": 0,
+      "worsened": 0
+     },
+     "scale_100": {
+      "cerRaw": 0.06666666666666667,
+      "cerPost": 0.06666666666666667,
+      "sentenceAccRaw": 0.5,
+      "sentenceAccPost": 0.5,
+      "changed": 0,
+      "improved": 0,
+      "worsened": 0
+     },
+     "scale_125": {
+      "cerRaw": 0.06451612903225806,
+      "cerPost": 0.06451612903225806,
+      "sentenceAccRaw": 0.5,
+      "sentenceAccPost": 0.5,
+      "changed": 0,
+      "improved": 0,
+      "worsened": 0
+     },
+     "scale_150": {
+      "cerRaw": 0,
+      "cerPost": 0,
+      "sentenceAccRaw": 1,
+      "sentenceAccPost": 1,
+      "changed": 0,
+      "improved": 0,
+      "worsened": 0
+     },
+     "scale_175": {
+      "cerRaw": 0.03333333333333333,
+      "cerPost": 0.03333333333333333,
+      "sentenceAccRaw": 0.75,
+      "sentenceAccPost": 0.75,
+      "changed": 0,
+      "improved": 0,
+      "worsened": 0
+     },
+     "long_bubble": {
+      "cerRaw": 0.14925373134328357,
+      "cerPost": 0.14925373134328357,
+      "sentenceAccRaw": 0,
+      "sentenceAccPost": 0,
+      "changed": 0,
+      "improved": 0,
+      "worsened": 0
+     },
+     "repeat_two": {
+      "cerRaw": 0,
+      "cerPost": 0,
+      "sentenceAccRaw": 1,
+      "sentenceAccPost": 1,
+      "changed": 0,
+      "improved": 0,
+      "worsened": 0
+     },
+     "bilingual": {
+      "cerRaw": 0.07894736842105263,
+      "cerPost": 0.06578947368421052,
+      "sentenceAccRaw": 0.25,
+      "sentenceAccPost": 0.25,
+      "changed": 1,
+      "improved": 1,
+      "worsened": 0
+     },
+     "numbers": {
+      "cerRaw": 0.2037037037037037,
+      "cerPost": 0.2037037037037037,
+      "sentenceAccRaw": 0,
+      "sentenceAccPost": 0,
+      "changed": 0,
+      "improved": 0,
+      "worsened": 0
+     },
+     "emoji": {
+      "cerRaw": 0.425,
+      "cerPost": 0.425,
+      "sentenceAccRaw": 0,
+      "sentenceAccPost": 0,
+      "changed": 0,
+      "improved": 0,
+      "worsened": 0
+     },
+     "dark_mode": {
+      "cerRaw": 0.12121212121212122,
+      "cerPost": 0.12121212121212122,
+      "sentenceAccRaw": 0.5,
+      "sentenceAccPost": 0.5,
+      "changed": 0,
+      "improved": 0,
+      "worsened": 0
+     },
+     "occluded": {
+      "cerRaw": 0.6,
+      "cerPost": 0.55,
+      "sentenceAccRaw": 0,
+      "sentenceAccPost": 0.25,
+      "changed": 1,
+      "improved": 1,
+      "worsened": 0
+     },
+     "multi_message": {
+      "cerRaw": 0.20689655172413793,
+      "cerPost": 0.20689655172413793,
+      "sentenceAccRaw": 0.2,
+      "sentenceAccPost": 0.2,
+      "changed": 0,
+      "improved": 0,
+      "worsened": 0
+     },
+     "short_msgs": {
+      "cerRaw": 0.2727272727272727,
+      "cerPost": 0.2727272727272727,
+      "sentenceAccRaw": 0.6666666666666666,
+      "sentenceAccPost": 0.6666666666666666,
+      "changed": 0,
+      "improved": 0,
+      "worsened": 0
+     },
+     "stretched": {
+      "cerRaw": 1.05,
+      "cerPost": 1.05,
+      "sentenceAccRaw": 0,
+      "sentenceAccPost": 0,
+      "changed": 0,
+      "improved": 0,
+      "worsened": 0
+     },
+     "noisy": {
+      "cerRaw": 0.08571428571428572,
+      "cerPost": 0.08571428571428572,
+      "sentenceAccRaw": 0.5,
+      "sentenceAccPost": 0.5,
+      "changed": 0,
+      "improved": 0,
+      "worsened": 0
+     },
+     "ai_disclaimer": {
+      "cerRaw": 0.34615384615384615,
+      "cerPost": 0.34615384615384615,
+      "sentenceAccRaw": 0,
+      "sentenceAccPost": 0,
+      "changed": 0,
+      "improved": 0,
+      "worsened": 0
+     }
+    }
+   }
+  }
+ ],
+ "files": [
+  "2026-10-31_14-48-39-winrt-orig.json",
+  "2026-10-31_14-48-39-winrt-upscale2x.json",
+  "2026-10-31_14-48-39-winrt-gray_contrast.json",
+  "2026-10-31_14-48-39-rapid-orig.json",
+  "2026-10-31_14-48-39-rapid-upscale2x.json",
+  "2026-10-31_14-48-39-rapid-gray_contrast.json",
+  "2026-10-31_14-48-39-baseline-v028-orig.json"
+ ],
+ "baseline": {
+  "engine": "baseline-v0.2.8",
+  "variant": "orig",
+  "file": "2026-10-31_14-48-39-baseline-v028-orig.json",
+  "totals": {
+   "images": 40,
+   "okImages": 40,
+   "failedImages": 0,
+   "messages": 88,
+   "cerRaw": 0.28417653390742736,
+   "cerPost": 0.28094725511302476,
+   "sentenceAccRaw": 0.3181818181818182,
+   "sentenceAccPost": 0.32954545454545453,
+   "changedMessages": 3,
+   "improvedMessages": 2,
+   "worsenedMessages": 0,
+   "byScenario": {
+    "clear": {
+     "cerRaw": 0.12121212121212122,
+     "cerPost": 0.12121212121212122,
+     "sentenceAccRaw": 0.25,
+     "sentenceAccPost": 0.25,
+     "changed": 1,
+     "improved": 0,
+     "worsened": 0
+    },
+    "small_font": {
+     "cerRaw": 0.7714285714285715,
+     "cerPost": 0.7714285714285715,
+     "sentenceAccRaw": 0,
+     "sentenceAccPost": 0,
+     "changed": 0,
+     "improved": 0,
+     "worsened": 0
+    },
+    "low_contrast": {
+     "cerRaw": 0.32432432432432434,
+     "cerPost": 0.32432432432432434,
+     "sentenceAccRaw": 0.25,
+     "sentenceAccPost": 0.25,
+     "changed": 0,
+     "improved": 0,
+     "worsened": 0
+    },
+    "gaussian_blur": {
+     "cerRaw": 1,
+     "cerPost": 1,
+     "sentenceAccRaw": 0,
+     "sentenceAccPost": 0,
+     "changed": 0,
+     "improved": 0,
+     "worsened": 0
+    },
+    "scale_100": {
+     "cerRaw": 0.06666666666666667,
+     "cerPost": 0.06666666666666667,
+     "sentenceAccRaw": 0.5,
+     "sentenceAccPost": 0.5,
+     "changed": 0,
+     "improved": 0,
+     "worsened": 0
+    },
+    "scale_125": {
+     "cerRaw": 0.06451612903225806,
+     "cerPost": 0.06451612903225806,
+     "sentenceAccRaw": 0.5,
+     "sentenceAccPost": 0.5,
+     "changed": 0,
+     "improved": 0,
+     "worsened": 0
+    },
+    "scale_150": {
+     "cerRaw": 0,
+     "cerPost": 0,
+     "sentenceAccRaw": 1,
+     "sentenceAccPost": 1,
+     "changed": 0,
+     "improved": 0,
+     "worsened": 0
+    },
+    "scale_175": {
+     "cerRaw": 0.03333333333333333,
+     "cerPost": 0.03333333333333333,
+     "sentenceAccRaw": 0.75,
+     "sentenceAccPost": 0.75,
+     "changed": 0,
+     "improved": 0,
+     "worsened": 0
+    },
+    "long_bubble": {
+     "cerRaw": 0.14925373134328357,
+     "cerPost": 0.14925373134328357,
+     "sentenceAccRaw": 0,
+     "sentenceAccPost": 0,
+     "changed": 0,
+     "improved": 0,
+     "worsened": 0
+    },
+    "repeat_two": {
+     "cerRaw": 0,
+     "cerPost": 0,
+     "sentenceAccRaw": 1,
+     "sentenceAccPost": 1,
+     "changed": 0,
+     "improved": 0,
+     "worsened": 0
+    },
+    "bilingual": {
+     "cerRaw": 0.07894736842105263,
+     "cerPost": 0.06578947368421052,
+     "sentenceAccRaw": 0.25,
+     "sentenceAccPost": 0.25,
+     "changed": 1,
+     "improved": 1,
+     "worsened": 0
+    },
+    "numbers": {
+     "cerRaw": 0.2037037037037037,
+     "cerPost": 0.2037037037037037,
+     "sentenceAccRaw": 0,
+     "sentenceAccPost": 0,
+     "changed": 0,
+     "improved": 0,
+     "worsened": 0
+    },
+    "emoji": {
+     "cerRaw": 0.425,
+     "cerPost": 0.425,
+     "sentenceAccRaw": 0,
+     "sentenceAccPost": 0,
+     "changed": 0,
+     "improved": 0,
+     "worsened": 0
+    },
+    "dark_mode": {
+     "cerRaw": 0.12121212121212122,
+     "cerPost": 0.12121212121212122,
+     "sentenceAccRaw": 0.5,
+     "sentenceAccPost": 0.5,
+     "changed": 0,
+     "improved": 0,
+     "worsened": 0
+    },
+    "occluded": {
+     "cerRaw": 0.6,
+     "cerPost": 0.55,
+     "sentenceAccRaw": 0,
+     "sentenceAccPost": 0.25,
+     "changed": 1,
+     "improved": 1,
+     "worsened": 0
+    },
+    "multi_message": {
+     "cerRaw": 0.20689655172413793,
+     "cerPost": 0.20689655172413793,
+     "sentenceAccRaw": 0.2,
+     "sentenceAccPost": 0.2,
+     "changed": 0,
+     "improved": 0,
+     "worsened": 0
+    },
+    "short_msgs": {
+     "cerRaw": 0.2727272727272727,
+     "cerPost": 0.2727272727272727,
+     "sentenceAccRaw": 0.6666666666666666,
+     "sentenceAccPost": 0.6666666666666666,
+     "changed": 0,
+     "improved": 0,
+     "worsened": 0
+    },
+    "stretched": {
+     "cerRaw": 1.05,
+     "cerPost": 1.05,
+     "sentenceAccRaw": 0,
+     "sentenceAccPost": 0,
+     "changed": 0,
+     "improved": 0,
+     "worsened": 0
+    },
+    "noisy": {
+     "cerRaw": 0.08571428571428572,
+     "cerPost": 0.08571428571428572,
+     "sentenceAccRaw": 0.5,
+     "sentenceAccPost": 0.5,
+     "changed": 0,
+     "improved": 0,
+     "worsened": 0
+    },
+    "ai_disclaimer": {
+     "cerRaw": 0.34615384615384615,
+     "cerPost": 0.34615384615384615,
+     "sentenceAccRaw": 0,
+     "sentenceAccPost": 0,
+     "changed": 0,
+     "improved": 0,
+     "worsened": 0
+    }
+   }
+  }
+ },
+ "notes": [
+  "CER = 字符级 Levenshtein / GT 字符数（消息级聚合：Σ edit / Σ GT chars），比较前去空白。",
+  "行级 P/R/F1：归一化文本相似度 + IoU 辅助一对一匹配；重复行单独计数并从 TP 之外计。",
+  "假消息率 = 未匹配且非重复的 OCR 行 / OCR 内容行；窗口 chrome（标题/输入框/时间戳）按 manifest.expectedContext 豁免。",
+  "P50/P95 为引擎自报的 OCR 耗时（不含进程启动/模型加载），RapidOCR 模型加载时间见各 run 的 meta.modelLoadMs。",
+  "baseline 组：分组用 GT bbox 近似，仅衡量「同一批原始行经过 v0.2.8 后处理」的增益，不代表真实 pipeline 的定位能力。"
+ ]
+}

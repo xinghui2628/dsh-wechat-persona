@@ -1,0 +1,4086 @@
+{
+  "version": 1,
+  "seed": 20261031,
+  "generator": "scripts/ocr/gen_corpus.py",
+  "font": "msyh.ttc（微软雅黑）",
+  "baseSize": [
+    480,
+    640
+  ],
+  "scenarioCount": 20,
+  "imageCount": 40,
+  "privacy": "全部内容虚构：好友名仅 A/B/C；正文为测试文案；手机号/单号/金额均为占位假数据",
+  "scenarios": [
+    {
+      "id": "clear",
+      "label": "清晰基准（15px、浅色、100%）"
+    },
+    {
+      "id": "small_font",
+      "label": "小字号（10px，模拟微信小号字）"
+    },
+    {
+      "id": "low_contrast",
+      "label": "低对比（灰字浅底）"
+    },
+    {
+      "id": "gaussian_blur",
+      "label": "高斯模糊（radius 1.2）"
+    },
+    {
+      "id": "scale_100",
+      "label": "缩放 100%（基准）"
+    },
+    {
+      "id": "scale_125",
+      "label": "缩放 125%"
+    },
+    {
+      "id": "scale_150",
+      "label": "缩放 150%"
+    },
+    {
+      "id": "scale_175",
+      "label": "缩放 175%"
+    },
+    {
+      "id": "long_bubble",
+      "label": "超长气泡（多行换行）"
+    },
+    {
+      "id": "repeat_two",
+      "label": "连发两条相同文本"
+    },
+    {
+      "id": "bilingual",
+      "label": "中英混排"
+    },
+    {
+      "id": "numbers",
+      "label": "数字 / 金额 / 电话 / 日期（均为虚构占位）"
+    },
+    {
+      "id": "emoji",
+      "label": "emoji / 颜文字（OCR 通常读不出，属预期）"
+    },
+    {
+      "id": "dark_mode",
+      "label": "深色模式"
+    },
+    {
+      "id": "occluded",
+      "label": "半遮挡（通知条盖住部分气泡）"
+    },
+    {
+      "id": "multi_message",
+      "label": "多行多消息（6 条 + 中间时间戳）"
+    },
+    {
+      "id": "short_msgs",
+      "label": "极短消息（1-2 字气泡）"
+    },
+    {
+      "id": "stretched",
+      "label": "截图横向拉伸（x1.35 / y1.0）"
+    },
+    {
+      "id": "noisy",
+      "label": "压缩噪声（sigma 8）"
+    },
+    {
+      "id": "ai_disclaimer",
+      "label": "AI 免责声明长消息"
+    }
+  ],
+  "images": [
+    {
+      "captureId": "clear-00",
+      "scenario": "clear",
+      "scenarioLabel": "清晰基准（15px、浅色、100%）",
+      "variant": 0,
+      "scalePct": 100,
+      "scaleX": 1.0,
+      "scaleY": 1.0,
+      "width": 480,
+      "height": 640,
+      "theme": "light",
+      "fontSize": 15,
+      "blurRadius": 0.0,
+      "noiseSigma": 0.0,
+      "image": "images/clear-00.png",
+      "friendName": "A",
+      "expectedMessages": [
+        {
+          "sender": "left",
+          "text": "今天大肥鱼很好吃",
+          "bbox": [
+            54,
+            478,
+            144,
+            41
+          ],
+          "lineBoxes": [
+            {
+              "text": "今天大肥鱼很好吃",
+              "bbox": [
+                66,
+                487,
+                120,
+                23
+              ]
+            }
+          ]
+        },
+        {
+          "sender": "right",
+          "text": "真的吗？我明天也去试试",
+          "bbox": [
+            237,
+            533,
+            189,
+            41
+          ],
+          "lineBoxes": [
+            {
+              "text": "真的吗？我明天也去试试",
+              "bbox": [
+                249,
+                542,
+                165,
+                23
+              ]
+            }
+          ]
+        }
+      ],
+      "expectedContext": [
+        {
+          "kind": "title",
+          "text": "A",
+          "region": [
+            0,
+            0,
+            480,
+            36
+          ]
+        },
+        {
+          "kind": "input",
+          "text": "输入消息",
+          "region": [
+            12,
+            584,
+            456,
+            56
+          ]
+        },
+        {
+          "kind": "timestamp",
+          "text": "10月31日 22:31",
+          "region": [
+            0,
+            445,
+            480,
+            23
+          ]
+        }
+      ]
+    },
+    {
+      "captureId": "clear-01",
+      "scenario": "clear",
+      "scenarioLabel": "清晰基准（15px、浅色、100%）",
+      "variant": 1,
+      "scalePct": 100,
+      "scaleX": 1.0,
+      "scaleY": 1.0,
+      "width": 480,
+      "height": 640,
+      "theme": "light",
+      "fontSize": 15,
+      "blurRadius": 0.0,
+      "noiseSigma": 0.0,
+      "image": "images/clear-01.png",
+      "friendName": "B",
+      "expectedMessages": [
+        {
+          "sender": "left",
+          "text": "周末有空吗",
+          "bbox": [
+            54,
+            478,
+            99,
+            41
+          ],
+          "lineBoxes": [
+            {
+              "text": "周末有空吗",
+              "bbox": [
+                66,
+                487,
+                75,
+                23
+              ]
+            }
+          ]
+        },
+        {
+          "sender": "right",
+          "text": "有空的，下午三点见",
+          "bbox": [
+            267,
+            533,
+            159,
+            41
+          ],
+          "lineBoxes": [
+            {
+              "text": "有空的，下午三点见",
+              "bbox": [
+                279,
+                542,
+                135,
+                23
+              ]
+            }
+          ]
+        }
+      ],
+      "expectedContext": [
+        {
+          "kind": "title",
+          "text": "B",
+          "region": [
+            0,
+            0,
+            480,
+            36
+          ]
+        },
+        {
+          "kind": "input",
+          "text": "输入消息",
+          "region": [
+            12,
+            584,
+            456,
+            56
+          ]
+        },
+        {
+          "kind": "timestamp",
+          "text": "10月31日 22:28",
+          "region": [
+            0,
+            445,
+            480,
+            23
+          ]
+        }
+      ]
+    },
+    {
+      "captureId": "small_font-00",
+      "scenario": "small_font",
+      "scenarioLabel": "小字号（10px，模拟微信小号字）",
+      "variant": 0,
+      "scalePct": 100,
+      "scaleX": 1.0,
+      "scaleY": 1.0,
+      "width": 480,
+      "height": 640,
+      "theme": "light",
+      "fontSize": 10,
+      "blurRadius": 0.0,
+      "noiseSigma": 0.0,
+      "image": "images/small_font-00.png",
+      "friendName": "A",
+      "expectedMessages": [
+        {
+          "sender": "left",
+          "text": "这个字号有点小，能看清吗",
+          "bbox": [
+            54,
+            490,
+            144,
+            35
+          ],
+          "lineBoxes": [
+            {
+              "text": "这个字号有点小，能看清吗",
+              "bbox": [
+                66,
+                499,
+                120,
+                17
+              ]
+            }
+          ]
+        },
+        {
+          "sender": "right",
+          "text": "能看清，就是有点糊",
+          "bbox": [
+            312,
+            539,
+            114,
+            35
+          ],
+          "lineBoxes": [
+            {
+              "text": "能看清，就是有点糊",
+              "bbox": [
+                324,
+                548,
+                90,
+                17
+              ]
+            }
+          ]
+        }
+      ],
+      "expectedContext": [
+        {
+          "kind": "title",
+          "text": "A",
+          "region": [
+            0,
+            0,
+            480,
+            36
+          ]
+        },
+        {
+          "kind": "input",
+          "text": "输入消息",
+          "region": [
+            12,
+            584,
+            456,
+            56
+          ]
+        },
+        {
+          "kind": "timestamp",
+          "text": "今天 21:57",
+          "region": [
+            0,
+            457,
+            480,
+            23
+          ]
+        }
+      ]
+    },
+    {
+      "captureId": "small_font-01",
+      "scenario": "small_font",
+      "scenarioLabel": "小字号（10px，模拟微信小号字）",
+      "variant": 1,
+      "scalePct": 100,
+      "scaleX": 1.0,
+      "scaleY": 1.0,
+      "width": 480,
+      "height": 640,
+      "theme": "light",
+      "fontSize": 10,
+      "blurRadius": 0.0,
+      "noiseSigma": 0.0,
+      "image": "images/small_font-01.png",
+      "friendName": "B",
+      "expectedMessages": [
+        {
+          "sender": "left",
+          "text": "小字号的截图识别",
+          "bbox": [
+            54,
+            490,
+            104,
+            35
+          ],
+          "lineBoxes": [
+            {
+              "text": "小字号的截图识别",
+              "bbox": [
+                66,
+                499,
+                80,
+                17
+              ]
+            }
+          ]
+        },
+        {
+          "sender": "right",
+          "text": "看看效果如何",
+          "bbox": [
+            342,
+            539,
+            84,
+            35
+          ],
+          "lineBoxes": [
+            {
+              "text": "看看效果如何",
+              "bbox": [
+                354,
+                548,
+                60,
+                17
+              ]
+            }
+          ]
+        }
+      ],
+      "expectedContext": [
+        {
+          "kind": "title",
+          "text": "B",
+          "region": [
+            0,
+            0,
+            480,
+            36
+          ]
+        },
+        {
+          "kind": "input",
+          "text": "输入消息",
+          "region": [
+            12,
+            584,
+            456,
+            56
+          ]
+        },
+        {
+          "kind": "timestamp",
+          "text": "今天 21:57",
+          "region": [
+            0,
+            457,
+            480,
+            23
+          ]
+        }
+      ]
+    },
+    {
+      "captureId": "low_contrast-00",
+      "scenario": "low_contrast",
+      "scenarioLabel": "低对比（灰字浅底）",
+      "variant": 0,
+      "scalePct": 100,
+      "scaleX": 1.0,
+      "scaleY": 1.0,
+      "width": 480,
+      "height": 640,
+      "theme": "light",
+      "fontSize": 15,
+      "blurRadius": 0.0,
+      "noiseSigma": 0.0,
+      "image": "images/low_contrast-00.png",
+      "friendName": "A",
+      "expectedMessages": [
+        {
+          "sender": "left",
+          "text": "灰字浅底看着有点费劲",
+          "bbox": [
+            54,
+            478,
+            174,
+            41
+          ],
+          "lineBoxes": [
+            {
+              "text": "灰字浅底看着有点费劲",
+              "bbox": [
+                66,
+                487,
+                150,
+                23
+              ]
+            }
+          ]
+        },
+        {
+          "sender": "right",
+          "text": "截图压缩之后就这样",
+          "bbox": [
+            267,
+            533,
+            159,
+            41
+          ],
+          "lineBoxes": [
+            {
+              "text": "截图压缩之后就这样",
+              "bbox": [
+                279,
+                542,
+                135,
+                23
+              ]
+            }
+          ]
+        }
+      ],
+      "expectedContext": [
+        {
+          "kind": "title",
+          "text": "A",
+          "region": [
+            0,
+            0,
+            480,
+            36
+          ]
+        },
+        {
+          "kind": "input",
+          "text": "输入消息",
+          "region": [
+            12,
+            584,
+            456,
+            56
+          ]
+        },
+        {
+          "kind": "timestamp",
+          "text": "今天 21:57",
+          "region": [
+            0,
+            445,
+            480,
+            23
+          ]
+        }
+      ]
+    },
+    {
+      "captureId": "low_contrast-01",
+      "scenario": "low_contrast",
+      "scenarioLabel": "低对比（灰字浅底）",
+      "variant": 1,
+      "scalePct": 100,
+      "scaleX": 1.0,
+      "scaleY": 1.0,
+      "width": 480,
+      "height": 640,
+      "theme": "light",
+      "fontSize": 15,
+      "blurRadius": 0.0,
+      "noiseSigma": 0.0,
+      "image": "images/low_contrast-01.png",
+      "friendName": "B",
+      "expectedMessages": [
+        {
+          "sender": "left",
+          "text": "低对比度的聊天截图",
+          "bbox": [
+            54,
+            478,
+            159,
+            41
+          ],
+          "lineBoxes": [
+            {
+              "text": "低对比度的聊天截图",
+              "bbox": [
+                66,
+                487,
+                135,
+                23
+              ]
+            }
+          ]
+        },
+        {
+          "sender": "right",
+          "text": "识别难度会明显上升",
+          "bbox": [
+            267,
+            533,
+            159,
+            41
+          ],
+          "lineBoxes": [
+            {
+              "text": "识别难度会明显上升",
+              "bbox": [
+                279,
+                542,
+                135,
+                23
+              ]
+            }
+          ]
+        }
+      ],
+      "expectedContext": [
+        {
+          "kind": "title",
+          "text": "B",
+          "region": [
+            0,
+            0,
+            480,
+            36
+          ]
+        },
+        {
+          "kind": "input",
+          "text": "输入消息",
+          "region": [
+            12,
+            584,
+            456,
+            56
+          ]
+        },
+        {
+          "kind": "timestamp",
+          "text": "10月31日 22:31",
+          "region": [
+            0,
+            445,
+            480,
+            23
+          ]
+        }
+      ]
+    },
+    {
+      "captureId": "gaussian_blur-00",
+      "scenario": "gaussian_blur",
+      "scenarioLabel": "高斯模糊（radius 1.2）",
+      "variant": 0,
+      "scalePct": 100,
+      "scaleX": 1.0,
+      "scaleY": 1.0,
+      "width": 480,
+      "height": 640,
+      "theme": "light",
+      "fontSize": 15,
+      "blurRadius": 1.2,
+      "noiseSigma": 0.0,
+      "image": "images/gaussian_blur-00.png",
+      "friendName": "C",
+      "expectedMessages": [
+        {
+          "sender": "left",
+          "text": "截图被人手抖了一下",
+          "bbox": [
+            54,
+            478,
+            159,
+            41
+          ],
+          "lineBoxes": [
+            {
+              "text": "截图被人手抖了一下",
+              "bbox": [
+                66,
+                487,
+                135,
+                23
+              ]
+            }
+          ]
+        },
+        {
+          "sender": "right",
+          "text": "整个窗口都糊掉了",
+          "bbox": [
+            282,
+            533,
+            144,
+            41
+          ],
+          "lineBoxes": [
+            {
+              "text": "整个窗口都糊掉了",
+              "bbox": [
+                294,
+                542,
+                120,
+                23
+              ]
+            }
+          ]
+        }
+      ],
+      "expectedContext": [
+        {
+          "kind": "title",
+          "text": "C",
+          "region": [
+            0,
+            0,
+            480,
+            36
+          ]
+        },
+        {
+          "kind": "input",
+          "text": "输入消息",
+          "region": [
+            12,
+            584,
+            456,
+            56
+          ]
+        },
+        {
+          "kind": "timestamp",
+          "text": "10月31日 22:31",
+          "region": [
+            0,
+            445,
+            480,
+            23
+          ]
+        }
+      ]
+    },
+    {
+      "captureId": "gaussian_blur-01",
+      "scenario": "gaussian_blur",
+      "scenarioLabel": "高斯模糊（radius 1.2）",
+      "variant": 1,
+      "scalePct": 100,
+      "scaleX": 1.0,
+      "scaleY": 1.0,
+      "width": 480,
+      "height": 640,
+      "theme": "light",
+      "fontSize": 15,
+      "blurRadius": 1.2,
+      "noiseSigma": 0.0,
+      "image": "images/gaussian_blur-01.png",
+      "friendName": "A",
+      "expectedMessages": [
+        {
+          "sender": "left",
+          "text": "模糊的截图还能读出来吗",
+          "bbox": [
+            54,
+            478,
+            189,
+            41
+          ],
+          "lineBoxes": [
+            {
+              "text": "模糊的截图还能读出来吗",
+              "bbox": [
+                66,
+                487,
+                165,
+                23
+              ]
+            }
+          ]
+        },
+        {
+          "sender": "right",
+          "text": "应该会漏掉几个字",
+          "bbox": [
+            282,
+            533,
+            144,
+            41
+          ],
+          "lineBoxes": [
+            {
+              "text": "应该会漏掉几个字",
+              "bbox": [
+                294,
+                542,
+                120,
+                23
+              ]
+            }
+          ]
+        }
+      ],
+      "expectedContext": [
+        {
+          "kind": "title",
+          "text": "A",
+          "region": [
+            0,
+            0,
+            480,
+            36
+          ]
+        },
+        {
+          "kind": "input",
+          "text": "输入消息",
+          "region": [
+            12,
+            584,
+            456,
+            56
+          ]
+        },
+        {
+          "kind": "timestamp",
+          "text": "今天 21:57",
+          "region": [
+            0,
+            445,
+            480,
+            23
+          ]
+        }
+      ]
+    },
+    {
+      "captureId": "scale_100-00",
+      "scenario": "scale_100",
+      "scenarioLabel": "缩放 100%（基准）",
+      "variant": 0,
+      "scalePct": 100,
+      "scaleX": 1.0,
+      "scaleY": 1.0,
+      "width": 480,
+      "height": 640,
+      "theme": "light",
+      "fontSize": 15,
+      "blurRadius": 0.0,
+      "noiseSigma": 0.0,
+      "image": "images/scale_100-00.png",
+      "friendName": "B",
+      "expectedMessages": [
+        {
+          "sender": "left",
+          "text": "缩放百分之一百的截图",
+          "bbox": [
+            54,
+            478,
+            174,
+            41
+          ],
+          "lineBoxes": [
+            {
+              "text": "缩放百分之一百的截图",
+              "bbox": [
+                66,
+                487,
+                150,
+                23
+              ]
+            }
+          ]
+        },
+        {
+          "sender": "right",
+          "text": "这是基准尺寸",
+          "bbox": [
+            312,
+            533,
+            114,
+            41
+          ],
+          "lineBoxes": [
+            {
+              "text": "这是基准尺寸",
+              "bbox": [
+                324,
+                542,
+                90,
+                23
+              ]
+            }
+          ]
+        }
+      ],
+      "expectedContext": [
+        {
+          "kind": "title",
+          "text": "B",
+          "region": [
+            0,
+            0,
+            480,
+            36
+          ]
+        },
+        {
+          "kind": "input",
+          "text": "输入消息",
+          "region": [
+            12,
+            584,
+            456,
+            56
+          ]
+        },
+        {
+          "kind": "timestamp",
+          "text": "10月31日 22:28",
+          "region": [
+            0,
+            445,
+            480,
+            23
+          ]
+        }
+      ]
+    },
+    {
+      "captureId": "scale_100-01",
+      "scenario": "scale_100",
+      "scenarioLabel": "缩放 100%（基准）",
+      "variant": 1,
+      "scalePct": 100,
+      "scaleX": 1.0,
+      "scaleY": 1.0,
+      "width": 480,
+      "height": 640,
+      "theme": "light",
+      "fontSize": 15,
+      "blurRadius": 0.0,
+      "noiseSigma": 0.0,
+      "image": "images/scale_100-01.png",
+      "friendName": "C",
+      "expectedMessages": [
+        {
+          "sender": "left",
+          "text": "原始尺寸的界面",
+          "bbox": [
+            54,
+            478,
+            129,
+            41
+          ],
+          "lineBoxes": [
+            {
+              "text": "原始尺寸的界面",
+              "bbox": [
+                66,
+                487,
+                105,
+                23
+              ]
+            }
+          ]
+        },
+        {
+          "sender": "right",
+          "text": "文字边缘最清楚",
+          "bbox": [
+            297,
+            533,
+            129,
+            41
+          ],
+          "lineBoxes": [
+            {
+              "text": "文字边缘最清楚",
+              "bbox": [
+                309,
+                542,
+                105,
+                23
+              ]
+            }
+          ]
+        }
+      ],
+      "expectedContext": [
+        {
+          "kind": "title",
+          "text": "C",
+          "region": [
+            0,
+            0,
+            480,
+            36
+          ]
+        },
+        {
+          "kind": "input",
+          "text": "输入消息",
+          "region": [
+            12,
+            584,
+            456,
+            56
+          ]
+        },
+        {
+          "kind": "timestamp",
+          "text": "10月31日 22:28",
+          "region": [
+            0,
+            445,
+            480,
+            23
+          ]
+        }
+      ]
+    },
+    {
+      "captureId": "scale_125-00",
+      "scenario": "scale_125",
+      "scenarioLabel": "缩放 125%",
+      "variant": 0,
+      "scalePct": 125,
+      "scaleX": 1.25,
+      "scaleY": 1.25,
+      "width": 600,
+      "height": 800,
+      "theme": "light",
+      "fontSize": 15,
+      "blurRadius": 0.0,
+      "noiseSigma": 0.0,
+      "image": "images/scale_125-00.png",
+      "friendName": "C",
+      "expectedMessages": [
+        {
+          "sender": "left",
+          "text": "缩放百分之一百二十五",
+          "bbox": [
+            68,
+            598,
+            218,
+            51
+          ],
+          "lineBoxes": [
+            {
+              "text": "缩放百分之一百二十五",
+              "bbox": [
+                82,
+                609,
+                188,
+                29
+              ]
+            }
+          ]
+        },
+        {
+          "sender": "right",
+          "text": "看起来清楚了一点",
+          "bbox": [
+            352,
+            666,
+            180,
+            51
+          ],
+          "lineBoxes": [
+            {
+              "text": "看起来清楚了一点",
+              "bbox": [
+                368,
+                678,
+                150,
+                29
+              ]
+            }
+          ]
+        }
+      ],
+      "expectedContext": [
+        {
+          "kind": "title",
+          "text": "C",
+          "region": [
+            0,
+            0,
+            600,
+            45
+          ]
+        },
+        {
+          "kind": "input",
+          "text": "输入消息",
+          "region": [
+            15,
+            730,
+            570,
+            70
+          ]
+        },
+        {
+          "kind": "timestamp",
+          "text": "10月31日 22:31",
+          "region": [
+            0,
+            556,
+            600,
+            29
+          ]
+        }
+      ]
+    },
+    {
+      "captureId": "scale_125-01",
+      "scenario": "scale_125",
+      "scenarioLabel": "缩放 125%",
+      "variant": 1,
+      "scalePct": 125,
+      "scaleX": 1.25,
+      "scaleY": 1.25,
+      "width": 600,
+      "height": 800,
+      "theme": "light",
+      "fontSize": 15,
+      "blurRadius": 0.0,
+      "noiseSigma": 0.0,
+      "image": "images/scale_125-01.png",
+      "friendName": "A",
+      "expectedMessages": [
+        {
+          "sender": "left",
+          "text": "系统缩放调大一档",
+          "bbox": [
+            68,
+            598,
+            180,
+            51
+          ],
+          "lineBoxes": [
+            {
+              "text": "系统缩放调大一档",
+              "bbox": [
+                82,
+                609,
+                150,
+                29
+              ]
+            }
+          ]
+        },
+        {
+          "sender": "right",
+          "text": "字也变大了",
+          "bbox": [
+            409,
+            666,
+            124,
+            51
+          ],
+          "lineBoxes": [
+            {
+              "text": "字也变大了",
+              "bbox": [
+                424,
+                678,
+                94,
+                29
+              ]
+            }
+          ]
+        }
+      ],
+      "expectedContext": [
+        {
+          "kind": "title",
+          "text": "A",
+          "region": [
+            0,
+            0,
+            600,
+            45
+          ]
+        },
+        {
+          "kind": "input",
+          "text": "输入消息",
+          "region": [
+            15,
+            730,
+            570,
+            70
+          ]
+        },
+        {
+          "kind": "timestamp",
+          "text": "今天 21:57",
+          "region": [
+            0,
+            556,
+            600,
+            29
+          ]
+        }
+      ]
+    },
+    {
+      "captureId": "scale_150-00",
+      "scenario": "scale_150",
+      "scenarioLabel": "缩放 150%",
+      "variant": 0,
+      "scalePct": 150,
+      "scaleX": 1.5,
+      "scaleY": 1.5,
+      "width": 720,
+      "height": 960,
+      "theme": "light",
+      "fontSize": 15,
+      "blurRadius": 0.0,
+      "noiseSigma": 0.0,
+      "image": "images/scale_150-00.png",
+      "friendName": "A",
+      "expectedMessages": [
+        {
+          "sender": "left",
+          "text": "缩放百分之一百五十",
+          "bbox": [
+            81,
+            717,
+            238,
+            62
+          ],
+          "lineBoxes": [
+            {
+              "text": "缩放百分之一百五十",
+              "bbox": [
+                99,
+                730,
+                202,
+                34
+              ]
+            }
+          ]
+        },
+        {
+          "sender": "right",
+          "text": "截图尺寸变大了",
+          "bbox": [
+            446,
+            800,
+            194,
+            62
+          ],
+          "lineBoxes": [
+            {
+              "text": "截图尺寸变大了",
+              "bbox": [
+                464,
+                813,
+                158,
+                34
+              ]
+            }
+          ]
+        }
+      ],
+      "expectedContext": [
+        {
+          "kind": "title",
+          "text": "A",
+          "region": [
+            0,
+            0,
+            720,
+            54
+          ]
+        },
+        {
+          "kind": "input",
+          "text": "输入消息",
+          "region": [
+            18,
+            876,
+            684,
+            84
+          ]
+        },
+        {
+          "kind": "timestamp",
+          "text": "10月31日 22:28",
+          "region": [
+            0,
+            668,
+            720,
+            34
+          ]
+        }
+      ]
+    },
+    {
+      "captureId": "scale_150-01",
+      "scenario": "scale_150",
+      "scenarioLabel": "缩放 150%",
+      "variant": 1,
+      "scalePct": 150,
+      "scaleX": 1.5,
+      "scaleY": 1.5,
+      "width": 720,
+      "height": 960,
+      "theme": "light",
+      "fontSize": 15,
+      "blurRadius": 0.0,
+      "noiseSigma": 0.0,
+      "image": "images/scale_150-01.png",
+      "friendName": "B",
+      "expectedMessages": [
+        {
+          "sender": "left",
+          "text": "高分屏的常见比例",
+          "bbox": [
+            81,
+            717,
+            216,
+            62
+          ],
+          "lineBoxes": [
+            {
+              "text": "高分屏的常见比例",
+              "bbox": [
+                99,
+                730,
+                180,
+                34
+              ]
+            }
+          ]
+        },
+        {
+          "sender": "right",
+          "text": "识别应该更稳",
+          "bbox": [
+            468,
+            800,
+            171,
+            62
+          ],
+          "lineBoxes": [
+            {
+              "text": "识别应该更稳",
+              "bbox": [
+                486,
+                813,
+                135,
+                34
+              ]
+            }
+          ]
+        }
+      ],
+      "expectedContext": [
+        {
+          "kind": "title",
+          "text": "B",
+          "region": [
+            0,
+            0,
+            720,
+            54
+          ]
+        },
+        {
+          "kind": "input",
+          "text": "输入消息",
+          "region": [
+            18,
+            876,
+            684,
+            84
+          ]
+        },
+        {
+          "kind": "timestamp",
+          "text": "10月31日 22:28",
+          "region": [
+            0,
+            668,
+            720,
+            34
+          ]
+        }
+      ]
+    },
+    {
+      "captureId": "scale_175-00",
+      "scenario": "scale_175",
+      "scenarioLabel": "缩放 175%",
+      "variant": 0,
+      "scalePct": 175,
+      "scaleX": 1.75,
+      "scaleY": 1.75,
+      "width": 840,
+      "height": 1120,
+      "theme": "light",
+      "fontSize": 15,
+      "blurRadius": 0.0,
+      "noiseSigma": 0.0,
+      "image": "images/scale_175-00.png",
+      "friendName": "B",
+      "expectedMessages": [
+        {
+          "sender": "left",
+          "text": "缩放百分之一百七十五",
+          "bbox": [
+            94,
+            836,
+            304,
+            72
+          ],
+          "lineBoxes": [
+            {
+              "text": "缩放百分之一百七十五",
+              "bbox": [
+                116,
+                852,
+                262,
+                40
+              ]
+            }
+          ]
+        },
+        {
+          "sender": "right",
+          "text": "这已经是很大的图了",
+          "bbox": [
+            467,
+            933,
+            278,
+            72
+          ],
+          "lineBoxes": [
+            {
+              "text": "这已经是很大的图了",
+              "bbox": [
+                488,
+                948,
+                236,
+                40
+              ]
+            }
+          ]
+        }
+      ],
+      "expectedContext": [
+        {
+          "kind": "title",
+          "text": "B",
+          "region": [
+            0,
+            0,
+            840,
+            63
+          ]
+        },
+        {
+          "kind": "input",
+          "text": "输入消息",
+          "region": [
+            21,
+            1022,
+            798,
+            98
+          ]
+        },
+        {
+          "kind": "timestamp",
+          "text": "10月31日 22:28",
+          "region": [
+            0,
+            779,
+            840,
+            40
+          ]
+        }
+      ]
+    },
+    {
+      "captureId": "scale_175-01",
+      "scenario": "scale_175",
+      "scenarioLabel": "缩放 175%",
+      "variant": 1,
+      "scalePct": 175,
+      "scaleX": 1.75,
+      "scaleY": 1.75,
+      "width": 840,
+      "height": 1120,
+      "theme": "light",
+      "fontSize": 15,
+      "blurRadius": 0.0,
+      "noiseSigma": 0.0,
+      "image": "images/scale_175-01.png",
+      "friendName": "C",
+      "expectedMessages": [
+        {
+          "sender": "left",
+          "text": "大尺寸截图",
+          "bbox": [
+            94,
+            836,
+            173,
+            72
+          ],
+          "lineBoxes": [
+            {
+              "text": "大尺寸截图",
+              "bbox": [
+                116,
+                852,
+                131,
+                40
+              ]
+            }
+          ]
+        },
+        {
+          "sender": "right",
+          "text": "计算量也更大",
+          "bbox": [
+            546,
+            933,
+            200,
+            72
+          ],
+          "lineBoxes": [
+            {
+              "text": "计算量也更大",
+              "bbox": [
+                567,
+                948,
+                158,
+                40
+              ]
+            }
+          ]
+        }
+      ],
+      "expectedContext": [
+        {
+          "kind": "title",
+          "text": "C",
+          "region": [
+            0,
+            0,
+            840,
+            63
+          ]
+        },
+        {
+          "kind": "input",
+          "text": "输入消息",
+          "region": [
+            21,
+            1022,
+            798,
+            98
+          ]
+        },
+        {
+          "kind": "timestamp",
+          "text": "今天 21:57",
+          "region": [
+            0,
+            779,
+            840,
+            40
+          ]
+        }
+      ]
+    },
+    {
+      "captureId": "long_bubble-00",
+      "scenario": "long_bubble",
+      "scenarioLabel": "超长气泡（多行换行）",
+      "variant": 0,
+      "scalePct": 100,
+      "scaleX": 1.0,
+      "scaleY": 1.0,
+      "width": 480,
+      "height": 640,
+      "theme": "light",
+      "fontSize": 14,
+      "blurRadius": 0.0,
+      "noiseSigma": 0.0,
+      "image": "images/long_bubble-00.png",
+      "friendName": "B",
+      "expectedMessages": [
+        {
+          "sender": "left",
+          "text": "今天下午三点开会，会议纪要我已经整理好发到群里了，大家有空看一下，有问题随时在群里回复，我这边会统一汇总处理。",
+          "bbox": [
+            54,
+            436,
+            318,
+            84
+          ],
+          "lineBoxes": [
+            {
+              "text": "今天下午三点开会，会议纪要我已经整理好发到",
+              "bbox": [
+                66,
+                445,
+                294,
+                22
+              ]
+            },
+            {
+              "text": "群里了，大家有空看一下，有问题随时在群里回",
+              "bbox": [
+                66,
+                467,
+                294,
+                22
+              ]
+            },
+            {
+              "text": "复，我这边会统一汇总处理。",
+              "bbox": [
+                66,
+                489,
+                182,
+                22
+              ]
+            }
+          ]
+        },
+        {
+          "sender": "right",
+          "text": "收到，我晚点看",
+          "bbox": [
+            304,
+            534,
+            122,
+            40
+          ],
+          "lineBoxes": [
+            {
+              "text": "收到，我晚点看",
+              "bbox": [
+                316,
+                543,
+                98,
+                22
+              ]
+            }
+          ]
+        }
+      ],
+      "expectedContext": [
+        {
+          "kind": "title",
+          "text": "B",
+          "region": [
+            0,
+            0,
+            480,
+            36
+          ]
+        },
+        {
+          "kind": "input",
+          "text": "输入消息",
+          "region": [
+            12,
+            584,
+            456,
+            56
+          ]
+        },
+        {
+          "kind": "timestamp",
+          "text": "10月31日 22:31",
+          "region": [
+            0,
+            403,
+            480,
+            23
+          ]
+        }
+      ]
+    },
+    {
+      "captureId": "long_bubble-01",
+      "scenario": "long_bubble",
+      "scenarioLabel": "超长气泡（多行换行）",
+      "variant": 1,
+      "scalePct": 100,
+      "scaleX": 1.0,
+      "scaleY": 1.0,
+      "width": 480,
+      "height": 640,
+      "theme": "light",
+      "fontSize": 14,
+      "blurRadius": 0.0,
+      "noiseSigma": 0.0,
+      "image": "images/long_bubble-01.png",
+      "friendName": "C",
+      "expectedMessages": [
+        {
+          "sender": "left",
+          "text": "你上次说的那个表情包工程还在吗",
+          "bbox": [
+            54,
+            436,
+            234,
+            40
+          ],
+          "lineBoxes": [
+            {
+              "text": "你上次说的那个表情包工程还在吗",
+              "bbox": [
+                66,
+                445,
+                210,
+                22
+              ]
+            }
+          ]
+        },
+        {
+          "sender": "right",
+          "text": "在的，我把仓库地址和说明都放在群公告里了，你按里面的步骤装一下依赖，然后运行测试命令应该就能跑起来，有问题再找我。",
+          "bbox": [
+            108,
+            490,
+            318,
+            84
+          ],
+          "lineBoxes": [
+            {
+              "text": "在的，我把仓库地址和说明都放在群公告里了，",
+              "bbox": [
+                120,
+                499,
+                294,
+                22
+              ]
+            },
+            {
+              "text": "你按里面的步骤装一下依赖，然后运行测试命令",
+              "bbox": [
+                120,
+                521,
+                294,
+                22
+              ]
+            },
+            {
+              "text": "应该就能跑起来，有问题再找我。",
+              "bbox": [
+                120,
+                543,
+                210,
+                22
+              ]
+            }
+          ]
+        }
+      ],
+      "expectedContext": [
+        {
+          "kind": "title",
+          "text": "C",
+          "region": [
+            0,
+            0,
+            480,
+            36
+          ]
+        },
+        {
+          "kind": "input",
+          "text": "输入消息",
+          "region": [
+            12,
+            584,
+            456,
+            56
+          ]
+        },
+        {
+          "kind": "timestamp",
+          "text": "10月31日 22:28",
+          "region": [
+            0,
+            403,
+            480,
+            23
+          ]
+        }
+      ]
+    },
+    {
+      "captureId": "repeat_two-00",
+      "scenario": "repeat_two",
+      "scenarioLabel": "连发两条相同文本",
+      "variant": 0,
+      "scalePct": 100,
+      "scaleX": 1.0,
+      "scaleY": 1.0,
+      "width": 480,
+      "height": 640,
+      "theme": "light",
+      "fontSize": 15,
+      "blurRadius": 0.0,
+      "noiseSigma": 0.0,
+      "image": "images/repeat_two-00.png",
+      "friendName": "C",
+      "expectedMessages": [
+        {
+          "sender": "left",
+          "text": "好的收到",
+          "bbox": [
+            54,
+            478,
+            84,
+            41
+          ],
+          "lineBoxes": [
+            {
+              "text": "好的收到",
+              "bbox": [
+                66,
+                487,
+                60,
+                23
+              ]
+            }
+          ]
+        },
+        {
+          "sender": "left",
+          "text": "好的收到",
+          "bbox": [
+            54,
+            533,
+            84,
+            41
+          ],
+          "lineBoxes": [
+            {
+              "text": "好的收到",
+              "bbox": [
+                66,
+                542,
+                60,
+                23
+              ]
+            }
+          ]
+        }
+      ],
+      "expectedContext": [
+        {
+          "kind": "title",
+          "text": "C",
+          "region": [
+            0,
+            0,
+            480,
+            36
+          ]
+        },
+        {
+          "kind": "input",
+          "text": "输入消息",
+          "region": [
+            12,
+            584,
+            456,
+            56
+          ]
+        },
+        {
+          "kind": "timestamp",
+          "text": "10月31日 22:31",
+          "region": [
+            0,
+            445,
+            480,
+            23
+          ]
+        }
+      ]
+    },
+    {
+      "captureId": "repeat_two-01",
+      "scenario": "repeat_two",
+      "scenarioLabel": "连发两条相同文本",
+      "variant": 1,
+      "scalePct": 100,
+      "scaleX": 1.0,
+      "scaleY": 1.0,
+      "width": 480,
+      "height": 640,
+      "theme": "light",
+      "fontSize": 15,
+      "blurRadius": 0.0,
+      "noiseSigma": 0.0,
+      "image": "images/repeat_two-01.png",
+      "friendName": "A",
+      "expectedMessages": [
+        {
+          "sender": "right",
+          "text": "明天见",
+          "bbox": [
+            357,
+            478,
+            69,
+            41
+          ],
+          "lineBoxes": [
+            {
+              "text": "明天见",
+              "bbox": [
+                369,
+                487,
+                45,
+                23
+              ]
+            }
+          ]
+        },
+        {
+          "sender": "right",
+          "text": "明天见",
+          "bbox": [
+            357,
+            533,
+            69,
+            41
+          ],
+          "lineBoxes": [
+            {
+              "text": "明天见",
+              "bbox": [
+                369,
+                542,
+                45,
+                23
+              ]
+            }
+          ]
+        }
+      ],
+      "expectedContext": [
+        {
+          "kind": "title",
+          "text": "A",
+          "region": [
+            0,
+            0,
+            480,
+            36
+          ]
+        },
+        {
+          "kind": "input",
+          "text": "输入消息",
+          "region": [
+            12,
+            584,
+            456,
+            56
+          ]
+        },
+        {
+          "kind": "timestamp",
+          "text": "10月31日 22:28",
+          "region": [
+            0,
+            445,
+            480,
+            23
+          ]
+        }
+      ]
+    },
+    {
+      "captureId": "bilingual-00",
+      "scenario": "bilingual",
+      "scenarioLabel": "中英混排",
+      "variant": 0,
+      "scalePct": 100,
+      "scaleX": 1.0,
+      "scaleY": 1.0,
+      "width": 480,
+      "height": 640,
+      "theme": "light",
+      "fontSize": 15,
+      "blurRadius": 0.0,
+      "noiseSigma": 0.0,
+      "image": "images/bilingual-00.png",
+      "friendName": "A",
+      "expectedMessages": [
+        {
+          "sender": "left",
+          "text": "OK，明天 10:30 我们开个 Zoom 会议聊一下 OCR 的事情",
+          "bbox": [
+            54,
+            455,
+            310,
+            64
+          ],
+          "lineBoxes": [
+            {
+              "text": "OK，明天 10:30 我们开个 Zoom 会议聊一",
+              "bbox": [
+                66,
+                464,
+                286,
+                23
+              ]
+            },
+            {
+              "text": "下 OCR 的事情",
+              "bbox": [
+                66,
+                487,
+                100,
+                23
+              ]
+            }
+          ]
+        },
+        {
+          "sender": "right",
+          "text": "收到，会议链接发我一下",
+          "bbox": [
+            237,
+            533,
+            189,
+            41
+          ],
+          "lineBoxes": [
+            {
+              "text": "收到，会议链接发我一下",
+              "bbox": [
+                249,
+                542,
+                165,
+                23
+              ]
+            }
+          ]
+        }
+      ],
+      "expectedContext": [
+        {
+          "kind": "title",
+          "text": "A",
+          "region": [
+            0,
+            0,
+            480,
+            36
+          ]
+        },
+        {
+          "kind": "input",
+          "text": "输入消息",
+          "region": [
+            12,
+            584,
+            456,
+            56
+          ]
+        },
+        {
+          "kind": "timestamp",
+          "text": "10月31日 22:31",
+          "region": [
+            0,
+            422,
+            480,
+            23
+          ]
+        }
+      ]
+    },
+    {
+      "captureId": "bilingual-01",
+      "scenario": "bilingual",
+      "scenarioLabel": "中英混排",
+      "variant": 1,
+      "scalePct": 100,
+      "scaleX": 1.0,
+      "scaleY": 1.0,
+      "width": 480,
+      "height": 640,
+      "theme": "light",
+      "fontSize": 15,
+      "blurRadius": 0.0,
+      "noiseSigma": 0.0,
+      "image": "images/bilingual-01.png",
+      "friendName": "B",
+      "expectedMessages": [
+        {
+          "sender": "left",
+          "text": "这个 pipeline 的 CER 大概是多少",
+          "bbox": [
+            54,
+            478,
+            247,
+            41
+          ],
+          "lineBoxes": [
+            {
+              "text": "这个 pipeline 的 CER 大概是多少",
+              "bbox": [
+                66,
+                487,
+                223,
+                23
+              ]
+            }
+          ]
+        },
+        {
+          "sender": "right",
+          "text": "我跑一下 benchmark 再告诉你",
+          "bbox": [
+            193,
+            533,
+            233,
+            41
+          ],
+          "lineBoxes": [
+            {
+              "text": "我跑一下 benchmark 再告诉你",
+              "bbox": [
+                205,
+                542,
+                209,
+                23
+              ]
+            }
+          ]
+        }
+      ],
+      "expectedContext": [
+        {
+          "kind": "title",
+          "text": "B",
+          "region": [
+            0,
+            0,
+            480,
+            36
+          ]
+        },
+        {
+          "kind": "input",
+          "text": "输入消息",
+          "region": [
+            12,
+            584,
+            456,
+            56
+          ]
+        },
+        {
+          "kind": "timestamp",
+          "text": "10月31日 22:31",
+          "region": [
+            0,
+            445,
+            480,
+            23
+          ]
+        }
+      ]
+    },
+    {
+      "captureId": "numbers-00",
+      "scenario": "numbers",
+      "scenarioLabel": "数字 / 金额 / 电话 / 日期（均为虚构占位）",
+      "variant": 0,
+      "scalePct": 100,
+      "scaleX": 1.0,
+      "scaleY": 1.0,
+      "width": 480,
+      "height": 640,
+      "theme": "light",
+      "fontSize": 15,
+      "blurRadius": 0.0,
+      "noiseSigma": 0.0,
+      "image": "images/numbers-00.png",
+      "friendName": "C",
+      "expectedMessages": [
+        {
+          "sender": "left",
+          "text": "订单号 SF0000000000，金额 128.50 元，日期 2026-10-31",
+          "bbox": [
+            54,
+            432,
+            312,
+            64
+          ],
+          "lineBoxes": [
+            {
+              "text": "订单号 SF0000000000，金额 128.50 元，",
+              "bbox": [
+                66,
+                441,
+                288,
+                23
+              ]
+            },
+            {
+              "text": "日期 2026-10-31",
+              "bbox": [
+                66,
+                464,
+                118,
+                23
+              ]
+            }
+          ]
+        },
+        {
+          "sender": "right",
+          "text": "客服电话 13800000000，工作时间 9:00-18:00",
+          "bbox": [
+            164,
+            510,
+            262,
+            64
+          ],
+          "lineBoxes": [
+            {
+              "text": "客服电话 13800000000，工作时间",
+              "bbox": [
+                176,
+                519,
+                238,
+                23
+              ]
+            },
+            {
+              "text": "9:00-18:00",
+              "bbox": [
+                176,
+                542,
+                77,
+                23
+              ]
+            }
+          ]
+        }
+      ],
+      "expectedContext": [
+        {
+          "kind": "title",
+          "text": "C",
+          "region": [
+            0,
+            0,
+            480,
+            36
+          ]
+        },
+        {
+          "kind": "input",
+          "text": "输入消息",
+          "region": [
+            12,
+            584,
+            456,
+            56
+          ]
+        },
+        {
+          "kind": "timestamp",
+          "text": "10月31日 22:28",
+          "region": [
+            0,
+            399,
+            480,
+            23
+          ]
+        }
+      ]
+    },
+    {
+      "captureId": "numbers-01",
+      "scenario": "numbers",
+      "scenarioLabel": "数字 / 金额 / 电话 / 日期（均为虚构占位）",
+      "variant": 1,
+      "scalePct": 100,
+      "scaleX": 1.0,
+      "scaleY": 1.0,
+      "width": 480,
+      "height": 640,
+      "theme": "light",
+      "fontSize": 15,
+      "blurRadius": 0.0,
+      "noiseSigma": 0.0,
+      "image": "images/numbers-01.png",
+      "friendName": "A",
+      "expectedMessages": [
+        {
+          "sender": "left",
+          "text": "转账 66.66 元已到账，余额 1024.00 元",
+          "bbox": [
+            54,
+            478,
+            288,
+            41
+          ],
+          "lineBoxes": [
+            {
+              "text": "转账 66.66 元已到账，余额 1024.00 元",
+              "bbox": [
+                66,
+                487,
+                264,
+                23
+              ]
+            }
+          ]
+        },
+        {
+          "sender": "right",
+          "text": "2 号线转 10 号线，22:15 最后一班",
+          "bbox": [
+            169,
+            533,
+            257,
+            41
+          ],
+          "lineBoxes": [
+            {
+              "text": "2 号线转 10 号线，22:15 最后一班",
+              "bbox": [
+                181,
+                542,
+                233,
+                23
+              ]
+            }
+          ]
+        }
+      ],
+      "expectedContext": [
+        {
+          "kind": "title",
+          "text": "A",
+          "region": [
+            0,
+            0,
+            480,
+            36
+          ]
+        },
+        {
+          "kind": "input",
+          "text": "输入消息",
+          "region": [
+            12,
+            584,
+            456,
+            56
+          ]
+        },
+        {
+          "kind": "timestamp",
+          "text": "今天 21:57",
+          "region": [
+            0,
+            445,
+            480,
+            23
+          ]
+        }
+      ]
+    },
+    {
+      "captureId": "emoji-00",
+      "scenario": "emoji",
+      "scenarioLabel": "emoji / 颜文字（OCR 通常读不出，属预期）",
+      "variant": 0,
+      "scalePct": 100,
+      "scaleX": 1.0,
+      "scaleY": 1.0,
+      "width": 480,
+      "height": 640,
+      "theme": "light",
+      "fontSize": 15,
+      "blurRadius": 0.0,
+      "noiseSigma": 0.0,
+      "image": "images/emoji-00.png",
+      "friendName": "B",
+      "expectedMessages": [
+        {
+          "sender": "left",
+          "text": "今天好累啊 😂 但是活还得干",
+          "bbox": [
+            54,
+            478,
+            218,
+            41
+          ],
+          "lineBoxes": [
+            {
+              "text": "今天好累啊 😂 但是活还得干",
+              "bbox": [
+                66,
+                487,
+                194,
+                23
+              ]
+            }
+          ]
+        },
+        {
+          "sender": "right",
+          "text": "抱抱你 (￣▽￣) 早点睡",
+          "bbox": [
+            255,
+            533,
+            171,
+            41
+          ],
+          "lineBoxes": [
+            {
+              "text": "抱抱你 (￣▽￣) 早点睡",
+              "bbox": [
+                267,
+                542,
+                147,
+                23
+              ]
+            }
+          ]
+        }
+      ],
+      "expectedContext": [
+        {
+          "kind": "title",
+          "text": "B",
+          "region": [
+            0,
+            0,
+            480,
+            36
+          ]
+        },
+        {
+          "kind": "input",
+          "text": "输入消息",
+          "region": [
+            12,
+            584,
+            456,
+            56
+          ]
+        },
+        {
+          "kind": "timestamp",
+          "text": "10月31日 22:28",
+          "region": [
+            0,
+            445,
+            480,
+            23
+          ]
+        }
+      ]
+    },
+    {
+      "captureId": "emoji-01",
+      "scenario": "emoji",
+      "scenarioLabel": "emoji / 颜文字（OCR 通常读不出，属预期）",
+      "variant": 1,
+      "scalePct": 100,
+      "scaleX": 1.0,
+      "scaleY": 1.0,
+      "width": 480,
+      "height": 640,
+      "theme": "light",
+      "fontSize": 15,
+      "blurRadius": 0.0,
+      "noiseSigma": 0.0,
+      "image": "images/emoji-01.png",
+      "friendName": "C",
+      "expectedMessages": [
+        {
+          "sender": "left",
+          "text": "下班啦 🎉🎉",
+          "bbox": [
+            54,
+            478,
+            115,
+            41
+          ],
+          "lineBoxes": [
+            {
+              "text": "下班啦 🎉🎉",
+              "bbox": [
+                66,
+                487,
+                91,
+                23
+              ]
+            }
+          ]
+        },
+        {
+          "sender": "right",
+          "text": "收到红包啦 🧧 谢谢",
+          "bbox": [
+            268,
+            533,
+            158,
+            41
+          ],
+          "lineBoxes": [
+            {
+              "text": "收到红包啦 🧧 谢谢",
+              "bbox": [
+                280,
+                542,
+                134,
+                23
+              ]
+            }
+          ]
+        }
+      ],
+      "expectedContext": [
+        {
+          "kind": "title",
+          "text": "C",
+          "region": [
+            0,
+            0,
+            480,
+            36
+          ]
+        },
+        {
+          "kind": "input",
+          "text": "输入消息",
+          "region": [
+            12,
+            584,
+            456,
+            56
+          ]
+        },
+        {
+          "kind": "timestamp",
+          "text": "今天 21:57",
+          "region": [
+            0,
+            445,
+            480,
+            23
+          ]
+        }
+      ]
+    },
+    {
+      "captureId": "dark_mode-00",
+      "scenario": "dark_mode",
+      "scenarioLabel": "深色模式",
+      "variant": 0,
+      "scalePct": 100,
+      "scaleX": 1.0,
+      "scaleY": 1.0,
+      "width": 480,
+      "height": 640,
+      "theme": "dark",
+      "fontSize": 15,
+      "blurRadius": 0.0,
+      "noiseSigma": 0.0,
+      "image": "images/dark_mode-00.png",
+      "friendName": "B",
+      "expectedMessages": [
+        {
+          "sender": "left",
+          "text": "深色模式下看得更舒服",
+          "bbox": [
+            54,
+            478,
+            174,
+            41
+          ],
+          "lineBoxes": [
+            {
+              "text": "深色模式下看得更舒服",
+              "bbox": [
+                66,
+                487,
+                150,
+                23
+              ]
+            }
+          ]
+        },
+        {
+          "sender": "right",
+          "text": "夜里刷手机就靠它了",
+          "bbox": [
+            267,
+            533,
+            159,
+            41
+          ],
+          "lineBoxes": [
+            {
+              "text": "夜里刷手机就靠它了",
+              "bbox": [
+                279,
+                542,
+                135,
+                23
+              ]
+            }
+          ]
+        }
+      ],
+      "expectedContext": [
+        {
+          "kind": "title",
+          "text": "B",
+          "region": [
+            0,
+            0,
+            480,
+            36
+          ]
+        },
+        {
+          "kind": "input",
+          "text": "输入消息",
+          "region": [
+            12,
+            584,
+            456,
+            56
+          ]
+        },
+        {
+          "kind": "timestamp",
+          "text": "10月31日 22:31",
+          "region": [
+            0,
+            445,
+            480,
+            23
+          ]
+        }
+      ]
+    },
+    {
+      "captureId": "dark_mode-01",
+      "scenario": "dark_mode",
+      "scenarioLabel": "深色模式",
+      "variant": 1,
+      "scalePct": 100,
+      "scaleX": 1.0,
+      "scaleY": 1.0,
+      "width": 480,
+      "height": 640,
+      "theme": "dark",
+      "fontSize": 15,
+      "blurRadius": 0.0,
+      "noiseSigma": 0.0,
+      "image": "images/dark_mode-01.png",
+      "friendName": "C",
+      "expectedMessages": [
+        {
+          "sender": "left",
+          "text": "黑色背景的截图",
+          "bbox": [
+            54,
+            478,
+            129,
+            41
+          ],
+          "lineBoxes": [
+            {
+              "text": "黑色背景的截图",
+              "bbox": [
+                66,
+                487,
+                105,
+                23
+              ]
+            }
+          ]
+        },
+        {
+          "sender": "right",
+          "text": "对比度其实不低",
+          "bbox": [
+            297,
+            533,
+            129,
+            41
+          ],
+          "lineBoxes": [
+            {
+              "text": "对比度其实不低",
+              "bbox": [
+                309,
+                542,
+                105,
+                23
+              ]
+            }
+          ]
+        }
+      ],
+      "expectedContext": [
+        {
+          "kind": "title",
+          "text": "C",
+          "region": [
+            0,
+            0,
+            480,
+            36
+          ]
+        },
+        {
+          "kind": "input",
+          "text": "输入消息",
+          "region": [
+            12,
+            584,
+            456,
+            56
+          ]
+        },
+        {
+          "kind": "timestamp",
+          "text": "今天 21:57",
+          "region": [
+            0,
+            445,
+            480,
+            23
+          ]
+        }
+      ]
+    },
+    {
+      "captureId": "occluded-00",
+      "scenario": "occluded",
+      "scenarioLabel": "半遮挡（通知条盖住部分气泡）",
+      "variant": 0,
+      "scalePct": 100,
+      "scaleX": 1.0,
+      "scaleY": 1.0,
+      "width": 480,
+      "height": 640,
+      "theme": "light",
+      "fontSize": 15,
+      "blurRadius": 0.0,
+      "noiseSigma": 0.0,
+      "image": "images/occluded-00.png",
+      "friendName": "B",
+      "expectedMessages": [
+        {
+          "sender": "left",
+          "text": "这条消息被通知条挡住了一半",
+          "bbox": [
+            54,
+            478,
+            219,
+            41
+          ],
+          "lineBoxes": [
+            {
+              "text": "这条消息被通知条挡住了一半",
+              "bbox": [
+                66,
+                487,
+                195,
+                23
+              ]
+            }
+          ]
+        },
+        {
+          "sender": "right",
+          "text": "遮挡的部分还能认出来吗",
+          "bbox": [
+            237,
+            533,
+            189,
+            41
+          ],
+          "lineBoxes": [
+            {
+              "text": "遮挡的部分还能认出来吗",
+              "bbox": [
+                249,
+                542,
+                165,
+                23
+              ]
+            }
+          ]
+        }
+      ],
+      "expectedContext": [
+        {
+          "kind": "title",
+          "text": "B",
+          "region": [
+            0,
+            0,
+            480,
+            36
+          ]
+        },
+        {
+          "kind": "input",
+          "text": "输入消息",
+          "region": [
+            12,
+            584,
+            456,
+            56
+          ]
+        },
+        {
+          "kind": "timestamp",
+          "text": "10月31日 22:28",
+          "region": [
+            0,
+            445,
+            480,
+            23
+          ]
+        }
+      ]
+    },
+    {
+      "captureId": "occluded-01",
+      "scenario": "occluded",
+      "scenarioLabel": "半遮挡（通知条盖住部分气泡）",
+      "variant": 1,
+      "scalePct": 100,
+      "scaleX": 1.0,
+      "scaleY": 1.0,
+      "width": 480,
+      "height": 640,
+      "theme": "light",
+      "fontSize": 15,
+      "blurRadius": 0.0,
+      "noiseSigma": 0.0,
+      "image": "images/occluded-01.png",
+      "friendName": "C",
+      "expectedMessages": [
+        {
+          "sender": "left",
+          "text": "被遮挡的聊天内容",
+          "bbox": [
+            54,
+            478,
+            144,
+            41
+          ],
+          "lineBoxes": [
+            {
+              "text": "被遮挡的聊天内容",
+              "bbox": [
+                66,
+                487,
+                120,
+                23
+              ]
+            }
+          ]
+        },
+        {
+          "sender": "right",
+          "text": "只能靠上下文猜了",
+          "bbox": [
+            282,
+            533,
+            144,
+            41
+          ],
+          "lineBoxes": [
+            {
+              "text": "只能靠上下文猜了",
+              "bbox": [
+                294,
+                542,
+                120,
+                23
+              ]
+            }
+          ]
+        }
+      ],
+      "expectedContext": [
+        {
+          "kind": "title",
+          "text": "C",
+          "region": [
+            0,
+            0,
+            480,
+            36
+          ]
+        },
+        {
+          "kind": "input",
+          "text": "输入消息",
+          "region": [
+            12,
+            584,
+            456,
+            56
+          ]
+        },
+        {
+          "kind": "timestamp",
+          "text": "10月31日 22:28",
+          "region": [
+            0,
+            445,
+            480,
+            23
+          ]
+        }
+      ]
+    },
+    {
+      "captureId": "multi_message-00",
+      "scenario": "multi_message",
+      "scenarioLabel": "多行多消息（6 条 + 中间时间戳）",
+      "variant": 0,
+      "scalePct": 100,
+      "scaleX": 1.0,
+      "scaleY": 1.0,
+      "width": 480,
+      "height": 640,
+      "theme": "light",
+      "fontSize": 14,
+      "blurRadius": 0.0,
+      "noiseSigma": 0.0,
+      "image": "images/multi_message-00.png",
+      "friendName": "C",
+      "expectedMessages": [
+        {
+          "sender": "left",
+          "text": "在吗",
+          "bbox": [
+            54,
+            231,
+            52,
+            40
+          ],
+          "lineBoxes": [
+            {
+              "text": "在吗",
+              "bbox": [
+                66,
+                240,
+                28,
+                22
+              ]
+            }
+          ]
+        },
+        {
+          "sender": "right",
+          "text": "在的",
+          "bbox": [
+            374,
+            285,
+            52,
+            40
+          ],
+          "lineBoxes": [
+            {
+              "text": "在的",
+              "bbox": [
+                386,
+                294,
+                28,
+                22
+              ]
+            }
+          ]
+        },
+        {
+          "sender": "left",
+          "text": "晚上一起吃饭吗",
+          "bbox": [
+            54,
+            372,
+            122,
+            40
+          ],
+          "lineBoxes": [
+            {
+              "text": "晚上一起吃饭吗",
+              "bbox": [
+                66,
+                381,
+                98,
+                22
+              ]
+            }
+          ]
+        },
+        {
+          "sender": "right",
+          "text": "可以啊，吃什么",
+          "bbox": [
+            304,
+            426,
+            122,
+            40
+          ],
+          "lineBoxes": [
+            {
+              "text": "可以啊，吃什么",
+              "bbox": [
+                316,
+                435,
+                98,
+                22
+              ]
+            }
+          ]
+        },
+        {
+          "sender": "left",
+          "text": "大肥鱼怎么样",
+          "bbox": [
+            54,
+            480,
+            108,
+            40
+          ],
+          "lineBoxes": [
+            {
+              "text": "大肥鱼怎么样",
+              "bbox": [
+                66,
+                489,
+                84,
+                22
+              ]
+            }
+          ]
+        },
+        {
+          "sender": "right",
+          "text": "行，六点半见",
+          "bbox": [
+            318,
+            534,
+            108,
+            40
+          ],
+          "lineBoxes": [
+            {
+              "text": "行，六点半见",
+              "bbox": [
+                330,
+                543,
+                84,
+                22
+              ]
+            }
+          ]
+        }
+      ],
+      "expectedContext": [
+        {
+          "kind": "title",
+          "text": "C",
+          "region": [
+            0,
+            0,
+            480,
+            36
+          ]
+        },
+        {
+          "kind": "input",
+          "text": "输入消息",
+          "region": [
+            12,
+            584,
+            456,
+            56
+          ]
+        },
+        {
+          "kind": "timestamp",
+          "text": "10月31日 22:31",
+          "region": [
+            0,
+            198,
+            480,
+            23
+          ]
+        },
+        {
+          "kind": "timestamp",
+          "text": "22:35",
+          "region": [
+            0,
+            339,
+            480,
+            23
+          ]
+        }
+      ]
+    },
+    {
+      "captureId": "multi_message-01",
+      "scenario": "multi_message",
+      "scenarioLabel": "多行多消息（6 条 + 中间时间戳）",
+      "variant": 1,
+      "scalePct": 100,
+      "scaleX": 1.0,
+      "scaleY": 1.0,
+      "width": 480,
+      "height": 640,
+      "theme": "light",
+      "fontSize": 14,
+      "blurRadius": 0.0,
+      "noiseSigma": 0.0,
+      "image": "images/multi_message-01.png",
+      "friendName": "A",
+      "expectedMessages": [
+        {
+          "sender": "left",
+          "text": "下午的会议改到三点了",
+          "bbox": [
+            54,
+            339,
+            164,
+            40
+          ],
+          "lineBoxes": [
+            {
+              "text": "下午的会议改到三点了",
+              "bbox": [
+                66,
+                348,
+                140,
+                22
+              ]
+            }
+          ]
+        },
+        {
+          "sender": "right",
+          "text": "收到",
+          "bbox": [
+            374,
+            393,
+            52,
+            40
+          ],
+          "lineBoxes": [
+            {
+              "text": "收到",
+              "bbox": [
+                386,
+                402,
+                28,
+                22
+              ]
+            }
+          ]
+        },
+        {
+          "sender": "left",
+          "text": "会议纪要记得发我",
+          "bbox": [
+            54,
+            480,
+            136,
+            40
+          ],
+          "lineBoxes": [
+            {
+              "text": "会议纪要记得发我",
+              "bbox": [
+                66,
+                489,
+                112,
+                22
+              ]
+            }
+          ]
+        },
+        {
+          "sender": "right",
+          "text": "好的，整理完发你",
+          "bbox": [
+            290,
+            534,
+            136,
+            40
+          ],
+          "lineBoxes": [
+            {
+              "text": "好的，整理完发你",
+              "bbox": [
+                302,
+                543,
+                112,
+                22
+              ]
+            }
+          ]
+        }
+      ],
+      "expectedContext": [
+        {
+          "kind": "title",
+          "text": "A",
+          "region": [
+            0,
+            0,
+            480,
+            36
+          ]
+        },
+        {
+          "kind": "input",
+          "text": "输入消息",
+          "region": [
+            12,
+            584,
+            456,
+            56
+          ]
+        },
+        {
+          "kind": "timestamp",
+          "text": "10月31日 22:28",
+          "region": [
+            0,
+            306,
+            480,
+            23
+          ]
+        },
+        {
+          "kind": "timestamp",
+          "text": "22:40",
+          "region": [
+            0,
+            447,
+            480,
+            23
+          ]
+        }
+      ]
+    },
+    {
+      "captureId": "short_msgs-00",
+      "scenario": "short_msgs",
+      "scenarioLabel": "极短消息（1-2 字气泡）",
+      "variant": 0,
+      "scalePct": 100,
+      "scaleX": 1.0,
+      "scaleY": 1.0,
+      "width": 480,
+      "height": 640,
+      "theme": "light",
+      "fontSize": 15,
+      "blurRadius": 0.0,
+      "noiseSigma": 0.0,
+      "image": "images/short_msgs-00.png",
+      "friendName": "C",
+      "expectedMessages": [
+        {
+          "sender": "left",
+          "text": "嗯",
+          "bbox": [
+            54,
+            423,
+            39,
+            41
+          ],
+          "lineBoxes": [
+            {
+              "text": "嗯",
+              "bbox": [
+                66,
+                432,
+                15,
+                23
+              ]
+            }
+          ]
+        },
+        {
+          "sender": "right",
+          "text": "好的",
+          "bbox": [
+            372,
+            478,
+            54,
+            41
+          ],
+          "lineBoxes": [
+            {
+              "text": "好的",
+              "bbox": [
+                384,
+                487,
+                30,
+                23
+              ]
+            }
+          ]
+        },
+        {
+          "sender": "left",
+          "text": "OK",
+          "bbox": [
+            54,
+            533,
+            46,
+            41
+          ],
+          "lineBoxes": [
+            {
+              "text": "OK",
+              "bbox": [
+                66,
+                542,
+                22,
+                23
+              ]
+            }
+          ]
+        }
+      ],
+      "expectedContext": [
+        {
+          "kind": "title",
+          "text": "C",
+          "region": [
+            0,
+            0,
+            480,
+            36
+          ]
+        },
+        {
+          "kind": "input",
+          "text": "输入消息",
+          "region": [
+            12,
+            584,
+            456,
+            56
+          ]
+        },
+        {
+          "kind": "timestamp",
+          "text": "10月31日 22:31",
+          "region": [
+            0,
+            390,
+            480,
+            23
+          ]
+        }
+      ]
+    },
+    {
+      "captureId": "short_msgs-01",
+      "scenario": "short_msgs",
+      "scenarioLabel": "极短消息（1-2 字气泡）",
+      "variant": 1,
+      "scalePct": 100,
+      "scaleX": 1.0,
+      "scaleY": 1.0,
+      "width": 480,
+      "height": 640,
+      "theme": "light",
+      "fontSize": 15,
+      "blurRadius": 0.0,
+      "noiseSigma": 0.0,
+      "image": "images/short_msgs-01.png",
+      "friendName": "A",
+      "expectedMessages": [
+        {
+          "sender": "left",
+          "text": "收到",
+          "bbox": [
+            54,
+            423,
+            54,
+            41
+          ],
+          "lineBoxes": [
+            {
+              "text": "收到",
+              "bbox": [
+                66,
+                432,
+                30,
+                23
+              ]
+            }
+          ]
+        },
+        {
+          "sender": "right",
+          "text": "行",
+          "bbox": [
+            387,
+            478,
+            39,
+            41
+          ],
+          "lineBoxes": [
+            {
+              "text": "行",
+              "bbox": [
+                399,
+                487,
+                15,
+                23
+              ]
+            }
+          ]
+        },
+        {
+          "sender": "left",
+          "text": "明天见",
+          "bbox": [
+            54,
+            533,
+            69,
+            41
+          ],
+          "lineBoxes": [
+            {
+              "text": "明天见",
+              "bbox": [
+                66,
+                542,
+                45,
+                23
+              ]
+            }
+          ]
+        }
+      ],
+      "expectedContext": [
+        {
+          "kind": "title",
+          "text": "A",
+          "region": [
+            0,
+            0,
+            480,
+            36
+          ]
+        },
+        {
+          "kind": "input",
+          "text": "输入消息",
+          "region": [
+            12,
+            584,
+            456,
+            56
+          ]
+        },
+        {
+          "kind": "timestamp",
+          "text": "10月31日 22:28",
+          "region": [
+            0,
+            390,
+            480,
+            23
+          ]
+        }
+      ]
+    },
+    {
+      "captureId": "stretched-00",
+      "scenario": "stretched",
+      "scenarioLabel": "截图横向拉伸（x1.35 / y1.0）",
+      "variant": 0,
+      "scalePct": 135,
+      "scaleX": 1.35,
+      "scaleY": 1.0,
+      "width": 648,
+      "height": 640,
+      "theme": "light",
+      "fontSize": 15,
+      "blurRadius": 0.0,
+      "noiseSigma": 0.0,
+      "image": "images/stretched-00.png",
+      "friendName": "A",
+      "expectedMessages": [
+        {
+          "sender": "left",
+          "text": "这是一张被横向拉伸的截图",
+          "bbox": [
+            73,
+            478,
+            275,
+            41
+          ],
+          "lineBoxes": [
+            {
+              "text": "这是一张被横向拉伸的截图",
+              "bbox": [
+                89,
+                487,
+                243,
+                23
+              ]
+            }
+          ]
+        },
+        {
+          "sender": "right",
+          "text": "比例不对，文字会变形",
+          "bbox": [
+            340,
+            533,
+            235,
+            41
+          ],
+          "lineBoxes": [
+            {
+              "text": "比例不对，文字会变形",
+              "bbox": [
+                356,
+                542,
+                202,
+                23
+              ]
+            }
+          ]
+        }
+      ],
+      "expectedContext": [
+        {
+          "kind": "title",
+          "text": "A",
+          "region": [
+            0,
+            0,
+            648,
+            36
+          ]
+        },
+        {
+          "kind": "input",
+          "text": "输入消息",
+          "region": [
+            16,
+            584,
+            616,
+            56
+          ]
+        },
+        {
+          "kind": "timestamp",
+          "text": "今天 21:57",
+          "region": [
+            0,
+            445,
+            648,
+            23
+          ]
+        }
+      ]
+    },
+    {
+      "captureId": "stretched-01",
+      "scenario": "stretched",
+      "scenarioLabel": "截图横向拉伸（x1.35 / y1.0）",
+      "variant": 1,
+      "scalePct": 135,
+      "scaleX": 1.35,
+      "scaleY": 1.0,
+      "width": 648,
+      "height": 640,
+      "theme": "light",
+      "fontSize": 15,
+      "blurRadius": 0.0,
+      "noiseSigma": 0.0,
+      "image": "images/stretched-01.png",
+      "friendName": "B",
+      "expectedMessages": [
+        {
+          "sender": "left",
+          "text": "拉伸后的文字宽度变了",
+          "bbox": [
+            73,
+            478,
+            235,
+            41
+          ],
+          "lineBoxes": [
+            {
+              "text": "拉伸后的文字宽度变了",
+              "bbox": [
+                89,
+                487,
+                202,
+                23
+              ]
+            }
+          ]
+        },
+        {
+          "sender": "right",
+          "text": "识别率可能会下降",
+          "bbox": [
+            381,
+            533,
+            194,
+            41
+          ],
+          "lineBoxes": [
+            {
+              "text": "识别率可能会下降",
+              "bbox": [
+                397,
+                542,
+                162,
+                23
+              ]
+            }
+          ]
+        }
+      ],
+      "expectedContext": [
+        {
+          "kind": "title",
+          "text": "B",
+          "region": [
+            0,
+            0,
+            648,
+            36
+          ]
+        },
+        {
+          "kind": "input",
+          "text": "输入消息",
+          "region": [
+            16,
+            584,
+            616,
+            56
+          ]
+        },
+        {
+          "kind": "timestamp",
+          "text": "10月31日 22:28",
+          "region": [
+            0,
+            445,
+            648,
+            23
+          ]
+        }
+      ]
+    },
+    {
+      "captureId": "noisy-00",
+      "scenario": "noisy",
+      "scenarioLabel": "压缩噪声（sigma 8）",
+      "variant": 0,
+      "scalePct": 100,
+      "scaleX": 1.0,
+      "scaleY": 1.0,
+      "width": 480,
+      "height": 640,
+      "theme": "light",
+      "fontSize": 15,
+      "blurRadius": 0.0,
+      "noiseSigma": 8.0,
+      "image": "images/noisy-00.png",
+      "friendName": "B",
+      "expectedMessages": [
+        {
+          "sender": "left",
+          "text": "压缩噪声让文字边缘变脏",
+          "bbox": [
+            54,
+            478,
+            189,
+            41
+          ],
+          "lineBoxes": [
+            {
+              "text": "压缩噪声让文字边缘变脏",
+              "bbox": [
+                66,
+                487,
+                165,
+                23
+              ]
+            }
+          ]
+        },
+        {
+          "sender": "right",
+          "text": "截图质量差的典型情况",
+          "bbox": [
+            252,
+            533,
+            174,
+            41
+          ],
+          "lineBoxes": [
+            {
+              "text": "截图质量差的典型情况",
+              "bbox": [
+                264,
+                542,
+                150,
+                23
+              ]
+            }
+          ]
+        }
+      ],
+      "expectedContext": [
+        {
+          "kind": "title",
+          "text": "B",
+          "region": [
+            0,
+            0,
+            480,
+            36
+          ]
+        },
+        {
+          "kind": "input",
+          "text": "输入消息",
+          "region": [
+            12,
+            584,
+            456,
+            56
+          ]
+        },
+        {
+          "kind": "timestamp",
+          "text": "10月31日 22:31",
+          "region": [
+            0,
+            445,
+            480,
+            23
+          ]
+        }
+      ]
+    },
+    {
+      "captureId": "noisy-01",
+      "scenario": "noisy",
+      "scenarioLabel": "压缩噪声（sigma 8）",
+      "variant": 1,
+      "scalePct": 100,
+      "scaleX": 1.0,
+      "scaleY": 1.0,
+      "width": 480,
+      "height": 640,
+      "theme": "light",
+      "fontSize": 15,
+      "blurRadius": 0.0,
+      "noiseSigma": 8.0,
+      "image": "images/noisy-01.png",
+      "friendName": "C",
+      "expectedMessages": [
+        {
+          "sender": "left",
+          "text": "有噪点的聊天截图",
+          "bbox": [
+            54,
+            478,
+            144,
+            41
+          ],
+          "lineBoxes": [
+            {
+              "text": "有噪点的聊天截图",
+              "bbox": [
+                66,
+                487,
+                120,
+                23
+              ]
+            }
+          ]
+        },
+        {
+          "sender": "right",
+          "text": "还能认得出来",
+          "bbox": [
+            312,
+            533,
+            114,
+            41
+          ],
+          "lineBoxes": [
+            {
+              "text": "还能认得出来",
+              "bbox": [
+                324,
+                542,
+                90,
+                23
+              ]
+            }
+          ]
+        }
+      ],
+      "expectedContext": [
+        {
+          "kind": "title",
+          "text": "C",
+          "region": [
+            0,
+            0,
+            480,
+            36
+          ]
+        },
+        {
+          "kind": "input",
+          "text": "输入消息",
+          "region": [
+            12,
+            584,
+            456,
+            56
+          ]
+        },
+        {
+          "kind": "timestamp",
+          "text": "今天 21:57",
+          "region": [
+            0,
+            445,
+            480,
+            23
+          ]
+        }
+      ]
+    },
+    {
+      "captureId": "ai_disclaimer-00",
+      "scenario": "ai_disclaimer",
+      "scenarioLabel": "AI 免责声明长消息",
+      "variant": 0,
+      "scalePct": 100,
+      "scaleX": 1.0,
+      "scaleY": 1.0,
+      "width": 480,
+      "height": 640,
+      "theme": "light",
+      "fontSize": 14,
+      "blurRadius": 0.0,
+      "noiseSigma": 0.0,
+      "image": "images/ai_disclaimer-00.png",
+      "friendName": "A",
+      "expectedMessages": [
+        {
+          "sender": "left",
+          "text": "本消息由 AI 分身自动生成，若不需要请回复「停」，人工会尽快接手处理。",
+          "bbox": [
+            54,
+            458,
+            312,
+            62
+          ],
+          "lineBoxes": [
+            {
+              "text": "本消息由 AI 分身自动生成，若不需要请回复「",
+              "bbox": [
+                66,
+                467,
+                288,
+                22
+              ]
+            },
+            {
+              "text": "停」，人工会尽快接手处理。",
+              "bbox": [
+                66,
+                489,
+                182,
+                22
+              ]
+            }
+          ]
+        },
+        {
+          "sender": "right",
+          "text": "好的，知道了，谢谢提醒",
+          "bbox": [
+            248,
+            534,
+            178,
+            40
+          ],
+          "lineBoxes": [
+            {
+              "text": "好的，知道了，谢谢提醒",
+              "bbox": [
+                260,
+                543,
+                154,
+                22
+              ]
+            }
+          ]
+        }
+      ],
+      "expectedContext": [
+        {
+          "kind": "title",
+          "text": "A",
+          "region": [
+            0,
+            0,
+            480,
+            36
+          ]
+        },
+        {
+          "kind": "input",
+          "text": "输入消息",
+          "region": [
+            12,
+            584,
+            456,
+            56
+          ]
+        },
+        {
+          "kind": "timestamp",
+          "text": "10月31日 22:28",
+          "region": [
+            0,
+            425,
+            480,
+            23
+          ]
+        }
+      ]
+    },
+    {
+      "captureId": "ai_disclaimer-01",
+      "scenario": "ai_disclaimer",
+      "scenarioLabel": "AI 免责声明长消息",
+      "variant": 1,
+      "scalePct": 100,
+      "scaleX": 1.0,
+      "scaleY": 1.0,
+      "width": 480,
+      "height": 640,
+      "theme": "light",
+      "fontSize": 14,
+      "blurRadius": 0.0,
+      "noiseSigma": 0.0,
+      "image": "images/ai_disclaimer-01.png",
+      "friendName": "B",
+      "expectedMessages": [
+        {
+          "sender": "left",
+          "text": "提示：本消息由 AI 分身自动回复，内容仅供参考。",
+          "bbox": [
+            54,
+            458,
+            312,
+            62
+          ],
+          "lineBoxes": [
+            {
+              "text": "提示：本消息由 AI 分身自动回复，内容仅供参",
+              "bbox": [
+                66,
+                467,
+                288,
+                22
+              ]
+            },
+            {
+              "text": "考。",
+              "bbox": [
+                66,
+                489,
+                28,
+                22
+              ]
+            }
+          ]
+        },
+        {
+          "sender": "right",
+          "text": "明白，那我先不打扰了",
+          "bbox": [
+            262,
+            534,
+            164,
+            40
+          ],
+          "lineBoxes": [
+            {
+              "text": "明白，那我先不打扰了",
+              "bbox": [
+                274,
+                543,
+                140,
+                22
+              ]
+            }
+          ]
+        }
+      ],
+      "expectedContext": [
+        {
+          "kind": "title",
+          "text": "B",
+          "region": [
+            0,
+            0,
+            480,
+            36
+          ]
+        },
+        {
+          "kind": "input",
+          "text": "输入消息",
+          "region": [
+            12,
+            584,
+            456,
+            56
+          ]
+        },
+        {
+          "kind": "timestamp",
+          "text": "10月31日 22:28",
+          "region": [
+            0,
+            425,
+            480,
+            23
+          ]
+        }
+      ]
+    }
+  ]
+}
