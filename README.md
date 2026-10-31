@@ -5,7 +5,7 @@
 > 📖 **新手先看 [docs/使用说明.md](docs/使用说明.md)**：安装/更新/卸载、扫码登录、被踢重登、白名单、在线时段、防封建议、桌面通道前置、FAQ 都在里面；版本更新记录见 [CHANGELOG.md](CHANGELOG.md)。当前版本 **0.2.3**。
 >
 > 🛠 **环境自检**：`powershell -ExecutionPolicy Bypass -File scripts/pwsh/selfcheck.ps1 -Port <DSH端口>`（检查 Windows/微信窗口/OCR/构建产物/插件 API）。
-> 📚 进阶文档：[架构](docs/ARCHITECTURE.md) · [测试计划](docs/TEST-PLAN.md) · [提示词模板](docs/PROMPTS.md) · [验收标准](docs/ACCEPTANCE.md) · [开发规则](AGENTS.md)。
+> 📚 进阶文档：[架构](docs/ARCHITECTURE.md) · [测试计划](docs/TEST-PLAN.md) · [提示词模板](docs/PROMPTS.md) · [验收标准](docs/ACCEPTANCE.md) · [发布与协作指南](docs/RELEASE-GUIDE.md) · [开发规则](AGENTS.md) · [免责声明](DISCLAIMER.md) · [安全声明](SECURITY.md) · [贡献指南](CONTRIBUTING.md)。
 
 > ⚠️ **重要声明（请先读完再装）**
 > 1. 本插件通过自动化方式操作微信客户端/手机通知，**违反《微信软件许可及服务协议》**，账号可能被限制、封禁，**风险由使用者自行承担**。
