@@ -49,7 +49,9 @@ param(
     # 可选：右侧聊天面板起点占窗口宽度比例；0 = 用环境变量/默认 0.62。
     [double]$PaneLeftRatio = 0,
     # 可选：read 时只读“当前已打开的会话”，标题/CurrentContact 都对不上时绝不 Ctrl+F 搜索（避免抢前台、搜索框闪烁）。
-    [switch]$NoSearch
+    [switch]$NoSearch,
+    # 可选：read 时覆盖本次截图放大倍数（0=默认；4=更高倍最近邻放大，用于二次识别投票）。
+    [int]$Upscale = 0
 )
 
 $ErrorActionPreference = 'Stop'
@@ -1716,6 +1718,7 @@ if ($hwnd -ne [IntPtr]::Zero) { Ensure-UsableWindow $hwnd }
     # 读取聊天记录时把截图放大倍数提高一档（最近邻放大），
     # 减少「大肥鱼」被认成「大吧鱼」这类形近字误读；只影响 read，不影响发送。
     if ($Action -eq 'read') { $script:Upscale = [math]::Max([int]$script:Upscale, 3) }
+    if ($Action -eq 'read' -and $Upscale -gt 0) { $script:Upscale = [int]$Upscale }
     if ($Action -eq 'read' -and $NoSearch) {
         # 只认“当前已经打开的会话”：标题 OCR 命中、或插件通过 list 的绿底选中行传回的 CurrentContact 与目标一致；
         # 两者都不成立时直接放弃读取，绝不 Ctrl+F 搜索（避免抢前台和搜索框闪烁）。

@@ -55,6 +55,45 @@ export function parseIdleMs(stdout: string): number | null {
   return match ? Number(match[1]) : null;
 }
 
+// OCR 噪声评估：Windows OCR 对生僻字/形近字经常给出残缺的偏旁部首（讠、刂、亻、扌…），
+// 或把中文错认成零散 ASCII。命中这些特征时用更高放大倍数再读一次，按噪声分投票选优，
+// 对应「多通道/多帧 OCR 投票」的业界做法，可显著降低「大肥鱼→大吧鱼」这类误读。
+const OCR_NOISE_CHARS = /[讠刂亻扌氵忄宀纟灬丨丿乛龴]/g;
+
+/** 文本的 OCR 噪声分：越低保真度越高。 */
+export function ocrNoiseScore(text) {
+  const raw = String(text || '').trim();
+  if (!raw) return 100;
+  const chinese = (raw.match(/[\u4e00-\u9fff]/g) || []).length;
+  const noise = (raw.match(OCR_NOISE_CHARS) || []).length;
+  const ascii = (raw.match(/[a-zA-Z0-9]/g) || []).length;
+  const ratio = chinese > 0 ? (noise + ascii * 0.5) / chinese : 0;
+  return noise + ascii * 0.5 + (chinese === 0 ? 10 : 0) + ratio * 30;
+}
+
+/** 读取到的文本是否可疑（疑似 OCR 误读），可疑时触发二次高倍识别。 */
+export function looksGarbled(text) {
+  const raw = String(text || '').trim();
+  if (!raw) return false;
+  if ((raw.match(OCR_NOISE_CHARS) || []).length > 0) return true;
+  const chinese = (raw.match(/[\u4e00-\u9fff]/g) || []).length;
+  const ascii = (raw.match(/[a-zA-Z]/g) || []).length;
+  if (chinese >= 2 && ascii >= Math.max(2, chinese / 3)) return true;
+  return ocrNoiseScore(raw) >= 8;
+}
+
+/** 两段候选文本里选更可信的一段：噪声低者优先，噪声接近时取更完整的。 */
+export function pickBetterText(a, b) {
+  const x = String(a || '').trim();
+  const y = String(b || '').trim();
+  if (!x) return y;
+  if (!y) return x;
+  const sx = ocrNoiseScore(x);
+  const sy = ocrNoiseScore(y);
+  if (Math.abs(sx - sy) >= 1) return sx < sy ? x : y;
+  return y.length > x.length ? y : x;
+}
+
 export class DesktopChannel {
   id: any = 'desktop';
   // 桌面视觉驱动目前只能发文本：表情/图片/语音没有 UIA 实现。
@@ -195,6 +234,38 @@ export class DesktopChannel {
       .pop();
     if (!line) return null;
     try { return JSON.parse(line); } catch { return null; }
+  }
+
+  /**
+   * OCR 二次识别投票：读取到的文本可疑时，用 -Upscale 4 再读一遍，取噪声更低/更完整的一份。
+   * 第一遍不确定就不硬猜，多读一帧再投票，比拿错字去回复便宜得多。
+   */
+  async recheckGarbledText(name, args, text) {
+    if (!looksGarbled(text)) return text;
+    let best = text;
+    // 多帧投票：可疑时换不同放大倍数各读一帧，取噪声最低/最完整的一份。
+    // 4 倍对形近字更准，2 倍对整体偏糊的窗口更稳；两帧都差就保留原文本，绝不空手丢消息。
+    for (const scale of ['4', '2']) {
+      if (!looksGarbled(best)) break;
+      try {
+        const retry = await this.runScript('wechat-uia', [...args, '-Upscale', scale]);
+        const data = this.parseJson(retry);
+        if (!data || data.ok !== true || !Array.isArray(data.messages)) continue;
+        let candidate = '';
+        for (const message of data.messages) {
+          const item = String(message?.text || '').trim();
+          if (!item || this.isOwnText(name, item)) continue;
+          candidate = pickBetterText(candidate, item);
+        }
+        if (!candidate) continue;
+        const chosen = pickBetterText(best, candidate);
+        if (!looksGarbled(chosen)) {
+          this.logger.debug?.(`[desktop] OCR 二次识别选优（${scale}x）：${name} 「${text.slice(0, 24)}」→「${chosen.slice(0, 24)}」`);
+        }
+        best = chosen;
+      } catch { /* 单帧失败不影响其他帧 */ }
+    }
+    return best;
   }
 
   contactNames() {
@@ -379,8 +450,9 @@ export class DesktopChannel {
         continue;
       }
       const preview = item.preview.trim();
-      const useFull = verified.text.length >= preview.length || verified.text.includes(preview) || preview.includes(verified.text);
-      this.emitMessage(item.name, useFull ? verified.text : preview, verified.id);
+      const fullText = await this.recheckGarbledText(item.name, args, verified.text);
+      const useFull = fullText.length >= preview.length || fullText.includes(preview) || preview.includes(fullText);
+      this.emitMessage(item.name, useFull ? fullText : preview, verified.id);
     }
     for (const item of previewFallbacks) this.emitPreview(item.name, item.preview);
 
@@ -411,7 +483,8 @@ export class DesktopChannel {
           this.logger.debug?.(`[desktop] 跳过自回声消息：${name} ${text.slice(0, 30)}`);
           continue;
         }
-        this.emitMessage(name, text, message?.id);
+        const finalText = await this.recheckGarbledText(name, args, text);
+        this.emitMessage(name, finalText, message?.id);
       }
     }
   }

@@ -485,3 +485,72 @@ describe('列表预览截断补全（OCR 只读到半句话时用 read 补全全
     expect(readCall.args).toContain('-CurrentContact')
   })
 })
+
+describe('OCR 二次识别投票（可疑文本放大重读，选更可信的一份）', () => {
+  it('第一遍读到乱码时自动用 -Upscale 4 重读并选优（200 种变体）', async () => {
+    for (let i = 0; i < 200; i += 1) {
+      const full = `我想拉高你的幽默度，第${i}次测试`
+      const garbled = `我想拉高你的幽讠，第${i}次测试`
+      const recorder = recordRunner((script, args) => {
+        if (script === 'user-activity') return USER_IDLE
+        if (script === 'wechat-uia' && args.includes('read')) {
+          const retry = args.includes('-Upscale') && args.includes('4')
+          return {
+            code: 0,
+            stdout: JSON.stringify({
+              ok: true,
+              messages: [{ id: retry ? `pc-clean-${i}` : `pc-garble-${i}`, text: retry ? full : garbled, receivedAt: 1_700_000_000_000 + i }],
+            }),
+            stderr: '',
+          }
+        }
+        return {
+          code: 0,
+          stdout: JSON.stringify({
+            ok: true,
+            rows: [{ name: '张三', found: true, unread: true, preview: '在吗', top: 100, left: 160, height: 80, selected: true }],
+          }),
+          stderr: '',
+        }
+      })
+      const harness = makeDesktopHarness({ runScript: recorder.runner })
+      harness.channel.handler = (message) => harness.messages.push(message)
+      await harness.channel.readInboundOnce()
+      expect(harness.messages, `第 ${i} 次投递数量`).toHaveLength(1)
+      expect(harness.messages[0].text, `第 ${i} 次应选优`).toBe(full)
+      const readCalls = recorder.calls.filter((call) => call.script === 'wechat-uia' && call.args.includes('read'))
+      expect(readCalls.length, `第 ${i} 次应有二次读取`).toBeGreaterThanOrEqual(2)
+      const retryCall = readCalls.find((call) => call.args.includes('-Upscale'))
+      expect(retryCall, `第 ${i} 次二次读取应带放大参数`).toBeTruthy()
+      expect(retryCall!.args).toContain('4')
+    }
+  })
+
+  it('文本干净时不触发二次读取（省时间）', async () => {
+    const recorder = recordRunner((script, args) => {
+      if (script === 'user-activity') return USER_IDLE
+      if (script === 'wechat-uia' && args.includes('read')) {
+        return {
+          code: 0,
+          stdout: JSON.stringify({ ok: true, messages: [{ id: 'pc-clean', text: '我想拉高你的幽默度', receivedAt: 1_700_000_000_001 }] }),
+          stderr: '',
+        }
+      }
+      return {
+        code: 0,
+        stdout: JSON.stringify({
+          ok: true,
+          rows: [{ name: '张三', found: true, unread: true, preview: '在吗', top: 100, left: 160, height: 80, selected: true }],
+        }),
+        stderr: '',
+      }
+    })
+    const harness = makeDesktopHarness({ runScript: recorder.runner })
+    harness.channel.handler = (message) => harness.messages.push(message)
+    await harness.channel.readInboundOnce()
+    expect(harness.messages).toHaveLength(1)
+    expect(harness.messages[0].text).toBe('我想拉高你的幽默度')
+    const readCalls = recorder.calls.filter((call) => call.script === 'wechat-uia' && call.args.includes('read'))
+    expect(readCalls).toHaveLength(1)
+  })
+})
