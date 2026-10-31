@@ -1,0 +1,32 @@
+Current Notification State:
+  NotificationRecord(0x01a2 pkg=com.tencent.mm user=0 id=7):
+    mSbn=StatusBarNotification(pkg=com.tencent.mm id=7 tag=null)
+    android.title=String (张三)
+    android.text=String (在吗？晚上吃啥)
+    android.bigText=String (在吗？晚上吃啥)
+    mCategory=msg
+    postedTime=1700000000123
+
+  NotificationRecord(0x02b3 pkg=com.tencent.mm user=0 id=8):
+    mSbn=StatusBarNotification(pkg=com.tencent.mm id=8 tag=null)
+    android.title=String (微信团队)
+    android.text=String (你的账号存在异常登录行为，请立即验证身份)
+    postedTime=1700000000456
+
+  NotificationRecord(0x03c4 pkg=com.tencent.mm user=0 id=9):
+    mSbn=StatusBarNotification(pkg=com.tencent.mm id=9 tag=null)
+    android.title=String (老张)
+    android.text=String (今晚打球吗)
+    postedTime=1700000000789
+
+  NotificationRecord(0x04d5 pkg=com.tencent.mm user=0 id=10):
+    mSbn=StatusBarNotification(pkg=com.tencent.mm id=10 tag=null)
+    android.title=String (项目群)
+    android.text=String (@所有人 明天上午十点开会)
+    postedTime=1700000001010
+
+  NotificationRecord(0x05e6 pkg=com.android.settings user=0 id=11):
+    mSbn=StatusBarNotification(pkg=com.android.settings id=11 tag=null)
+    android.title=String (系统更新)
+    android.text=String (新版本已就绪)
+    postedTime=1700000001234

@@ -1,0 +1,4 @@
+- insert:
+    - id: dsh-wechat-persona
+      name: 'dsh-wechat-persona'
+      config: {}

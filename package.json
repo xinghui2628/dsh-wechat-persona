@@ -1,0 +1,82 @@
+{
+  "name": "dsh-wechat-persona",
+  "version": "0.2.1",
+  "private": true,
+  "description": "微信小号 AI 人格聊天分身（DSH host 插件）：本地零 token 决策 + 拟人节奏 + 表情包 + 按需搜索 + token 预算 + 风控熔断",
+  "license": "MIT",
+  "type": "module",
+  "icon": "icon.svg",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./client": "./client/client.js",
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "dist",
+    "client",
+    "persona",
+    "personas",
+    "stickers",
+    "locale",
+    "icon.svg",
+    "cordis.patch.yml",
+    "README.md",
+    "CHANGELOG.md",
+    "docs",
+    "scripts"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-plugin-manager"
+      ]
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --pool=threads",
+    "test:sandbox": "node --import ./test/core/sandbox-preload.mjs ./node_modules/vitest/vitest.mjs run --pool=threads",
+    "test:watch": "vitest --pool=threads",
+    "verify": "npm run typecheck && npm run test",
+    "verify:api": "node scripts/verify-api.mjs",
+    "verify:all": "npm run typecheck && npm run test:sandbox && npm run build && npm run verify:api"
+  },
+  "dependencies": {
+    "@deepseek-ai/schemastery": "^3.18.4"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1-rc.4"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "^4.0.2",
+    "@deepseek-ai/schemastery": "^3.18.4",
+    "@types/node": "^22.10.0",
+    "typescript": "^5.9.3",
+    "vitest": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "keywords": [
+    "dsh-plugin",
+    "wechat",
+    "persona",
+    "ai-chat",
+    "automation"
+  ]
+}

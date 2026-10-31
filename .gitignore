@@ -1,0 +1,28 @@
+# 依赖与构建产物
+node_modules/
+dist/
+*.tsbuildinfo
+
+# 运行时数据（默认 dataDir 也可能被配到仓内）
+.dsh-wechat-persona/
+inbound.jsonl
+outbox.jsonl
+audit.jsonl
+audit.1.jsonl
+alerts.jsonl
+drafts.jsonl
+state.json
+memory/
+
+# 本地临时文件
+.dsh-tmp/
+*.log
+.DS_Store
+# 本地备份与开发笔记（不入库）
+backups/
+dev-notes/
+*.bak
+*.bak-*
+# Python 缓存
+__pycache__/
+*.pyc

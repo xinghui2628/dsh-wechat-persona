@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img" aria-label="WeChat Persona">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3a7bfd"/>
+      <stop offset="1" stop-color="#7b4dff"/>
+    </linearGradient>
+    <linearGradient id="bubble" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.98"/>
+      <stop offset="1" stop-color="#e9f0ff" stop-opacity="0.92"/>
+    </linearGradient>
+  </defs>
+
+  <!-- rounded square background -->
+  <rect x="4" y="4" width="120" height="120" rx="28" fill="url(#bg)"/>
+
+  <!-- chat bubble -->
+  <path d="M28 40c0-8.8 7.2-16 16-16h40c8.8 0 16 7.2 16 16v28c0 8.8-7.2 16-16 16H62l-18 14v-14h-0.5C34.9 84 28 76.8 28 68z"
+        fill="url(#bubble)"/>
+
+  <!-- persona mask: eyes + smile -->
+  <circle cx="52" cy="56" r="5" fill="#3a7bfd"/>
+  <circle cx="76" cy="56" r="5" fill="#3a7bfd"/>
+  <path d="M52 68c3.6 4.2 8.2 6.2 12 6.2s8.4-2 12-6.2" fill="none" stroke="#7b4dff" stroke-width="4.5" stroke-linecap="round"/>
+
+  <!-- sticker spark -->
+  <path d="M100 26l3.4 7.6L111 37l-7.6 3.4L100 48l-3.4-7.6L89 37l7.6-3.4z" fill="#ffd166"/>
+  <circle cx="112" cy="52" r="3" fill="#ffd166"/>
+
+  <!-- typing dots -->
+  <circle cx="42" cy="96" r="3.4" fill="#ffffff" fill-opacity="0.9"/>
+  <circle cx="56" cy="96" r="3.4" fill="#ffffff" fill-opacity="0.7"/>
+  <circle cx="70" cy="96" r="3.4" fill="#ffffff" fill-opacity="0.5"/>
+</svg>
