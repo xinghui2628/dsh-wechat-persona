@@ -14,8 +14,9 @@
 
 import { isAbsolute, relative, resolve, join } from 'node:path'
 import { appendFileSync } from 'node:fs'
+import { randomBytes } from 'node:crypto'
 import { tmpdir } from 'node:os'
-import { readFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import type { AuditLogLike, Channel, ConfigPersistenceInfo, FileStoreLike, Notifier, PersonaPack } from './types.ts'
 import type { PersonaEngineLike } from './types.ts'
@@ -79,7 +80,7 @@ interface HostConfigEditor {
 /* ────────────────────────── 插件元信息 ────────────────────────── */
 
 /** 插件版本（与 package.json 保持一致）。 */
-const PLUGIN_VERSION = '0.2.8'
+const PLUGIN_VERSION = '3.0.0'
 
 export const name = 'dsh-wechat-persona'
 
@@ -117,6 +118,8 @@ export function apply(ctx: HostContext, rawConfig: WechatPersonaConfig): void {
   let booted = false
   let bootError: string | null = null
   let dataRoot = ''
+  /** 强制生效的 API 共享 token（空 = 兼容模式，只校验回环 + 请求头）。 */
+  let apiToken = ''
   let store: FileStoreLike | null = null
   let audit: AuditLog | null = null
   let library: PersonaLibrary | null = null
@@ -186,6 +189,34 @@ export function apply(ctx: HostContext, rawConfig: WechatPersonaConfig): void {
 
 
   /**
+   * 读取或生成 `<dataDir>/api-token`（权限尽量收紧到 0600）。
+   *
+   * 该文件只是「运维参考 token」：显式配置 `config.apiToken` 后才会强制校验；
+   * 未配置时保持兼容模式（旧设置页/工具无需改动即可继续工作），但会生成 token
+   * 文件并在日志中提示启用方式。
+   */
+  const ensureApiTokenFile = async (): Promise<string> => {
+    const tokenFile = resolve(dataRoot, 'api-token')
+    try {
+      const existing = (await readFile(tokenFile, 'utf8')).trim()
+      if (existing.length >= 16) return tokenFile
+    } catch {
+      // 文件不存在或不可读：继续生成
+    }
+    try {
+      await mkdir(dataRoot, { recursive: true })
+      await writeFile(tokenFile, `${randomBytes(24).toString('base64url')}\n`, {
+        encoding: 'utf8',
+        mode: 0o600,
+        flag: 'w',
+      })
+    } catch (error) {
+      logger.warn('生成 API token 文件失败（不影响运行）', error instanceof Error ? error.message : String(error))
+    }
+    return tokenFile
+  }
+
+  /**
    * 挂载设置界面 HTTP API（幂等；依赖就绪前调用会直接跳过）。
    *
    * 宿主的 webServer 服务要等 webStartup 之后才可用，而 boot 是异步的，
@@ -214,6 +245,7 @@ export function apply(ctx: HostContext, rawConfig: WechatPersonaConfig): void {
           logger,
           asset: readAsset,
           dataDir: () => dataRoot,
+          apiToken: () => apiToken,
         })
       }
       disposeApiRoutes?.()
@@ -330,6 +362,17 @@ export function apply(ctx: HostContext, rawConfig: WechatPersonaConfig): void {
       const workspace = workingDirectory?.defaultDirectory?.trim() || process.cwd()
       dataRoot = config.dataDir.trim() ? resolve(workspace, config.dataDir) : resolve(workspace, '.dsh-wechat-persona')
       store = new FsStore(dataRoot)
+
+      // ② API 共享 token：显式配置 = 强制鉴权；未配置 = 兼容模式（仍生成 token 文件供运维参考）。
+      apiToken = config.apiToken.trim()
+      if (apiToken !== '') {
+        logger.info('API 强制鉴权已启用：请求需额外带 Authorization: Bearer <token>')
+      } else {
+        const tokenFile = await ensureApiTokenFile()
+        logger.warn(
+          `API 未配置共享 token（兼容模式：仅校验回环地址与 x-dsh-wechat-persona 请求头）；已准备 ${tokenFile}，如需强制鉴权请把其中 token 填入配置 apiToken`,
+        )
+      }
       audit = new AuditLog({
         store,
         enabled: config.logging.auditEnabled,

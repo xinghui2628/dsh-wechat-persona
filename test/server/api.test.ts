@@ -30,6 +30,7 @@ import {
   MAX_API_BODY_BYTES,
   attachPersonaRoutes,
   createPersonaApi,
+  normalizeOcrDiagnostics,
 } from '../../src/server/api.ts'
 import type {
   ApiResponse,
@@ -181,6 +182,7 @@ function makeEngineStatus(overrides: Partial<EngineStatus> = {}): EngineStatus {
     nextOnlineAt: null,
     startedAt: FIXED_NOW - 60_000,
     lastActivityAt: FIXED_NOW,
+    safeMode: false,
   }
   return { ...(base as unknown as EngineStatus), ...overrides }
 }
@@ -199,6 +201,14 @@ class FakeEngine implements PersonaEngineLike {
   readonly sent: Array<{ contactId: string; text: string }> = []
   readonly clearedContactIds: Array<string | undefined> = []
   auditCleared = 0
+  /** Phase F：GET /diagnostics/ocr 的原始返回（引擎 duck-typing 方法）。 */
+  ocrDiagnosticsResult: unknown = null
+  ocrDiagnosticsError: Error | null = null
+
+  async ocrDiagnostics(): Promise<unknown> {
+    if (this.ocrDiagnosticsError !== null) throw this.ocrDiagnosticsError
+    return this.ocrDiagnosticsResult
+  }
 
   async status(): Promise<EngineStatus> {
     if (this.statusError !== null) throw this.statusError
@@ -346,6 +356,8 @@ interface EnvOptions {
   engine?: FakeEngine | null
   assets?: Record<string, string>
   persistError?: string
+  /** 强制生效的 API 共享 token（模拟 config.apiToken 显式配置）。 */
+  apiToken?: string
 }
 
 interface TestEnv {
@@ -411,6 +423,7 @@ async function makeEnv(options: EnvOptions = {}): Promise<TestEnv> {
     logger,
     asset: async (rel: string) => assets[rel] ?? null,
     dataDir: () => dir,
+    apiToken: () => options.apiToken ?? '',
   }
   const api = createPersonaApi(deps)
   return {
@@ -548,6 +561,113 @@ describe('Host HTTP API：鉴权与路由', () => {
   })
 })
 
+describe('Host HTTP API：鉴权加固（token / Host / Origin / 限速）', () => {
+  const TOKEN = 'test-token-0123456789abcdef'
+  const tokenHeaders = (token: string = TOKEN): Record<string, string> => ({
+    ...AUTH_HEADERS,
+    authorization: `Bearer ${token}`,
+  })
+
+  it('配置 apiToken 后缺少 Authorization 返回 401', async () => {
+    const env = await makeEnv({ apiToken: TOKEN })
+    const response = await call(env, 'GET', '/health')
+    expectFail(response, 401, /token/)
+  })
+
+  it('配置 apiToken 后错误 token 返回 401', async () => {
+    const env = await makeEnv({ apiToken: TOKEN })
+    const response = await call(env, 'GET', '/health', undefined, '', tokenHeaders('wrong-token'))
+    expectFail(response, 401, /token/)
+  })
+
+  it('配置 apiToken 后正确 Bearer token 放行', async () => {
+    const env = await makeEnv({ apiToken: TOKEN })
+    expectOk(await call(env, 'GET', '/health', undefined, '', tokenHeaders()))
+  })
+
+  it('支持 x-dsh-persona-token 备选请求头', async () => {
+    const env = await makeEnv({ apiToken: TOKEN })
+    expectOk(
+      await call(env, 'GET', '/health', undefined, '', { ...AUTH_HEADERS, 'x-dsh-persona-token': TOKEN }),
+    )
+  })
+
+  it('未配置 token 时按兼容模式放行，并只告警一次', async () => {
+    const env = await makeEnv()
+    expectOk(await call(env, 'GET', '/health'))
+    expectOk(await call(env, 'GET', '/health'))
+    expect(env.logger.warnings().filter((message) => message.includes('共享 token'))).toHaveLength(1)
+  })
+
+  it('Host 不是回环地址时拒绝（防 DNS rebinding）', async () => {
+    const env = await makeEnv()
+    const response = await call(env, 'GET', '/health', undefined, '', {
+      ...AUTH_HEADERS,
+      host: 'evil.example.com:57124',
+    })
+    expectFail(response, 403, /Host/)
+  })
+
+  it('Host 为回环地址时放行', async () => {
+    const env = await makeEnv()
+    for (const host of ['127.0.0.1:57124', 'localhost:57124', '[::1]:57124']) {
+      expectOk(await call(env, 'GET', '/health', undefined, '', { ...AUTH_HEADERS, host }))
+    }
+  })
+
+  it('Origin 不是回环来源时拒绝（防 CSRF）', async () => {
+    const env = await makeEnv()
+    for (const origin of ['http://evil.example.com', 'null', 'https://evil.example.com:443']) {
+      expectFail(
+        await call(env, 'GET', '/health', undefined, '', { ...AUTH_HEADERS, origin }),
+        403,
+        /Origin/,
+      )
+    }
+  })
+
+  it('Origin 为回环来源时放行', async () => {
+    const env = await makeEnv()
+    expectOk(
+      await call(env, 'GET', '/health', undefined, '', {
+        ...AUTH_HEADERS,
+        origin: 'http://127.0.0.1:57124',
+      }),
+    )
+  })
+
+  it('Sec-Fetch-Site: cross-site 时拒绝', async () => {
+    const env = await makeEnv()
+    const response = await call(env, 'GET', '/health', undefined, '', {
+      ...AUTH_HEADERS,
+      'sec-fetch-site': 'cross-site',
+    })
+    expectFail(response, 403, /跨站/)
+  })
+
+  it('进程内限速：超过阈值后返回 429', async () => {
+    const env = await makeEnv()
+    const statuses: number[] = []
+    for (let index = 0; index < 241; index += 1) {
+      statuses.push((await call(env, 'GET', '/health')).status)
+    }
+    expect(statuses.slice(0, 240).every((status) => status === 200)).toBe(true)
+    expect(statuses[240]).toBe(429)
+  })
+
+  it('GET /config 不回显 token 明文，POST /config 空 token 保持原值', async () => {
+    const env = await makeEnv({ apiToken: TOKEN })
+    env.config.apiToken = TOKEN
+    const configJson = expectOk(await call(env, 'GET', '/config', undefined, '', tokenHeaders()))
+    expect((configJson.config as WechatPersonaConfig).apiToken).toBe('')
+    expect(configJson.apiTokenConfigured).toBe(true)
+    const input = structuredClone(env.config)
+    input.apiToken = ''
+    expectOk(await call(env, 'POST', '/config', { config: input }, '', tokenHeaders()), 202)
+    expect(env.savedConfigs[0]!.apiToken).toBe(TOKEN)
+  })
+})
+
 describe('Host HTTP API：健康检查与运行状态', () => {
   it('GET /health 返回版本、进程号与运行时长', async () => {
     const env = await makeEnv()
@@ -564,6 +684,15 @@ describe('Host HTTP API：健康检查与运行状态', () => {
     expect(status.personaName).toBe('小号')
     expect(json.channel).toMatchObject({ id: 'mock', state: 'running' })
     expect(json.configSummary).toMatchObject({ whitelistCount: 1, online: true, activeChannel: 'mock' })
+  })
+
+  it('GET /status 暴露 safeMode（Phase F）', async () => {
+    const env = await makeEnv()
+    const disabled = expectOk(await call(env, 'GET', '/status'))
+    expect(disabled.safeMode).toBe(false)
+    env.config.safeMode = true
+    const enabled = expectOk(await call(env, 'GET', '/status'))
+    expect(enabled.safeMode).toBe(true)
   })
 
   it('引擎状态读取失败时降级为 status=null 并记录 warn', async () => {
@@ -785,6 +914,127 @@ describe('Host HTTP API：人格库', () => {
     const env = await envWithPersonas()
     env.personas.failList = new Error('目录不可读')
     expectFail(await call(env, 'GET', '/personas'), 500, /读取人格列表失败/)
+  })
+})
+
+describe('Host HTTP API：人格包导入安全（校验 / 消毒 / dry-run）', () => {
+  it('非法 JSON 字符串被拒绝且不回显内容', async () => {
+    const env = await makeEnv()
+    const json = expectFail(
+      await call(env, 'POST', '/personas/import', { json: '{not-json' }),
+      400,
+      /人格包校验失败/,
+    )
+    expect(String(json.detail)).toContain('JSON')
+    expect(env.personas.importCalls).toHaveLength(0)
+  })
+
+  it('超过 2MB 的 JSON 字符串被拒绝', async () => {
+    const env = await makeEnv()
+    const oversized = 'x'.repeat(2 * 1024 * 1024 + 1)
+    expectFail(await call(env, 'POST', '/personas/import', { json: oversized }), 400, /上限/)
+    expect(env.personas.importCalls).toHaveLength(0)
+  })
+
+  it('非对象 JSON 被拒绝', async () => {
+    const env = await makeEnv()
+    expectFail(await call(env, 'POST', '/personas/import', { json: [1, 2, 3] }), 400, /JSON 对象/)
+  })
+
+  it('拒绝 __proto__ 等危险键（防原型污染）', async () => {
+    const env = await makeEnv()
+    const json = '{"id":"safe-card","__proto__":{"polluted":true}}'
+    const response = await call(env, 'POST', '/personas/import', { json })
+    expectFail(response, 400, /非法键名|非法字段/)
+    expect(({} as { polluted?: boolean }).polluted).toBeUndefined()
+    expect(env.personas.importCalls).toHaveLength(0)
+  })
+
+  it('拒绝路径穿越的表情包文件名', async () => {
+    const env = await makeEnv()
+    const payload = {
+      id: 'safe-card',
+      systemPrompt: '正常人格',
+      stickers: [{ emotion: 'happy', name: '../../evil.png' }],
+    }
+    expectFail(await call(env, 'POST', '/personas/import', { json: payload }), 400, /非法字符/)
+    expect(env.personas.importCalls).toHaveLength(0)
+  })
+
+  it('拒绝 avatar 中的可执行 URL（javascript:）', async () => {
+    const env = await makeEnv()
+    const payload = { id: 'safe-card', systemPrompt: '正常人格', avatar: 'javascript:alert(1)' }
+    expectFail(await call(env, 'POST', '/personas/import', { json: payload }), 400, /URL/)
+  })
+
+  it('允许 http/https 与 data:image 头像', async () => {
+    const env = await makeEnv()
+    for (const avatar of ['https://example.com/a.png', 'data:image/png;base64,AAAA']) {
+      expectOk(
+        await call(env, 'POST', '/personas/import', {
+          json: { id: 'safe-card', systemPrompt: '正常人格', avatar },
+        }),
+      )
+    }
+  })
+
+  it('拒绝嵌套过深的结构（防 JSON 深度炸弹）', async () => {
+    const env = await makeEnv()
+    const nested = { id: 'safe-card', systemPrompt: '正常人格' } as Record<string, unknown>
+    let cursor = nested
+    for (let depth = 0; depth < 8; depth += 1) {
+      const child: Record<string, unknown> = {}
+      cursor.child = child
+      cursor = child
+    }
+    expectFail(await call(env, 'POST', '/personas/import', { json: nested }), 400, /嵌套过深/)
+  })
+
+  it('拒绝超长字段', async () => {
+    const env = await makeEnv()
+    const payload = { id: 'safe-card', systemPrompt: 'x'.repeat(20_001) }
+    expectFail(await call(env, 'POST', '/personas/import', { json: payload }), 400, /长度上限/)
+  })
+
+  it('缺少可识别字段时拒绝', async () => {
+    const env = await makeEnv()
+    expectFail(await call(env, 'POST', '/personas/import', { json: { evil: 'x' } }), 400, /可识别字段/)
+  })
+
+  it('未知顶层字段被丢弃，合法字段仍导入', async () => {
+    const env = await makeEnv()
+    expectOk(
+      await call(env, 'POST', '/personas/import', {
+        json: { id: 'safe-card', name: '安全卡', evil: 'x' },
+      }),
+    )
+    const input = env.personas.importCalls[0] as Record<string, unknown>
+    expect(input.id).toBe('safe-card')
+    expect('evil' in input).toBe(false)
+  })
+
+  it('安装人格包同样经过校验：恶意样本被拒、未知字段被丢弃', async () => {
+    const env = await makeEnv()
+    const bad = { ...makePack('bad-pack', '坏人格'), stickers: [{ emotion: 'happy', name: '../evil.png' }] }
+    expectFail(await call(env, 'POST', '/personas/install', { pack: bad }), 400, /非法字符/)
+    expect(env.personas.installCalls).toHaveLength(0)
+    const good = { ...makePack('good-pack', '好人格'), evil: 'x' }
+    expectOk(await call(env, 'POST', '/personas/install', { pack: good }))
+    expect('evil' in (env.personas.packs.get('good-pack') as unknown as Record<string, unknown>)).toBe(false)
+  })
+
+  it('人格 id 含路径穿越时拒绝激活/导出/删除', async () => {
+    const env = await makeEnv()
+    const evilId = '..%2F..%2Fetc%2Fpasswd'
+    expectFail(await call(env, 'POST', '/personas/activate', { id: evilId }), 400, /非法字符/)
+    expectFail(await call(env, 'GET', '/personas/export', undefined, `id=${evilId}`), 400, /非法字符/)
+    expectFail(await call(env, 'DELETE', `/personas/${evilId}`), 400, /非法字符/)
+  })
+
+  it('人格市场 id 含路径穿越时拒绝', async () => {
+    const env = await makeEnv()
+    expectFail(await call(env, 'POST', '/market/install', { id: '../../etc/passwd' }), 400, /非法字符/)
+    expect(env.market.installCalls).toHaveLength(0)
   })
 })
 
@@ -1105,6 +1355,26 @@ describe('Host HTTP API：测试与运行时操作', () => {
     expect(env.engine!.sent).toEqual([{ contactId: 'wxid_alice', text: '测试' }])
   })
 
+  it('POST /test/send 的 mockOnly 在非 mock 通道被 409 拒绝且不调用引擎（Phase F）', async () => {
+    const env = await makeEnv()
+    env.engine!.statusValue = makeEngineStatus({ channelId: 'desktop' })
+    expectFail(
+      await call(env, 'POST', '/test/send', { contactId: 'wxid_alice', text: '测试', mockOnly: true }),
+      409,
+      /mock/,
+    )
+    expect(env.engine!.sent).toEqual([])
+  })
+
+  it('POST /test/send 的 mockOnly 在 mock 通道正常放行（Phase F）', async () => {
+    const env = await makeEnv()
+    const json = expectOk(
+      await call(env, 'POST', '/test/send', { contactId: 'wxid_alice', text: '测试', mockOnly: true }),
+    )
+    expect(json.result).toMatchObject({ ok: true })
+    expect(env.engine!.sent).toEqual([{ contactId: 'wxid_alice', text: '测试' }])
+  })
+
   it('POST /pause 与 POST /resume 切换暂停状态', async () => {
     const env = await makeEnv()
     const paused = expectOk(await call(env, 'POST', '/pause', { reason: '手动暂停' }))
@@ -1148,6 +1418,91 @@ describe('Host HTTP API：测试与运行时操作', () => {
       const response = await call(env, method, path, body)
       expectFail(response, 409)
     }
+  })
+})
+
+/* ═══════════════ Phase F：OCR / 读屏诊断（只读降级） ═══════════════ */
+
+describe('Host HTTP API：OCR 诊断（Phase F 只读）', () => {
+  const sampleEnvelope = {
+    channelId: 'desktop',
+    channelState: 'running',
+    capturedAt: FIXED_NOW,
+    ocr: {
+      captureId: 'cap-1',
+      engines: ['winrt', 'tesseract'],
+      lines: 12,
+      uncertainCount: 2,
+      durationMs: 345,
+      lastReadAt: FIXED_NOW - 1000,
+      lastError: 'none',
+    },
+  }
+
+  it('GET /diagnostics/ocr 返回通道提供的诊断且只透出白名单字段', async () => {
+    const env = await makeEnv()
+    env.engine!.ocrDiagnosticsResult = { ...sampleEnvelope, secret: 'should-not-leak' }
+    const json = expectOk(await call(env, 'GET', '/diagnostics/ocr'))
+    const diagnostics = json.diagnostics as Record<string, unknown>
+    expect(diagnostics).toMatchObject({
+      available: true,
+      channelId: 'desktop',
+      channelState: 'running',
+      captureId: 'cap-1',
+      lines: 12,
+      uncertainCount: 2,
+      durationMs: 345,
+      dualEngine: true,
+    })
+    expect(diagnostics.secret).toBeUndefined()
+  })
+
+  it('通道未提供 ocr 数据时 available:false 并给出原因', async () => {
+    const env = await makeEnv()
+    env.engine!.ocrDiagnosticsResult = { channelId: 'desktop', channelState: 'running', capturedAt: FIXED_NOW, ocr: null }
+    const json = expectOk(await call(env, 'GET', '/diagnostics/ocr'))
+    const diagnostics = json.diagnostics as Record<string, unknown>
+    expect(diagnostics.available).toBe(false)
+    expect(diagnostics.dualEngine).toBe(false)
+    expect(String(diagnostics.reason)).toContain('OCR')
+  })
+
+  it('引擎读取诊断抛异常时降级为 available:false 并记录 warn', async () => {
+    const env = await makeEnv()
+    env.engine!.ocrDiagnosticsError = new Error('管道读取崩溃')
+    const json = expectOk(await call(env, 'GET', '/diagnostics/ocr'))
+    expect((json.diagnostics as Record<string, unknown>).available).toBe(false)
+    expect(env.logger.warnings().some((message) => message.includes('读取 OCR 诊断失败'))).toBe(true)
+  })
+
+  it('没有引擎时 /diagnostics/ocr 仍返回降级视图', async () => {
+    const env = await makeEnv({ engine: null })
+    const json = expectOk(await call(env, 'GET', '/diagnostics/ocr'))
+    expect((json.diagnostics as Record<string, unknown>).available).toBe(false)
+  })
+
+  it('非 GET 方法返回 405', async () => {
+    const env = await makeEnv()
+    const response = await call(env, 'POST', '/diagnostics/ocr', {})
+    expectFail(response, 405)
+  })
+
+  it('normalizeOcrDiagnostics 对不可识别输入与超长字段做防御', () => {
+    expect(normalizeOcrDiagnostics(null)).toMatchObject({ available: false })
+    expect(normalizeOcrDiagnostics('oops')).toMatchObject({ available: false })
+    const view = normalizeOcrDiagnostics({
+      ocr: {
+        captureId: 'x'.repeat(300),
+        engines: ['a', 'b', 'c', 'd', 'e'],
+        lines: 999999999,
+        lastError: 'e'.repeat(1000),
+      },
+    })
+    expect(view.available).toBe(true)
+    expect((view.captureId ?? '').length).toBeLessThanOrEqual(128)
+    expect(view.engines.length).toBeLessThanOrEqual(3)
+    expect(view.lines).toBeLessThanOrEqual(100_000)
+    expect((view.lastError ?? '').length).toBeLessThanOrEqual(300)
   })
 })
 
@@ -1260,6 +1615,17 @@ describe('Host HTTP API：attachPersonaRoutes 传输层', () => {
     expect(response.headers.get('content-type')).toBe('image/png')
     const buffer = Buffer.from(await response.arrayBuffer())
     expect(buffer.equals(PNG_BYTES)).toBe(true)
+  })
+
+  it('经 HTTP 调用 Content-Type 不是 JSON 时返回 415', async () => {
+    const response = await fetch(`${baseUrl}/pause`, {
+      method: 'POST',
+      headers: { ...AUTH_HEADERS, 'content-type': 'text/plain' },
+      body: 'reason=x',
+    })
+    expect(response.status).toBe(415)
+    const json = (await response.json()) as Record<string, unknown>
+    expect(json.error as string).toContain('Content-Type')
   })
 
   it('请求体超过 4MB 上限时返回 413', async () => {

@@ -43,6 +43,27 @@ export interface WechatPersonaConfig {
   whitelist: WhitelistEntry[]
   /** 只回白名单（默认 true；关闭后允许回复任意单聊，风险自担）。 */
   whitelistOnly: boolean
+  /**
+   * 安全运行模式（默认 false = 保持升级兼容；首次配置向导第 3 步会建议开启）。
+   *
+   * 开启后引擎拒绝一切「真实通道」发送：activeChannel 不是 mock 时，自动回复与
+   * 手动测试发送都返回 `delivery: 'not-sent'` 并提示「安全模式」，只允许 mock 通道
+   * 空转。用于首次安装 / 排障 / 演示时保证绝不触达真实微信。
+   */
+  safeMode: boolean
+  /** 首次配置向导是否已完成（默认 false；设置页据此显示向导，完成后写 true）。 */
+  onboardingDone: boolean
+  /**
+   * API 共享 token（可选，默认空字符串 = 不强制）。
+   *
+   * - 留空：兼容旧调用方式（只校验回环地址 + `x-dsh-wechat-persona: 1`），
+   *   插件启动时仍会把自动生成的 token 持久化到 `dataDir/api-token`，供运维参考；
+   * - 非空：所有 HTTP API 请求必须额外带 `Authorization: Bearer <token>`
+   *   （或 `x-dsh-persona-token: <token>`），否则返回 401。
+   *
+   * 建议只在本机配置；GET /config 会隐藏该字段，不会回显明文。
+   */
+  apiToken: string
 
   /** 人格库（多套人格、切换、启停）。 */
   persona: {
@@ -266,6 +287,9 @@ export const Config: z<WechatPersonaConfig> = z.object({
     note: z.string().default('').description('本机备注，不发给对方'),
   })).default([]).description('白名单单聊联系人；为空时插件不回复任何人'),
   whitelistOnly: z.boolean().default(true).description('只回白名单（默认开；关闭后允许回复任意单聊，风险自担）'),
+  safeMode: z.boolean().default(false).description('安全运行模式：开启后拒绝一切真实通道发送（只允许 mock 空转）；默认关闭以保持升级兼容，首次配置向导会建议开启'),
+  onboardingDone: z.boolean().default(false).description('首次配置向导是否已完成（设置页完成后自动写入，无需手动修改）'),
+  apiToken: z.string().default('').description('API 共享 token：留空=兼容模式（启动时自动生成到数据目录但不强制）；填写后所有 API 请求必须带 Authorization: Bearer <token>'),
 
   persona: z.object({
     activeId: z.string().default('builtin-small').description('当前启用的人格包 id；留空 = 关闭人格回复'),

@@ -7,15 +7,21 @@
  *   负责 node:http 的请求体读取、JSON 解析与响应写出，由宿主 webServer 注册。
  * - 任何路径都不向宿主抛异常：`handle()` 最外层 try/catch，统一返回
  *   `{ ok:false, error, detail? }`；attach 的 handler 也再兜一层 500。
- * - 鉴权：只接受回环 socket 且请求头 `x-dsh-wechat-persona: 1`；纯逻辑直调
+ * - 鉴权：只接受回环 socket、`x-dsh-wechat-persona: 1` 请求头，并校验 Host /
+ *   Origin / Sec-Fetch-Site 以降低 DNS rebinding 与 CSRF 风险；配置了
+ *   `config.apiToken` 时还要求 `Authorization: Bearer <token>`（或
+ *   `x-dsh-persona-token`），用 constant-time 比较。纯逻辑直调
  *   （未传 remoteAddress）视为本机调用，便于单元测试。
  * - 配置校验：不直接依赖 schemastery。以 `config.ts` 的 `defaultConfig()`
  *   为基线合并输入，再做类型/枚举/时间格式校验与数值范围 clamp，保证
  *   API 侧默认值与配置 schema 永不漂移。
+ * - 远程/本机人格包在进入人格库前先做结构校验与消毒（字段白名单、长度/
+ *   深度/数组上限、拒绝路径穿越与可执行 URL），校验失败信息只回显路径，
+ *   不回显用户内容。
  * - 本文件只依赖 node: 内置模块与项目内相对 import（带 .ts 后缀）。
  */
 
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID, timingSafeEqual } from 'node:crypto'
 import { access, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { extname, isAbsolute, relative, resolve } from 'node:path'
@@ -61,6 +67,50 @@ const IMAGE_CONTENT_TYPES: Record<string, string> = {
 }
 /** 回环地址白名单。 */
 const LOOPBACK_ADDRESSES = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1'])
+/** 回环 Host/Origin 主机名白名单（含 localhost，避免误伤本机浏览器访问）。 */
+const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1', '[::1]'])
+/** 进程内限速：窗口内最大请求数。 */
+export const API_RATE_LIMIT_MAX = 240
+/** 进程内限速：时间窗口（毫秒）。 */
+export const API_RATE_LIMIT_WINDOW_MS = 60_000
+/** 人格导入 JSON 文本上限（2MB，与远程下载上限一致，防止解析炸弹）。 */
+export const MAX_IMPORT_JSON_BYTES = 2 * 1024 * 1024
+/** 读取请求体超时（毫秒）：防止 slowloris 长期占用连接。 */
+export const REQUEST_BODY_TIMEOUT_MS = 10_000
+
+/* ─────────────────────────── 人格包导入校验常量 ─────────────────────────── */
+
+/** 允许的最大嵌套深度（超过即拒绝，防 JSON 深度炸弹）。 */
+const IMPORT_MAX_DEPTH = 6
+/** 单个数组最大元素数。 */
+const IMPORT_MAX_ARRAY_ITEMS = 500
+/** 单个对象最大键数。 */
+const IMPORT_MAX_OBJECT_KEYS = 200
+/** 整棵树最大节点数（防懒解析耗尽 CPU）。 */
+const IMPORT_MAX_NODES = 20_000
+/** 普通字符串字段最大长度。 */
+const IMPORT_MAX_STRING_CHARS = 20_000
+/** 超长字符串字段（头像/表情 data URL）允许的最大长度。 */
+const IMPORT_MAX_LONG_STRING_CHARS = 2 * 1024 * 1024
+/** 危险键：原型污染 / 代码注入载体，出现即整体拒绝。 */
+const IMPORT_DANGEROUS_KEYS = new Set(['__proto__', 'constructor', 'prototype'])
+/** 允许保留的顶层字段（PersonaPackV2 + SillyTavern v2 卡常见字段，其余丢弃）。 */
+const IMPORT_ALLOWED_TOP_KEYS = new Set([
+  // PersonaPackV2
+  'version', 'id', 'name', 'avatar', 'style', 'catchphrases', 'systemPrompt', 'examples',
+  'taboo', 'stickers', 'author', 'description', 'tags', 'packVersion', 'source', 'installedAt',
+  // SillyTavern / 角色卡常见字段（由人格库再做归一化）
+  'spec', 'spec_version', 'data', 'char_name', 'char_id', 'char_persona', 'char_scenario',
+  'personality', 'scenario', 'first_mes', 'mes_example', 'creator_notes', 'system_prompt',
+  'post_history_instructions', 'alternate_greetings', 'character_book', 'extensions', 'creator',
+  'character_version',
+])
+/** 需要做 URL 协议校验的字段（相对路径末尾；头像/表情引用）。 */
+const IMPORT_URL_FIELDS = new Set(['avatar', 'url'])
+/** 需要做「标识符」校验（拒绝路径穿越/分隔符/控制字符）的字段。 */
+const IMPORT_IDENTIFIER_FIELDS = new Set(['id', 'name', 'char_id', 'char_name', 'packVersion', 'spec', 'spec_version'])
+/** 允许的 URL 协议前缀（data 仅限图片，禁止 javascript:/file:/vbscript: 等可执行内容）。 */
+const IMPORT_ALLOWED_URL_PREFIXES = ['http://', 'https://', 'data:image/']
 
 /* ────────────────────────────── 公开类型 ────────────────────────────── */
 
@@ -103,6 +153,11 @@ export interface PersonaApiDeps {
   asset(rel: string): Promise<string | null>
   /** 数据目录绝对路径（表情包上传/删除用）。 */
   dataDir(): string
+  /**
+   * 当前**强制生效**的 API 共享 token；空字符串/未提供 = 兼容模式（不强制）。
+   * 由 index.ts 注入：`config.apiToken` 显式配置时返回该值，否则返回 ''。
+   */
+  apiToken?(): string
 }
 
 /** 一次 API 调用的结果（由 attachPersonaRoutes 写成 HTTP 响应）。 */
@@ -215,17 +270,111 @@ function isLoopbackAddress(address: string | undefined): boolean {
   return normalized === '::ffff:7f00:1'
 }
 
-/** 鉴权：回环地址 + 正确请求头；返回错误文案，通过返回 null。 */
+/** 鉴权失败原因（status 用于 HTTP 状态码）。 */
+interface AuthFailure {
+  status: number
+  message: string
+}
+
+/** 提取提交上来的共享 token：优先 Authorization: Bearer，其次 x-dsh-persona-token。 */
+function extractProvidedToken(
+  headers: Record<string, string | string[] | undefined> | undefined,
+): string | undefined {
+  const authorization = headerValue(headers, 'authorization')
+  if (typeof authorization === 'string') {
+    const match = /^Bearer\s+(.+)$/i.exec(authorization.trim())
+    if (match !== null) return match[1]!.trim()
+  }
+  const alt = headerValue(headers, 'x-dsh-persona-token')
+  if (typeof alt === 'string' && alt.trim() !== '') return alt.trim()
+  return undefined
+}
+
+/** constant-time 比较 token（先 sha256 定长，避免长度差时序泄漏）。 */
+function tokenMatches(provided: string | undefined, expected: string): boolean {
+  if (typeof provided !== 'string' || expected === '') return false
+  const a = createHash('sha256').update(provided, 'utf8').digest()
+  const b = createHash('sha256').update(expected, 'utf8').digest()
+  return timingSafeEqual(a, b)
+}
+
+/** Host 头是否是回环主机名（防 DNS rebinding：恶意域名解析到 127.0.0.1 时 Host 为域名）。 */
+function isLoopbackHost(host: string): boolean {
+  const normalized = host.trim().toLowerCase()
+  if (normalized === '') return true
+  const withoutPort = normalized.replace(/:\d+$/, '')
+  return LOOPBACK_HOSTS.has(withoutPort)
+}
+
+/** Origin 是否同源回环（防跨站请求伪造）。 */
+function isLoopbackOrigin(origin: string): boolean {
+  const normalized = origin.trim().toLowerCase()
+  if (normalized === '' || normalized === 'null') return false
+  try {
+    const url = new URL(normalized)
+    return (url.protocol === 'http:' || url.protocol === 'https:') && isLoopbackHost(url.host)
+  } catch {
+    return false
+  }
+}
+
+/**
+ * 鉴权：回环地址 + `x-dsh-wechat-persona: 1` + Host/Origin/Sec-Fetch-Site 防跨站
+ * +（启用时）共享 token。返回 AuthFailure，通过返回 null。
+ */
 function checkAuth(
   headers: Record<string, string | string[] | undefined> | undefined,
   remoteAddress: string | undefined,
-): string | null {
+  expectedToken = '',
+): AuthFailure | null {
   const loopback = isLoopbackAddress(remoteAddress)
+  if (!loopback) return { status: 403, message: '只允许从本机回环地址访问（127.0.0.1 / ::1）' }
   const header = headerValue(headers, AUTH_HEADER)
   const headerOk = typeof header === 'string' && header.trim() === '1'
-  if (loopback && headerOk) return null
-  if (!loopback) return '只允许从本机回环地址访问（127.0.0.1 / ::1）'
-  return `缺少或错误的 ${AUTH_HEADER} 请求头（应为 1）`
+  if (!headerOk) return { status: 403, message: `缺少或错误的 ${AUTH_HEADER} 请求头（应为 1）` }
+  // DNS rebinding：Host 必须是回环主机名；浏览器访问时同源 Origin 也必须是回环。
+  const host = headerValue(headers, 'host')
+  if (typeof host === 'string' && !isLoopbackHost(host)) {
+    return { status: 403, message: '请求 Host 不是本机回环地址，已拒绝（疑似 DNS rebinding）' }
+  }
+  const origin = headerValue(headers, 'origin')
+  if (typeof origin === 'string' && !isLoopbackOrigin(origin)) {
+    return { status: 403, message: '请求 Origin 不是本机回环来源，已拒绝（疑似跨站请求伪造）' }
+  }
+  const fetchSite = headerValue(headers, 'sec-fetch-site')
+  if (typeof fetchSite === 'string' && fetchSite.trim().toLowerCase() === 'cross-site') {
+    return { status: 403, message: '跨站请求（Sec-Fetch-Site: cross-site）已被拒绝' }
+  }
+  if (expectedToken !== '') {
+    const provided = extractProvidedToken(headers)
+    if (!tokenMatches(provided, expectedToken)) {
+      return { status: 401, message: '缺少或错误的 API token（需 Authorization: Bearer <token> 或 x-dsh-persona-token）' }
+    }
+  }
+  return null
+}
+
+/** 进程内滑动窗口限速器：按来源地址分桶，超限返回 false。 */
+function createRateLimiter(max: number, windowMs: number) {
+  const buckets = new Map<string, { windowStart: number; count: number }>()
+  return {
+    allow(key: string): boolean {
+      const now = Date.now()
+      const bucket = buckets.get(key)
+      if (bucket === undefined || now - bucket.windowStart >= windowMs) {
+        if (buckets.size > 10_000) {
+          // 防御性清理：来源地址异常多时避免内存无界增长。
+          for (const [bucketKey, value] of buckets) {
+            if (now - value.windowStart >= windowMs) buckets.delete(bucketKey)
+          }
+        }
+        buckets.set(key, { windowStart: now, count: 1 })
+        return true
+      }
+      bucket.count += 1
+      return bucket.count <= max
+    },
+  }
 }
 
 /**
@@ -287,6 +436,7 @@ const PERSONA_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/
 /** 字符串长度上限（未列出的字段统一 4096）。 */
 const CONFIG_STRING_LIMITS: Record<string, number> = {
   ownerName: 64,
+  apiToken: 256,
   'channels.desktop.windowTitle': 128,
   'channels.phoneAdb.packageName': 128,
   'channels.phoneAdb.adbKeyboardIme': 256,
@@ -708,6 +858,266 @@ async function downloadPersonaPack(url: string, timeoutMs: number): Promise<Pers
   }
 }
 
+/* ─────────────────── 人格包导入：结构校验与消毒 ─────────────────── */
+
+type ImportSanitizeResult =
+  | { ok: true; value: Record<string, unknown>; dropped: string[] }
+  | { ok: false; issue: string }
+
+/** 字符串是否包含控制字符（JSON 文本里出现控制字符通常意味着注入尝试）。 */
+function hasImportControlChars(value: string): boolean {
+  return /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(value)
+}
+
+/** 标识符类字段是否安全：拒绝路径穿越、路径分隔符与控制字符。 */
+function isSafeImportIdentifier(value: string): boolean {
+  if (value.length > 200) return false
+  if (hasImportControlChars(value)) return false
+  if (value.includes('..') || value.includes('/') || value.includes('\\')) return false
+  return true
+}
+
+/** URL 类字段是否安全：只允许 http/https 与 data:image（拒绝 javascript:/file: 等可执行内容）。 */
+function isSafeImportUrl(value: string): boolean {
+  const trimmed = value.trim()
+  if (trimmed === '') return true
+  const lowered = trimmed.toLowerCase()
+  if (IMPORT_ALLOWED_URL_PREFIXES.some((prefix) => lowered.startsWith(prefix))) return true
+  // 无协议头的相对路径（人格包自带头像等）允许，但拒绝路径穿越。
+  if (/^[a-z][a-z0-9+.-]*:/i.test(trimmed)) return false
+  if (trimmed.includes('..') || trimmed.includes('\\')) return false
+  return true
+}
+
+/** 人格包 id 消毒：小写、非法字符折叠为 '-'、最长 64；无法得到合法 id 返回 ''。 */
+function sanitizeImportId(input: string): string {
+  const folded = input
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, '-')
+    .replace(/-{2,}/g, '-')
+    .replace(/^[-_]+|[-_]+$/g, '')
+  return folded.slice(0, 64)
+}
+
+/** 人格 / 市场条目 id 引用是否安全（允许字母数字与 _ - . :，拒绝路径穿越与分隔符）。 */
+function isSafePersonaRef(value: string): boolean {
+  if (value === '' || value.length > 128) return false
+  if (hasImportControlChars(value)) return false
+  if (value.includes('..') || value.includes('/') || value.includes('\\')) return false
+  return /^[A-Za-z0-9_.:-]+$/.test(value)
+}
+
+interface ImportWalkState {
+  nodes: number
+  issue: string | null
+}
+
+/** 递归校验并复制 JSON 值；发现第一个问题即停止（错误只报字段路径，不回显内容）。 */
+function walkImportValue(value: unknown, path: string, depth: number, state: ImportWalkState): unknown {
+  if (state.issue !== null) return null
+  state.nodes += 1
+  if (state.nodes > IMPORT_MAX_NODES) {
+    state.issue = `人格包内容过大（节点数超过 ${IMPORT_MAX_NODES}）`
+    return null
+  }
+  if (depth > IMPORT_MAX_DEPTH) {
+    state.issue = `人格包嵌套过深（超过 ${IMPORT_MAX_DEPTH} 层）：${path}`
+    return null
+  }
+  if (value === null || typeof value === 'boolean' || typeof value === 'number') return value
+  if (typeof value === 'string') {
+    if (hasImportControlChars(value)) {
+      state.issue = `字段 ${path} 含控制字符`
+      return null
+    }
+    const field = path.split('.').pop()?.replace(/\[\d+\]$/, '') ?? ''
+    const limit =
+      IMPORT_URL_FIELDS.has(field) || field === 'data' ? IMPORT_MAX_LONG_STRING_CHARS : IMPORT_MAX_STRING_CHARS
+    if (value.length > limit) {
+      state.issue = `字段 ${path} 超过长度上限（${limit} 字符）`
+      return null
+    }
+    if (IMPORT_URL_FIELDS.has(field) && !isSafeImportUrl(value)) {
+      state.issue = `字段 ${path} 不是允许的 URL（只允许 http/https/data:image）`
+      return null
+    }
+    if (IMPORT_IDENTIFIER_FIELDS.has(field) && !isSafeImportIdentifier(value)) {
+      state.issue = `字段 ${path} 含非法字符（疑似路径穿越或控制字符）`
+      return null
+    }
+    return value
+  }
+  if (Array.isArray(value)) {
+    if (value.length > IMPORT_MAX_ARRAY_ITEMS) {
+      state.issue = `字段 ${path} 数组元素过多（上限 ${IMPORT_MAX_ARRAY_ITEMS}）`
+      return null
+    }
+    return value.map((item, index) => walkImportValue(item, `${path}[${index}]`, depth + 1, state))
+  }
+  if (isPlainObject(value)) {
+    const keys = Object.keys(value)
+    if (keys.length > IMPORT_MAX_OBJECT_KEYS) {
+      state.issue = `字段 ${path} 键过多（上限 ${IMPORT_MAX_OBJECT_KEYS}）`
+      return null
+    }
+    const result: Record<string, unknown> = {}
+    for (const key of keys) {
+      if (IMPORT_DANGEROUS_KEYS.has(key)) {
+        state.issue = `字段 ${path} 含非法键名（${key}）`
+        return null
+      }
+      if (hasImportControlChars(key)) {
+        state.issue = `字段 ${path} 含非法键名`
+        return null
+      }
+      result[key] = walkImportValue(value[key], path === '' ? key : `${path}.${key}`, depth + 1, state)
+      if (state.issue !== null) return null
+    }
+    return result
+  }
+  state.issue = `字段 ${path} 类型不受支持`
+  return null
+}
+
+/**
+ * 人格包导入前置校验（dry-run）：不落盘、不调人格库，只做结构校验与消毒。
+ * - 接受 JSON 字符串（≤2MB）或已解析的 JSON 对象；
+ * - 拒绝危险键（原型污染）、控制字符、路径穿越、可执行 URL、超深/超大结构；
+ * - 顶层字段走白名单，未知字段丢弃（计入 dropped 供日志/文档说明）。
+ */
+export function sanitizeImportPayload(input: unknown): ImportSanitizeResult {
+  let source: unknown = input
+  if (typeof input === 'string') {
+    const bytes = Buffer.byteLength(input, 'utf8')
+    if (bytes > MAX_IMPORT_JSON_BYTES) {
+      return { ok: false, issue: `人格包超过 ${formatMb(MAX_IMPORT_JSON_BYTES)} 上限` }
+    }
+    const trimmed = input.trim()
+    if (trimmed === '') return { ok: false, issue: '人格包内容为空' }
+    try {
+      source = JSON.parse(trimmed)
+    } catch {
+      return { ok: false, issue: '人格包不是合法 JSON' }
+    }
+  }
+  if (!isPlainObject(source)) return { ok: false, issue: '人格包内容必须是 JSON 对象' }
+
+  const state: ImportWalkState = { nodes: 0, issue: null }
+  walkImportValue(source, '', 0, state)
+  if (state.issue !== null) return { ok: false, issue: state.issue }
+
+  const dropped: string[] = []
+  const cleaned: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(source)) {
+    if (IMPORT_ALLOWED_TOP_KEYS.has(key)) cleaned[key] = value
+    else dropped.push(key)
+  }
+  if (Object.keys(cleaned).length === 0) {
+    return { ok: false, issue: '人格包缺少可识别字段（id/name/systemPrompt 等）' }
+  }
+  if (typeof cleaned.id === 'string') {
+    const id = sanitizeImportId(cleaned.id)
+    if (id === '') delete cleaned.id
+    else cleaned.id = id
+  }
+  if (typeof cleaned.name === 'string' && cleaned.name.trim() === '') delete cleaned.name
+  return { ok: true, value: cleaned, dropped }
+}
+
+/* ────────────────────────── OCR / 读屏诊断（Phase F） ────────────────────────── */
+
+/**
+ * OCR 诊断视图（设置页只读展示）。
+ * 只透出白名单字段并做长度/数值钳制：通道内部结构、截图路径、原始识别文本等
+ * 一律不进入 HTTP 响应，避免把敏感内容带到设置页/日志。
+ */
+export interface OcrDiagnosticsView {
+  available: boolean
+  reason?: string
+  channelId?: string
+  channelState?: string
+  capturedAt?: number
+  captureId?: string
+  engines: string[]
+  lines?: number
+  uncertainCount?: number
+  durationMs?: number
+  lastReadAt?: number
+  lastError?: string
+  dualEngine: boolean
+}
+
+function normalizeOcrNumber(value: unknown, min: number, max: number): number | undefined {
+  const n = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : Number.NaN
+  if (!Number.isFinite(n)) return undefined
+  return Math.min(max, Math.max(min, Math.round(n)))
+}
+
+function normalizeOcrText(value: unknown, max: number): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const text = value.trim()
+  if (text === '') return undefined
+  return text.length > max ? text.slice(0, max) : text
+}
+
+/**
+ * 把引擎 `ocrDiagnostics()` 的原始返回值归一化为只读诊断视图（Phase F）。
+ * 引擎返回信封 `{channelId, channelState, capturedAt, ocr}`；`ocr` 缺失时降级为
+ * `available:false` + 原因，绝不让设置页报错。纯函数，供单元测试直接覆盖。
+ */
+export function normalizeOcrDiagnostics(input: unknown): OcrDiagnosticsView {
+  const fallback: OcrDiagnosticsView = {
+    available: false,
+    engines: [],
+    dualEngine: false,
+    reason: '通道未提供 OCR 诊断数据（desktop 通道需由读屏管线填充 ocr 状态）',
+  }
+  if (!isPlainObject(input)) return fallback
+  const envelope = input as Record<string, unknown>
+  const channelId = normalizeOcrText(envelope.channelId, 64)
+  const channelState = normalizeOcrText(envelope.channelState, 32)
+  const capturedAt = normalizeOcrNumber(envelope.capturedAt, 0, Number.MAX_SAFE_INTEGER)
+  if (!isPlainObject(envelope.ocr)) {
+    return { ...fallback, channelId, channelState, capturedAt }
+  }
+  const ocr = envelope.ocr as Record<string, unknown>
+  const captureId = normalizeOcrText(ocr.captureId, 128)
+  const engines: string[] = []
+  if (Array.isArray(ocr.engines)) {
+    for (const item of ocr.engines) {
+      const name = normalizeOcrText(item, 40)
+      if (name !== undefined && !engines.includes(name)) engines.push(name)
+      if (engines.length >= 3) break
+    }
+  }
+  const lines = normalizeOcrNumber(ocr.lines, 0, 100_000)
+  const uncertainCount = normalizeOcrNumber(ocr.uncertainCount, 0, 100_000)
+  const durationMs = normalizeOcrNumber(ocr.durationMs, 0, 600_000)
+  const lastReadAt = normalizeOcrNumber(ocr.lastReadAt, 0, Number.MAX_SAFE_INTEGER)
+  const lastError = normalizeOcrText(ocr.lastError, 300)
+  const dualEngine = ocr.dualEngine === true || engines.length >= 2
+  const available =
+    captureId !== undefined || lines !== undefined || engines.length > 0 || lastReadAt !== undefined
+  if (!available) {
+    return { ...fallback, channelId, channelState, capturedAt, reason: '通道 OCR 诊断数据格式不可识别' }
+  }
+  return {
+    available: true,
+    channelId,
+    channelState,
+    capturedAt,
+    captureId,
+    engines,
+    lines,
+    uncertainCount,
+    durationMs,
+    lastReadAt,
+    lastError,
+    dualEngine,
+  }
+}
+
 /* ────────────────────────────── API 门面 ────────────────────────────── */
 
 /**
@@ -716,6 +1126,19 @@ async function downloadPersonaPack(url: string, timeoutMs: number): Promise<Pers
  */
 export function createPersonaApi(deps: PersonaApiDeps): PersonaApi {
   let disposed = false
+  let warnedMissingToken = false
+  const rateLimiter = createRateLimiter(API_RATE_LIMIT_MAX, API_RATE_LIMIT_WINDOW_MS)
+
+  /** 当前强制生效的共享 token（空字符串 = 兼容模式，不强制）。 */
+  const currentApiToken = (): string => {
+    try {
+      const token = typeof deps.apiToken === 'function' ? deps.apiToken() : ''
+      return typeof token === 'string' ? token.trim() : ''
+    } catch (error) {
+      deps.logger.warn('读取 API token 失败，按未配置处理', errorMessage(error))
+      return ''
+    }
+  }
 
   /** 读取一个资源文件内容；缺失/异常都返回 null。 */
   const readAsset = async (rel: string): Promise<string | null> => {
@@ -776,8 +1199,18 @@ export function createPersonaApi(deps: PersonaApiDeps): PersonaApi {
   ): Promise<ApiResponse> => {
     try {
       if (disposed) return failJson(503, '接口已卸载（插件可能已停用或重载）')
-      const authError = checkAuth(headers, remoteAddress)
-      if (authError !== null) return failJson(403, authError)
+      const apiToken = currentApiToken()
+      const authError = checkAuth(headers, remoteAddress, apiToken)
+      if (authError !== null) return failJson(authError.status, authError.message)
+      if (apiToken === '' && !warnedMissingToken) {
+        warnedMissingToken = true
+        deps.logger.warn(
+          'API 未配置共享 token（兼容模式）：仅校验回环地址与 x-dsh-wechat-persona 请求头；如需强制鉴权，请设置 config.apiToken（插件启动时会在数据目录生成 api-token 文件供参考）',
+        )
+      }
+      if (!rateLimiter.allow(remoteAddress ?? 'direct')) {
+        return failJson(429, '请求过于频繁，请稍后再试（进程内限速）')
+      }
 
       const routePath = normalizeRoutePath(path)
       const verb = typeof method === 'string' && method.trim() !== '' ? method.trim().toUpperCase() : 'GET'
@@ -823,7 +1256,32 @@ export function createPersonaApi(deps: PersonaApiDeps): PersonaApi {
           whitelistCount: config.whitelist.length,
           online: status?.online === true,
         }
-        return okJson({ ok: true, status, channel, configSummary })
+        return okJson({
+          ok: true,
+          status,
+          channel,
+          configSummary,
+          safeMode: config.safeMode === true,
+          security: { apiTokenEnabled: apiToken !== '', rateLimitPerMinute: API_RATE_LIMIT_MAX },
+        })
+      }
+
+      /* ── OCR / 读屏诊断（只读，Phase F） ── */
+      // 数据来自引擎对通道 status() 的 duck-typing 读取；通道没提供时降级为 available:false。
+      // 只读、不触发截图，并只透出白名单字段（见 normalizeOcrDiagnostics）。
+      if (routePath === '/diagnostics/ocr') {
+        if (verb !== 'GET') return methodNotAllowed(['GET'])
+        const engine = currentEngine()
+        let raw: unknown = null
+        if (engine && typeof (engine as PersonaEngineLike & { ocrDiagnostics?: unknown }).ocrDiagnostics === 'function') {
+          try {
+            raw = await (engine as PersonaEngineLike & { ocrDiagnostics(): unknown }).ocrDiagnostics()
+          } catch (error) {
+            deps.logger.warn('读取 OCR 诊断失败', errorMessage(error))
+            raw = null
+          }
+        }
+        return okJson({ ok: true, diagnostics: normalizeOcrDiagnostics(raw) })
       }
 
       /* ── 配置读写 ── */
@@ -835,7 +1293,9 @@ export function createPersonaApi(deps: PersonaApiDeps): PersonaApi {
           } catch (error) {
             persist = { editable: false, reason: `读取持久化信息失败：${errorMessage(error)}` }
           }
-          return okJson({ ok: true, config: deps.getConfig(), persist })
+          // 不向 HTTP 层回显共享 token 明文：一律替换为空字符串。
+          const config = { ...deps.getConfig(), apiToken: '' }
+          return okJson({ ok: true, config, persist, apiTokenConfigured: apiToken !== '' })
         }
         if (verb === 'POST') {
           const obj = requireObject(body)
@@ -843,6 +1303,10 @@ export function createPersonaApi(deps: PersonaApiDeps): PersonaApi {
           if (obj.config === undefined) return failJson(400, '缺少 config 字段（完整配置对象）')
           const validation = validateConfig(obj.config)
           if (!validation.ok) return failJson(400, validation.error, validation.detail)
+          // 请求体里 token 为空 = 保持现有值（避免设置页读不到明文后把 token 清空）。
+          if (validation.config.apiToken.trim() === '') {
+            validation.config.apiToken = deps.getConfig().apiToken
+          }
           let saved: { ok: boolean; error?: string }
           try {
             saved = await deps.saveConfig(validation.config)
@@ -879,8 +1343,15 @@ export function createPersonaApi(deps: PersonaApiDeps): PersonaApi {
         if (url !== '' && (pack === undefined || pack === null)) {
           try {
             const downloaded = await downloadPersonaPack(url, deps.getConfig().market.timeoutMs)
+            const sanitized = sanitizeImportPayload(downloaded)
+            if (!sanitized.ok) {
+              return failJson(400, `远程人格包校验失败：${sanitized.issue}`, sanitized.issue)
+            }
+            if (sanitized.dropped.length > 0) {
+              deps.logger.debug(`远程人格包丢弃未知字段：${sanitized.dropped.join(', ')}`)
+            }
             const before = await installedIds()
-            const persona = await deps.personas.install(downloaded, 'market')
+            const persona = await deps.personas.install(sanitized.value as unknown as PersonaPackV2, 'market')
             return okJson({ ok: true, persona, updated: before.has(persona.id) })
           } catch (error) {
             return failJson(400, `从 URL 安装人格失败：${errorMessage(error)}`)
@@ -889,9 +1360,16 @@ export function createPersonaApi(deps: PersonaApiDeps): PersonaApi {
         if (!isPlainObject(pack)) {
           return failJson(400, '请求体需要提供 pack（人格包对象）或 url（下载地址）')
         }
+        const sanitizedPack = sanitizeImportPayload(pack)
+        if (!sanitizedPack.ok) {
+          return failJson(400, `人格包校验失败：${sanitizedPack.issue}`, sanitizedPack.issue)
+        }
+        if (sanitizedPack.dropped.length > 0) {
+          deps.logger.debug(`本机人格包丢弃未知字段：${sanitizedPack.dropped.join(', ')}`)
+        }
         try {
           const before = await installedIds()
-          const persona = await deps.personas.install(pack as unknown as PersonaPackV2, 'local')
+          const persona = await deps.personas.install(sanitizedPack.value as unknown as PersonaPackV2, 'local')
           return okJson({ ok: true, persona, updated: before.has(persona.id) })
         } catch (error) {
           return failJson(400, `安装人格失败：${errorMessage(error)}`)
@@ -905,9 +1383,17 @@ export function createPersonaApi(deps: PersonaApiDeps): PersonaApi {
         if (obj.json === undefined) {
           return failJson(400, '缺少 json 字段（人格包或 SillyTavern 角色卡 JSON）')
         }
+        // dry-run：先做结构校验/消毒（不落盘），通过后再交给人格库。
+        const sanitized = sanitizeImportPayload(obj.json)
+        if (!sanitized.ok) {
+          return failJson(400, `人格包校验失败：${sanitized.issue}`, sanitized.issue)
+        }
+        if (sanitized.dropped.length > 0) {
+          deps.logger.debug(`导入人格包丢弃未知字段：${sanitized.dropped.join(', ')}`)
+        }
         try {
           const before = await installedIds()
-          const persona = await deps.personas.importJson(obj.json)
+          const persona = await deps.personas.importJson(sanitized.value)
           return okJson({ ok: true, persona, updated: before.has(persona.id) })
         } catch (error) {
           return failJson(400, `导入人格失败：${errorMessage(error)}`)
@@ -923,6 +1409,7 @@ export function createPersonaApi(deps: PersonaApiDeps): PersonaApi {
         }
         const id = obj.id.trim()
         if (id.length > 64) return failJson(400, '人格 id 过长')
+        if (id !== '' && !isSafePersonaRef(id)) return failJson(400, '人格 id 含非法字符（疑似路径穿越）')
         try {
           if (id !== '') {
             const pack = await deps.personas.get(id)
@@ -944,6 +1431,7 @@ export function createPersonaApi(deps: PersonaApiDeps): PersonaApi {
         if (verb !== 'GET') return methodNotAllowed(['GET'])
         const id = (query.get('id') ?? '').trim()
         if (id === '') return failJson(400, '缺少 id 参数')
+        if (!isSafePersonaRef(id)) return failJson(400, '人格 id 含非法字符（疑似路径穿越）')
         try {
           const pack = await deps.personas.exportPack(id)
           if (!pack) return failJson(404, `人格不存在：${id}`)
@@ -986,8 +1474,10 @@ export function createPersonaApi(deps: PersonaApiDeps): PersonaApi {
         if (typeof obj.id !== 'string' || obj.id.trim() === '') {
           return failJson(400, '缺少 id 字段（人格市场条目 id）')
         }
+        const marketId = obj.id.trim()
+        if (!isSafePersonaRef(marketId)) return failJson(400, '人格市场 id 含非法字符（疑似路径穿越）')
         try {
-          const result = await deps.market.install(obj.id.trim())
+          const result = await deps.market.install(marketId)
           return okJson({ ok: true, persona: result.persona, updated: result.updated === true })
         } catch (error) {
           return failJson(400, `安装人格失败：${errorMessage(error)}`)
@@ -1211,15 +1701,21 @@ export function createPersonaApi(deps: PersonaApiDeps): PersonaApi {
         const engine = currentEngine()
         if (!engine) return failJson(409, '引擎未启动，无法发送测试消息')
         // P1-5：暂停期间手动发送与自动发送一样被门禁拒绝（引擎 sendTest 内部还有一层
-        // canSend 兜底：熔断/预算/白名单/频控；这里提前返回明确的 409，方便工具/设置页提示）。
-        let paused = false
+        // canSend 兜底：安全模式/熔断/预算/白名单/频控；这里提前返回明确的 409，方便工具/设置页提示）。
+        let engineStatus: EngineStatus | null = null
         try {
-          const status = await engine.status()
-          paused = status.paused === true
+          engineStatus = await engine.status()
         } catch {
-          paused = false
+          engineStatus = null
         }
-        if (paused) return failJson(409, '引擎已暂停，已拒绝发送', 'paused')
+        if (engineStatus?.paused === true) return failJson(409, '引擎已暂停，已拒绝发送', 'paused')
+        // Phase F：人格模拟器只允许 mock 通道（请求体 mockOnly:true），绝不触达真实微信。
+        if (obj.mockOnly === true) {
+          const channelId = engineStatus?.channelId ?? deps.getConfig().activeChannel
+          if (channelId !== 'mock') {
+            return failJson(409, `人格模拟器仅允许在 mock 通道使用（当前通道：${channelId}）`, 'mock-only')
+          }
+        }
         let result: SendResult
         try {
           result = await engine.sendTest(contactId.slice(0, 128), text.slice(0, 4000))
@@ -1327,6 +1823,7 @@ export function createPersonaApi(deps: PersonaApiDeps): PersonaApi {
           return failJson(400, '人格 id 不合法')
         }
         if (id === '') return failJson(400, '缺少人格 id')
+        if (!isSafePersonaRef(id)) return failJson(400, '人格 id 含非法字符（疑似路径穿越）')
         try {
           const removed = await deps.personas.uninstall(id)
           if (!removed) {
@@ -1362,7 +1859,7 @@ type BodyReadResult =
   | { ok: true; text: string }
   | { ok: false; status: number; error: string }
 
-/** 读取请求体（GET/HEAD 视为空；超过上限返回 413）。 */
+/** 读取请求体（GET/HEAD 视为空；超过上限返回 413；超时返回 408）。 */
 function readRequestBody(req: IncomingMessage): Promise<BodyReadResult> {
   const method = (req.method ?? 'GET').toUpperCase()
   if (method === 'GET' || method === 'HEAD') return Promise.resolve({ ok: true, text: '' })
@@ -1370,9 +1867,11 @@ function readRequestBody(req: IncomingMessage): Promise<BodyReadResult> {
     const chunks: Buffer[] = []
     let size = 0
     let settled = false
+    let timer: ReturnType<typeof setTimeout> | null = null
     const finish = (result: BodyReadResult): void => {
       if (settled) return
       settled = true
+      if (timer !== null) clearTimeout(timer)
       req.removeListener('data', onData)
       req.removeListener('end', onEnd)
       req.removeListener('error', onError)
@@ -1393,6 +1892,12 @@ function readRequestBody(req: IncomingMessage): Promise<BodyReadResult> {
     const onEnd = (): void => finish({ ok: true, text: Buffer.concat(chunks).toString('utf8') })
     const onError = (): void => finish({ ok: false, status: 400, error: '读取请求体失败' })
     const onAborted = (): void => finish({ ok: false, status: 400, error: '请求被中断' })
+    timer = setTimeout(() => {
+      finish({ ok: false, status: 408, error: '读取请求体超时' })
+      req.resume()
+    }, REQUEST_BODY_TIMEOUT_MS)
+    // 超时定时器不应阻止进程退出。
+    if (typeof timer === 'object' && timer !== null && 'unref' in timer) timer.unref()
     req.on('data', onData)
     req.on('end', onEnd)
     req.on('error', onError)
@@ -1490,6 +1995,18 @@ async function handleHttpRequest(
       return
     }
 
+    // Content-Type 校验：带请求体的写操作必须是 application/json（防 CSRF 表单/simple request 绕过）。
+    const expectsBody = method === 'POST' || method === 'PUT' || method === 'PATCH'
+    if (expectsBody) {
+      const hasBody = (Number.isFinite(contentLength) && contentLength > 0) || typeof req.headers['transfer-encoding'] === 'string'
+      const contentType = String(req.headers['content-type'] ?? '').trim().toLowerCase()
+      if (hasBody && !contentType.startsWith('application/json')) {
+        req.resume()
+        sendJson(res, 415, { ok: false, error: '请求 Content-Type 必须是 application/json' })
+        return
+      }
+    }
+
     const bodyResult = await readRequestBody(req)
     if (!bodyResult.ok) {
       sendJson(res, bodyResult.status, { ok: false, error: bodyResult.error })
@@ -1566,6 +2083,7 @@ export function attachPersonaRoutes(
     const exactPaths = [
       '/health',
       '/status',
+      '/diagnostics/ocr',
       '/config',
       '/personas',
       '/personas/install',
