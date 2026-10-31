@@ -4,25 +4,30 @@
  *
  * 流程：
  *   1. 读 test/fixtures/ocr-corpus/manifest.json（合成微信聊天截图 + ground truth）
+ *      --split=tune|eval 按 manifest.scenarios 顺序奇偶拆分（tune=偶数下标、eval=奇数下标，两半不重叠）
  *   2. 生成预处理变体图（2x 放大 / 灰度+对比度）到 results/derived/
  *   3. 对每个引擎 × 每个预处理变体跑全部图，算指标：
  *        CER（字符级 Levenshtein / GT 字符数）、行级 P/R/F1（归一化文本 + IoU 辅助）、
  *        整句准确率、漏读率、假消息率、重复率、P50/P95 耗时
  *   4. --pipeline=baseline 组：WinRT 原始行 → v0.2.8 baseline 后处理
  *      （scripts/ocr/baseline-v028.mjs，逐行转写自 desktop.ts）→ 指针，看后处理相对原始行的增益
- *   5. 每个 run 写 results/<timestamp>-<engine>-<variant>.json，另写 results/summary.json
+ *   5. --pipeline=v3 组：v3 上线管线的离线等价
+ *      （scripts/ocr/v3-pipeline.mjs：winrt 2x 行 → 归一化 → 可疑消息 RapidOCR 同帧投票 → 受控纠错），
+ *      三种配置 novote / vote-garbled / vote-all 全部计算；tune 集选参、eval 集只报选中配置。
+ *   6. 每个 run 写 results/<timestamp>-<split>-<engine>-<variant>.json，另写 results/summary.json
  *
  * 用法：
- *   node scripts/ocr/bench.mjs --engine=all                     # 全量（winrt + rapidocr + baseline）
- *   node scripts/ocr/bench.mjs --engine=winrt --limit=10         # 冒烟
+ *   node scripts/ocr/bench.mjs --engine=all --pipeline=all                 # 全量（引擎 + baseline + v3）
+ *   node scripts/ocr/bench.mjs --engine=all --pipeline=all --split=eval    # eval 集（不参与调参）
+ *   node scripts/ocr/bench.mjs --engine=winrt --limit=10                   # 冒烟
  *   node scripts/ocr/bench.mjs --engine=all --scenario=clear,dark_mode
- *   node scripts/ocr/bench.mjs --pipeline=baseline --engine=all  # 只关心 baseline 组
+ *   node scripts/ocr/bench.mjs --pipeline=baseline --engine=all           # 只关心 baseline 组
  *
  * 说明：
  *   - 单图 OCR 失败不中断，按失败记录进结果（ok:false + error），汇总时排除但打印。
  *   - 窗口 chrome（标题/输入框占位/时间戳）用 manifest.expectedContext 豁免，不算假消息。
  *   - RapidOCR 走批量进程（模型只加载一次），单次全量约 1 分钟内；逐图进程会慢 20 倍以上。
- *   - 分组（groupLinesByMessage）用 GT bbox 近似把 OCR 行拼回消息，仅服务于 baseline A/B；
+ *   - 分组（groupLinesByMessage）用 GT bbox 近似把 OCR 行拼回消息，仅服务于 baseline/v3 A/B；
  *     真实 pipeline 的分组在 desktop.ts 里按 UI 坐标做，不在本 bench 范围内。
  *
  * 只读本仓库合成图；不截图、不启动、不发送微信；结果写 test/fixtures/ocr-corpus/results/。
@@ -38,8 +43,18 @@ if (args.help) {
 }
 if (args.python) process.env.OCR_BENCH_PYTHON = args.python;
 
+// --pipeline：raw=只跑引擎；baseline=引擎 + v0.2.8 后处理组；v3=引擎 + v3 管线离线等价组；all=两者都跑
+const baselineEnabled = args.pipeline === 'baseline' || args.pipeline === 'all';
+const v3Enabled = args.pipeline === 'v3' || args.pipeline === 'all';
+
 const engines = await import('./engines.mjs');
 const { baselinePostprocessMessage } = await import('./baseline-v028.mjs');
+const {
+  V3_CONFIGS,
+  V3_NOTES,
+  runV3Message,
+  classifySide,
+} = await import('./v3-pipeline.mjs');
 const {
   REPO_ROOT,
   VARIANTS,
@@ -77,6 +92,22 @@ if (args.scenario.length > 0) {
   }
   selected = selected.filter((img) => args.scenario.includes(img.scenario));
 }
+
+// tune/eval 拆分：按 manifest.scenarios 顺序奇偶（两半场景、图片均不重叠）。
+// 调参只看 tune 集，最终只报 eval 集；all 用于补充对照与更新 §5 引擎表。
+const scenarioIds = (manifest.scenarios || []).map((s) => (typeof s === 'string' ? s : s.id));
+const scenarioSplitOf = new Map(scenarioIds.map((id, i) => [id, i % 2 === 0 ? 'tune' : 'eval']));
+const splitScenarios = {
+  tune: scenarioIds.filter((_, i) => i % 2 === 0),
+  eval: scenarioIds.filter((_, i) => i % 2 === 1),
+};
+if (args.split !== 'all') {
+  selected = selected.filter((img) => (scenarioSplitOf.get(img.scenario) || 'all') === args.split);
+  if (selected.length === 0) {
+    console.error(`[bench] 按 --split=${args.split} 过滤后没有图片；--scenario 与 --split 可能冲突`);
+    process.exit(2);
+  }
+}
 if (args.limit > 0) selected = selected.slice(0, args.limit);
 if (selected.length === 0) {
   console.error('[bench] 过滤后没有图片，退出');
@@ -88,6 +119,7 @@ const startedAt = new Date();
 console.log('=== OCR Benchmark (dsh-wechat-persona v3.0.0) ===');
 console.log(`语料: ${manifest.imageCount} 张 / ${manifest.scenarioCount} 个场景，seed=${manifest.seed}`);
 console.log(`本次: ${selected.length} 张，场景=${[...new Set(selected.map((i) => i.scenario))].join(',')}`);
+console.log(`拆分: split=${args.split}${args.split === 'all' ? `（tune=${splitScenarios.tune.length} 场景 / eval=${splitScenarios.eval.length} 场景）` : `（${splitScenarios[args.split].length} 个场景）`}`);
 console.log(`环境: ${env.platform} node=${env.nodeVersion} python=${env.pythonVersion || 'N/A'} (${env.rapidocrOk ? 'rapidocr OK' : 'rapidocr 不可用'}) pillow=${env.pillowVersion || 'N/A'}`);
 console.log(`引擎: ${args.engine}  预处理变体: ${VARIANTS.map((v) => v.id).join('/')}  pipeline=${args.pipeline}`);
 if (!env.winrtScriptExists) console.warn('[bench] 警告: scripts/pwsh/ocr-winrt.ps1 不存在，WinRT 会全部失败');
@@ -372,8 +404,8 @@ function metricsForImage(img, contentLines) {
   };
 }
 
-/** 把同一张图上未匹配的行按 GT 消息 bbox 分组（baseline A/B 用；GT 辅助，见文件头说明）。 */
-function groupLinesByMessage(contentLines, img) {
+/** 把同一张图上未匹配的行按 GT 消息 bbox 分组（baseline/v3 A/B 用；GT 辅助，见文件头说明）。 */
+function groupLineItemsByMessage(contentLines, img) {
   const groups = img.expectedMessages.map(() => []);
   const msgBoxes = img.expectedMessages.map((m) => {
     const lineBoxes = Array.isArray(m.lineBoxes) ? m.lineBoxes.map((lb) => toBox(lb.bbox)) : [];
@@ -392,15 +424,14 @@ function groupLinesByMessage(contentLines, img) {
       }
     });
     if (bestIndex >= 0 && bestScore >= 0.15) groups[bestIndex].push(line);
-    // 不落在任何消息 bbox 上的行（假消息）不进 baseline 分组
+    // 不落在任何消息 bbox 上的行（假消息）不进分组
   }
-  return groups.map((lines) =>
-    lines
-      .slice()
-      .sort((a, b) => a.box.y - b.box.y || a.box.x - b.box.x)
-      .map((l) => l.text)
-      .join(''),
-  );
+  return groups.map((lines) => lines.slice().sort((a, b) => a.box.y - b.box.y || a.box.x - b.box.x));
+}
+
+/** 分组后按行序拼成一个消息文本（baseline 后处理用）。 */
+function groupLinesByMessage(contentLines, img) {
+  return groupLineItemsByMessage(contentLines, img).map((lines) => lines.map((l) => l.text).join(''));
 }
 
 /** 汇总一组图指标。 */
@@ -515,7 +546,7 @@ for (const engineId of engineIds) {
     const totals = aggregate(records, (captureId) => (imageById.get(captureId) || {}).scenario);
     // 全量桶（aggregate 的 key 是场景，这里额外算一份不按场景拆的总指标）
     const overall = aggregate(records, () => '__all').__all;
-    const fileName = `${timestamp}-${engineId}-${variant.id}.json`;
+    const fileName = `${timestamp}-${args.split}-${engineId}-${variant.id}.json`;
     const filePath = join(RESULTS_DIR, fileName);
     const payload = {
       meta: {
@@ -536,6 +567,8 @@ for (const engineId of engineIds) {
           seed: manifest.seed,
           scenarioCount: manifest.scenarioCount,
           imageCount: selected.length,
+          split: args.split,
+          splitScenarios: args.split === 'all' ? splitScenarios : splitScenarios[args.split],
         },
         durationMs: run.wallMs,
         modelLoadMs: run.modelLoadMs,
@@ -558,7 +591,7 @@ for (const engineId of engineIds) {
 
 // ── 4. baseline（v0.2.8 后处理）A/B ─────────────────────────────────────
 let baselineSummary = null;
-if (args.pipeline !== 'raw') {
+if (baselineEnabled) {
   const winrtOrig = runs.get('winrt|orig');
   const winrt2x = runs.get('winrt|upscale2x');
   const rapidOrig = runs.get('rapid|orig');
@@ -569,7 +602,7 @@ if (args.pipeline !== 'raw') {
   } else if (!rapidOrig) {
     console.warn('\n[baseline] 跳过：缺少 rapidocr × orig 结果（--engine 需含 rapid）');
   } else {
-    console.log('\n[3/3] baseline v0.2.8 后处理 A/B（winrt 原始行 → desktop.ts 转写后处理）');
+    console.log('\n[3/4] baseline v0.2.8 后处理 A/B（winrt 原始行 → desktop.ts 转写后处理）');
     const recById = new Map(winrtOrig.records.map((r) => [r.captureId, r]));
     const rec2x = new Map(winrt2x.records.map((r) => [r.captureId, r]));
     const recRapid = new Map(rapidOrig.records.map((r) => [r.captureId, r]));
@@ -637,7 +670,7 @@ if (args.pipeline !== 'raw') {
       });
     }
     const totals = aggregateBaseline(baseRecords);
-    const fileName = `${timestamp}-baseline-v028-orig.json`;
+    const fileName = `${timestamp}-${args.split}-baseline-v028-orig.json`;
     const filePath = join(RESULTS_DIR, fileName);
     writeFileSync(
       filePath,
@@ -678,6 +711,271 @@ if (args.pipeline !== 'raw') {
         `  改动 ${corrCount} 条（改善 ${improved} / 变差 ${worsened}）`,
     );
   }
+}
+
+// ── 4b. v3 管线离线等价 A/B ─────────────────────────────────────────────
+// winrt 2x 行 → normalize → （可疑消息时）RapidOCR 同帧投票 → 受控纠错。
+// 三种配置全部计算：tune 集选参、eval 集只报选中配置；all-40 用于补充对照。
+let v3Summaries = [];
+if (v3Enabled) {
+  const winrt2xRun = runs.get('winrt|upscale2x');
+  const rapidOrigRun = runs.get('rapid|orig');
+  if (!winrt2xRun) {
+    console.warn('\n[v3] 跳过：缺少 winrt × upscale2x 结果（--engine 需含 winrt）');
+  } else if (!rapidOrigRun) {
+    console.warn('\n[v3] 跳过：缺少 rapidocr × orig 结果（v3 第二引擎投票需要 --engine=all）');
+  } else {
+    console.log(`\n[4/4] v3 管线离线等价（配置 ${V3_CONFIGS.map((c) => c.id).join(' / ')}）`);
+    const rec2x = new Map(winrt2xRun.records.map((r) => [r.captureId, r]));
+    const recRapid = new Map(rapidOrigRun.records.map((r) => [r.captureId, r]));
+    const v3Records = new Map(V3_CONFIGS.map((cfg) => [cfg.id, []]));
+    const attributionRecords = [];
+    for (const img of selected) {
+      const r2 = rec2x.get(img.captureId);
+      const rr = recRapid.get(img.captureId);
+      if (!r2 || !r2.ok) {
+        for (const cfg of V3_CONFIGS) {
+          v3Records.get(cfg.id).push({ captureId: img.captureId, scenario: img.scenario, ok: false, error: (r2 && r2.error) || '无 winrt 2x 行', metrics: null });
+        }
+        continue;
+      }
+      const c2 = contentLinesOf(r2, 'upscale2x', img);
+      const cr = rr && rr.ok ? contentLinesOf(rr, 'orig', img) : [];
+      const groups = groupLineItemsByMessage(c2, img);
+      // 气泡归属（与管线配置无关，单独统计）
+      attributionRecords.push({
+        captureId: img.captureId,
+        scenario: img.scenario,
+        messages: groups.map((lines, mi) => {
+          const side = classifySide(lines, img.width);
+          return { gtSender: img.expectedMessages[mi].sender, side: side.side, reason: side.reason, lineCount: lines.length };
+        }),
+      });
+      for (const cfg of V3_CONFIGS) {
+        const perMessage = [];
+        let edit = 0;
+        let chars = 0;
+        let correct = 0;
+        let garbledCount = 0;
+        let scriptReplaced = 0;
+        let desktopVoted = 0;
+        let correctedCount = 0;
+        let protectedSkipped = 0;
+        groups.forEach((lines, mi) => {
+          const gtText = String(img.expectedMessages[mi].text || '');
+          const winText = lines.map((l) => l.text).join('');
+          const winTop = lines.length > 0 ? Math.min(...lines.map((l) => l.box.y)) : 0;
+          const info = runV3Message({ gtText, winText, winTop, rapidLines: cr, config: cfg.id });
+          const normGt = normalizeForCompare(gtText);
+          const e = levenshtein(normalizeForCompare(info.finalText), normGt);
+          edit += e;
+          chars += normGt.length;
+          if (normalizeForCompare(info.finalText) === normGt) correct += 1;
+          if (info.garbled) garbledCount += 1;
+          if (info.scriptReplaced) scriptReplaced += 1;
+          if (info.desktopVoted) desktopVoted += 1;
+          if (info.corrected) correctedCount += 1;
+          protectedSkipped += info.protectedSkipped;
+          perMessage.push({
+            gtText,
+            winText: info.winText,
+            finalText: info.finalText,
+            cer: ratio(e, normGt.length),
+            garbled: info.garbled,
+            matched: info.matched,
+            matchedOverlap: Number(info.matchedOverlap.toFixed(4)),
+            scriptReplaced: info.scriptReplaced,
+            desktopVoted: info.desktopVoted,
+            corrected: info.corrected,
+            correctedChanges: info.changes.length,
+            protectedSkipped: info.protectedSkipped,
+          });
+        });
+        v3Records.get(cfg.id).push({
+          captureId: img.captureId,
+          scenario: img.scenario,
+          ok: true,
+          metrics: {
+            messages: groups.length,
+            edit,
+            chars,
+            cer: ratio(edit, chars),
+            correct,
+            sentenceAcc: ratio(correct, groups.length),
+            garbledCount,
+            scriptReplacedCount: scriptReplaced,
+            desktopVotedCount: desktopVoted,
+            correctedCount,
+            protectedSkipped,
+            perMessage,
+          },
+        });
+      }
+    }
+    const attribution = aggregateAttribution(attributionRecords);
+    for (const cfg of V3_CONFIGS) {
+      const records = v3Records.get(cfg.id);
+      const totals = aggregateV3(records);
+      const fileName = `${timestamp}-${args.split}-v3-${cfg.id}.json`;
+      const filePath = join(RESULTS_DIR, fileName);
+      const payload = {
+        meta: {
+          bench: 'ocr-benchmark-v3-pipeline',
+          version: 'v3.0.0',
+          generatedAt: new Date().toISOString(),
+          command: process.argv.slice(2).join(' '),
+          pipelineConfig: cfg.id,
+          pipelineConfigLabel: cfg.label,
+          split: args.split,
+          splitScenarios: args.split === 'all' ? splitScenarios : splitScenarios[args.split],
+          inputs: {
+            primary: 'winrt × upscale2x 行（坐标 /2 后按 GT bbox 分组）',
+            secondEngine: 'rapidocr × orig 行（同帧；按 |y-top|≤26 + 重合度≥0.35 + 更长才替换）',
+          },
+          offlineEquivalence: V3_NOTES,
+          corpus: {
+            manifest: relative(REPO_ROOT, MANIFEST_PATH),
+            seed: manifest.seed,
+            scenarioCount: manifest.scenarioCount,
+            imageCount: selected.length,
+            split: args.split,
+            splitScenarios: args.split === 'all' ? splitScenarios : splitScenarios[args.split],
+          },
+          env: {
+            platform: env.platform,
+            node: env.nodeVersion,
+            pythonVersion: env.pythonVersion,
+            pillowVersion: env.pillowVersion,
+            rapidocr: env.rapidocrOk ? 'available' : 'unavailable',
+          },
+        },
+        images: records,
+        totals,
+        attribution,
+      };
+      writeFileSync(filePath, JSON.stringify(payload, null, 1), 'utf8');
+      runFiles.push(fileName);
+      const summaryEntry = { engine: 'v3-pipeline', variant: cfg.id, file: fileName, totals, attribution };
+      v3Summaries.push(summaryEntry);
+      summaryRuns.push(summaryEntry);
+      console.log(
+        `\n[v3 × ${cfg.id}] CER ${pct(totals.cer)}  整句 ${pct(totals.sentenceAcc)}` +
+          `  可疑消息 ${totals.garbledMessages}/${totals.messages}` +
+          `  第二引擎替换 ${totals.scriptReplacedMessages}  纠错改动 ${totals.correctedMessages}（保护跳过 ${totals.protectedSkipped}）`,
+      );
+      console.log(`  场景明细: ${Object.entries(totals.byScenario).map(([s, t]) => `${s}:${pct(t.cer)}`).join('  ')}`);
+    }
+    console.log(
+      `\n[v3 气泡归属] 消息 ${attribution.messages} 条，判定 ${attribution.classified}（覆盖率 ${pct(attribution.coverage)}）` +
+        `，左右正确 ${pct(attribution.sideAccuracy)}，uncertain ${pct(ratio(attribution.uncertain, attribution.messages))}` +
+        `；inbound 精确率 ${pct(attribution.inbound.precision)} 召回 ${pct(attribution.inbound.recall)}`,
+    );
+  }
+}
+
+function aggregateV3(records) {
+  const ok = records.filter((r) => r.ok);
+  const sum = (key) => ok.reduce((acc, r) => acc + r.metrics[key], 0);
+  const byScenario = new Map();
+  for (const r of ok) {
+    const s = r.scenario;
+    if (!byScenario.has(s)) {
+      byScenario.set(s, { messages: 0, edit: 0, chars: 0, correct: 0, garbled: 0, scriptReplaced: 0, desktopVoted: 0, corrected: 0, protectedSkipped: 0 });
+    }
+    const b = byScenario.get(s);
+    b.messages += r.metrics.messages;
+    b.edit += r.metrics.edit;
+    b.chars += r.metrics.chars;
+    b.correct += r.metrics.correct;
+    b.garbled += r.metrics.garbledCount;
+    b.scriptReplaced += r.metrics.scriptReplacedCount;
+    b.desktopVoted += r.metrics.desktopVotedCount;
+    b.corrected += r.metrics.correctedCount;
+    b.protectedSkipped += r.metrics.protectedSkipped;
+  }
+  return {
+    images: records.length,
+    okImages: ok.length,
+    failedImages: records.length - ok.length,
+    messages: sum('messages'),
+    cer: ratio(sum('edit'), sum('chars')),
+    sentenceAcc: ratio(sum('correct'), sum('messages')),
+    garbledMessages: sum('garbledCount'),
+    scriptReplacedMessages: sum('scriptReplacedCount'),
+    desktopVotedMessages: sum('desktopVotedCount'),
+    correctedMessages: sum('correctedCount'),
+    protectedSkipped: sum('protectedSkipped'),
+    byScenario: Object.fromEntries(
+      [...byScenario.entries()].map(([s, b]) => [
+        s,
+        {
+          messages: b.messages,
+          cer: ratio(b.edit, b.chars),
+          sentenceAcc: ratio(b.correct, b.messages),
+          garbledMessages: b.garbled,
+          scriptReplacedMessages: b.scriptReplaced,
+          desktopVotedMessages: b.desktopVoted,
+          correctedMessages: b.corrected,
+          protectedSkipped: b.protectedSkipped,
+        },
+      ]),
+    ),
+  };
+}
+
+function aggregateAttribution(records) {
+  const bySide = {
+    left: { predicted: 0, gtCount: 0, tp: 0, fp: 0 },
+    right: { predicted: 0, gtCount: 0, tp: 0, fp: 0 },
+  };
+  const uncertainReasons = {};
+  let messages = 0;
+  let classified = 0;
+  let correct = 0;
+  let wrong = 0;
+  let uncertain = 0;
+  for (const rec of records) {
+    for (const m of rec.messages) {
+      messages += 1;
+      bySide[m.gtSender].gtCount += 1;
+      if (m.side === 'uncertain') {
+        uncertain += 1;
+        uncertainReasons[m.reason] = (uncertainReasons[m.reason] || 0) + 1;
+        continue;
+      }
+      classified += 1;
+      if (m.side === m.gtSender) correct += 1;
+      else wrong += 1;
+      const b = bySide[m.side];
+      b.predicted += 1;
+      if (m.side === m.gtSender) b.tp += 1;
+      else b.fp += 1;
+    }
+  }
+  return {
+    messages,
+    classified,
+    correct,
+    wrong,
+    uncertain,
+    sideAccuracy: ratio(correct, classified),
+    coverage: ratio(classified, messages),
+    uncertainReasons,
+    inbound: {
+      predicted: bySide.left.predicted,
+      tp: bySide.left.tp,
+      fp: bySide.left.fp,
+      precision: ratio(bySide.left.tp, bySide.left.predicted),
+      recall: ratio(bySide.left.tp, bySide.left.gtCount),
+    },
+    outbound: {
+      predicted: bySide.right.predicted,
+      tp: bySide.right.tp,
+      fp: bySide.right.fp,
+      precision: ratio(bySide.right.tp, bySide.right.predicted),
+      recall: ratio(bySide.right.tp, bySide.right.gtCount),
+    },
+  };
 }
 
 function aggregateBaseline(records) {
@@ -759,17 +1057,25 @@ const summary = {
     scenarioCount: manifest.scenarioCount,
     imageCount: selected.length,
     scenarios: [...new Set(selected.map((i) => i.scenario))],
+    split: args.split,
+    splitScenarios: args.split === 'all' ? splitScenarios : splitScenarios[args.split],
   },
   variants: VARIANTS.map((v) => ({ id: v.id, label: v.label })),
   runs: summaryRuns,
   files: runFiles,
   baseline: baselineSummary,
+  v3Pipeline: {
+    implementedIn: 'scripts/ocr/v3-pipeline.mjs',
+    configs: V3_CONFIGS.map((c) => ({ id: c.id, label: c.label, useVote: c.useVote })),
+    notices: V3_NOTES,
+  },
   notes: [
     'CER = 字符级 Levenshtein / GT 字符数（消息级聚合：Σ edit / Σ GT chars），比较前去空白。',
     '行级 P/R/F1：归一化文本相似度 + IoU 辅助一对一匹配；重复行单独计数并从 TP 之外计。',
     '假消息率 = 未匹配且非重复的 OCR 行 / OCR 内容行；窗口 chrome（标题/输入框/时间戳）按 manifest.expectedContext 豁免。',
     'P50/P95 为引擎自报的 OCR 耗时（不含进程启动/模型加载），RapidOCR 模型加载时间见各 run 的 meta.modelLoadMs。',
     'baseline 组：分组用 GT bbox 近似，仅衡量「同一批原始行经过 v0.2.8 后处理」的增益，不代表真实 pipeline 的定位能力。',
+    'v3 组：离线等价（winrt 2x 首读 → 归一 → 可疑消息 RapidOCR 同帧投票 → 受控纠错），无 4x 帧重读；分组同为 GT bbox 近似。',
   ],
 };
 writeFileSync(join(RESULTS_DIR, 'summary.json'), JSON.stringify(summary, null, 1), 'utf8');
@@ -779,6 +1085,13 @@ console.log('\n=== 汇总（真实实测数字，供 docs/OCR-BENCHMARK.md 引�
 console.log('engine    variant       CER      行F1    整句     漏读     假消息   重复    P50/P95');
 for (const r of summaryRuns) {
   const t = r.totals;
+  if (r.engine === 'v3-pipeline') {
+    console.log(
+      `${r.engine.padEnd(9)} ${String(r.variant).padEnd(13)} ${pct(t.cer).padEnd(8)} ${'—'.padEnd(7)} ${pct(t.sentenceAcc).padEnd(8)}` +
+        ` ${'—'}       ${'—'}      ${'—'}     可疑${t.garbledMessages}/${t.messages} 替换${t.scriptReplacedMessages} 纠错${t.correctedMessages}`,
+    );
+    continue;
+  }
   if (r.engine === 'baseline-v0.2.8') {
     console.log(
       `${r.engine.padEnd(9)} ${String(r.variant).padEnd(13)} ${pct(t.cerPost).padEnd(8)} ${'—'.padEnd(7)} ${pct(t.sentenceAccPost).padEnd(8)}` +
@@ -796,8 +1109,8 @@ console.log(`总耗时: ${((Date.now() - startedAt.getTime()) / 1000).toFixed(1)
 
 // ── 辅助 ────────────────────────────────────────────────────────────────
 function parseArgs(argv) {
-  const out = { engine: 'all', limit: 0, scenario: [], pipeline: 'all', outDir: null, python: null, verbose: false, help: false };
-  const takesValue = new Set(['--engine', '--limit', '--scenario', '--pipeline', '--out-dir', '--python']);
+  const out = { engine: 'all', limit: 0, scenario: [], pipeline: 'all', split: 'all', outDir: null, python: null, verbose: false, help: false };
+  const takesValue = new Set(['--engine', '--limit', '--scenario', '--pipeline', '--split', '--out-dir', '--python']);
   for (let i = 0; i < argv.length; i++) {
     const raw = argv[i];
     let key = raw;
@@ -825,11 +1138,18 @@ function parseArgs(argv) {
         out.scenario.push(...String(value).split(',').map((s) => s.trim()).filter(Boolean));
         break;
       case '--pipeline':
-        if (!['raw', 'baseline', 'all'].includes(value)) {
-          console.error(`[bench] --pipeline 只支持 raw|baseline|all，收到: ${value}`);
+        if (!['raw', 'baseline', 'v3', 'all'].includes(value)) {
+          console.error(`[bench] --pipeline 只支持 raw|baseline|v3|all，收到: ${value}`);
           process.exit(2);
         }
         out.pipeline = value;
+        break;
+      case '--split':
+        if (!['all', 'tune', 'eval'].includes(value)) {
+          console.error(`[bench] --split 只支持 all|tune|eval，收到: ${value}`);
+          process.exit(2);
+        }
+        out.split = value;
         break;
       case '--out-dir':
         out.outDir = value;
@@ -862,7 +1182,10 @@ function printHelp() {
   --engine=winrt|rapid|all   跑哪个引擎（默认 all）
   --limit=N                  只跑前 N 张（冒烟用）
   --scenario=a,b             只跑指定场景（逗号分隔，见 manifest.scenarios）
-  --pipeline=raw|baseline|all  是否计算 baseline 组（默认 all）
+  --pipeline=raw|baseline|v3|all  额外跑哪些后处理组（默认 all）
+                             baseline=v0.2.8 后处理；v3=v3 上线管线离线等价
+  --split=all|tune|eval      按 manifest.scenarios 顺序奇偶拆分（默认 all）
+                             tune=偶数下标场景（调参用），eval=奇数下标场景（只报结果）
   --out-dir=path             结果目录（默认 test/fixtures/ocr-corpus/results）
   --python=path              python 解释器（默认环境变量 OCR_BENCH_PYTHON 或 python）
   --verbose                  打印进度
@@ -870,7 +1193,8 @@ function printHelp() {
 
 示例:
   python scripts/ocr/gen_corpus.py
-  node scripts/ocr/bench.mjs --engine=all
+  node scripts/ocr/bench.mjs --engine=all --pipeline=all
+  node scripts/ocr/bench.mjs --engine=all --pipeline=all --split=tune
   node scripts/ocr/bench.mjs --engine=winrt --limit=6 --scenario=clear,dark_mode`);
 }
 

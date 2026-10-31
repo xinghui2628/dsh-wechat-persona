@@ -2,8 +2,8 @@
  "meta": {
   "bench": "ocr-benchmark-baseline",
   "version": "v0.2.8-postprocess",
-  "generatedAt": "2026-10-31T14:52:36.796Z",
-  "command": "--engine=all --pipeline=all",
+  "generatedAt": "2026-10-31T15:28:57.297Z",
+  "command": "--engine=all --pipeline=all --split=eval",
   "source": "scripts/ocr/baseline-v028.mjs（逐行转写自 src/channels/pc/desktop.ts:61-163、:307-355）",
   "frames": {
    "2": "winrt upscale2x 行（坐标 /2 后按 GT bbox 分组）",
@@ -14,7 +14,7 @@
   "corpus": {
    "manifest": "test\\fixtures\\ocr-corpus\\manifest.json",
    "seed": 20261031,
-   "imageCount": 40
+   "imageCount": 20
   },
   "env": {
    "platform": "win32",
@@ -25,70 +25,6 @@
   }
  },
  "images": [
-  {
-   "captureId": "clear-00",
-   "scenario": "clear",
-   "ok": true,
-   "metrics": {
-    "cerRaw": 0.10526315789473684,
-    "cerPost": 0.10526315789473684,
-    "sentenceAccRaw": 0,
-    "sentenceAccPost": 0,
-    "editRaw": 2,
-    "editPost": 2,
-    "chars": 19,
-    "perMessage": [
-     {
-      "text": "今天大肥鱼很好吃",
-      "rawText": "今天大肥很好吃",
-      "postText": "今天大肥鱼好吃",
-      "changed": true,
-      "cer_raw": 0.125,
-      "cer_post": 0.125
-     },
-     {
-      "text": "真的吗？我明天也去试试",
-      "rawText": "的吗？我明天也去试试",
-      "postText": "的吗？我明天也去试试",
-      "changed": false,
-      "cer_raw": 0.09090909090909091,
-      "cer_post": 0.09090909090909091
-     }
-    ]
-   }
-  },
-  {
-   "captureId": "clear-01",
-   "scenario": "clear",
-   "ok": true,
-   "metrics": {
-    "cerRaw": 0.14285714285714285,
-    "cerPost": 0.14285714285714285,
-    "sentenceAccRaw": 0.5,
-    "sentenceAccPost": 0.5,
-    "editRaw": 2,
-    "editPost": 2,
-    "chars": 14,
-    "perMessage": [
-     {
-      "text": "周末有空吗",
-      "rawText": "周末有空吗",
-      "postText": "周末有空吗",
-      "changed": false,
-      "cer_raw": 0,
-      "cer_post": 0
-     },
-     {
-      "text": "有空的，下午三点见",
-      "rawText": "有空的，下午三",
-      "postText": "有空的，下午三",
-      "changed": false,
-      "cer_raw": 0.2222222222222222,
-      "cer_post": 0.2222222222222222
-     }
-    ]
-   }
-  },
   {
    "captureId": "small_font-00",
    "scenario": "small_font",
@@ -149,70 +85,6 @@
       "changed": false,
       "cer_raw": 1,
       "cer_post": 1
-     }
-    ]
-   }
-  },
-  {
-   "captureId": "low_contrast-00",
-   "scenario": "low_contrast",
-   "ok": true,
-   "metrics": {
-    "cerRaw": 0.21052631578947367,
-    "cerPost": 0.21052631578947367,
-    "sentenceAccRaw": 0.5,
-    "sentenceAccPost": 0.5,
-    "editRaw": 4,
-    "editPost": 4,
-    "chars": 19,
-    "perMessage": [
-     {
-      "text": "灰字浅底看着有点费劲",
-      "rawText": "苡字淦底看昔有点劲",
-      "postText": "苡字淦底看昔有点劲",
-      "changed": false,
-      "cer_raw": 0.4,
-      "cer_post": 0.4
-     },
-     {
-      "text": "截图压缩之后就这样",
-      "rawText": "截图压缩之后就这样",
-      "postText": "截图压缩之后就这样",
-      "changed": false,
-      "cer_raw": 0,
-      "cer_post": 0
-     }
-    ]
-   }
-  },
-  {
-   "captureId": "low_contrast-01",
-   "scenario": "low_contrast",
-   "ok": true,
-   "metrics": {
-    "cerRaw": 0.4444444444444444,
-    "cerPost": 0.4444444444444444,
-    "sentenceAccRaw": 0,
-    "sentenceAccPost": 0,
-    "editRaw": 8,
-    "editPost": 8,
-    "chars": 18,
-    "perMessage": [
-     {
-      "text": "低对比度的聊天截图",
-      "rawText": "低对比所的聊天截图",
-      "postText": "低对比所的聊天截图",
-      "changed": false,
-      "cer_raw": 0.1111111111111111,
-      "cer_post": 0.1111111111111111
-     },
-     {
-      "text": "识别难度会明显上升",
-      "rawText": "识引所明产廾",
-      "postText": "识引所明产廾",
-      "changed": false,
-      "cer_raw": 0.7777777777777778,
-      "cer_post": 0.7777777777777778
      }
     ]
    }
@@ -282,70 +154,6 @@
    }
   },
   {
-   "captureId": "scale_100-00",
-   "scenario": "scale_100",
-   "ok": true,
-   "metrics": {
-    "cerRaw": 0.0625,
-    "cerPost": 0.0625,
-    "sentenceAccRaw": 0.5,
-    "sentenceAccPost": 0.5,
-    "editRaw": 1,
-    "editPost": 1,
-    "chars": 16,
-    "perMessage": [
-     {
-      "text": "缩放百分之一百的截图",
-      "rawText": "缩放百分之一百的截",
-      "postText": "缩放百分之一百的截",
-      "changed": false,
-      "cer_raw": 0.1,
-      "cer_post": 0.1
-     },
-     {
-      "text": "这是基准尺寸",
-      "rawText": "这是基准尺寸",
-      "postText": "这是基准尺寸",
-      "changed": false,
-      "cer_raw": 0,
-      "cer_post": 0
-     }
-    ]
-   }
-  },
-  {
-   "captureId": "scale_100-01",
-   "scenario": "scale_100",
-   "ok": true,
-   "metrics": {
-    "cerRaw": 0.07142857142857142,
-    "cerPost": 0.07142857142857142,
-    "sentenceAccRaw": 0.5,
-    "sentenceAccPost": 0.5,
-    "editRaw": 1,
-    "editPost": 1,
-    "chars": 14,
-    "perMessage": [
-     {
-      "text": "原始尺寸的界面",
-      "rawText": "原始尺寸的界面",
-      "postText": "原始尺寸的界面",
-      "changed": false,
-      "cer_raw": 0,
-      "cer_post": 0
-     },
-     {
-      "text": "文字边缘最清楚",
-      "rawText": "文字边缘最盾楚",
-      "postText": "文字边缘最盾楚",
-      "changed": false,
-      "cer_raw": 0.14285714285714285,
-      "cer_post": 0.14285714285714285
-     }
-    ]
-   }
-  },
-  {
    "captureId": "scale_125-00",
    "scenario": "scale_125",
    "ok": true,
@@ -402,70 +210,6 @@
       "text": "字也变大了",
       "rawText": "字也变大了",
       "postText": "字也变大了",
-      "changed": false,
-      "cer_raw": 0,
-      "cer_post": 0
-     }
-    ]
-   }
-  },
-  {
-   "captureId": "scale_150-00",
-   "scenario": "scale_150",
-   "ok": true,
-   "metrics": {
-    "cerRaw": 0,
-    "cerPost": 0,
-    "sentenceAccRaw": 1,
-    "sentenceAccPost": 1,
-    "editRaw": 0,
-    "editPost": 0,
-    "chars": 16,
-    "perMessage": [
-     {
-      "text": "缩放百分之一百五十",
-      "rawText": "缩放百分之一百五十",
-      "postText": "缩放百分之一百五十",
-      "changed": false,
-      "cer_raw": 0,
-      "cer_post": 0
-     },
-     {
-      "text": "截图尺寸变大了",
-      "rawText": "截图尺寸变大了",
-      "postText": "截图尺寸变大了",
-      "changed": false,
-      "cer_raw": 0,
-      "cer_post": 0
-     }
-    ]
-   }
-  },
-  {
-   "captureId": "scale_150-01",
-   "scenario": "scale_150",
-   "ok": true,
-   "metrics": {
-    "cerRaw": 0,
-    "cerPost": 0,
-    "sentenceAccRaw": 1,
-    "sentenceAccPost": 1,
-    "editRaw": 0,
-    "editPost": 0,
-    "chars": 14,
-    "perMessage": [
-     {
-      "text": "高分屏的常见比例",
-      "rawText": "高分屏的常见比例",
-      "postText": "高分屏的常见比例",
-      "changed": false,
-      "cer_raw": 0,
-      "cer_post": 0
-     },
-     {
-      "text": "识别应该更稳",
-      "rawText": "识别应该更稳",
-      "postText": "识别应该更稳",
       "changed": false,
       "cer_raw": 0,
       "cer_post": 0
@@ -538,70 +282,6 @@
    }
   },
   {
-   "captureId": "long_bubble-00",
-   "scenario": "long_bubble",
-   "ok": true,
-   "metrics": {
-    "cerRaw": 0.1935483870967742,
-    "cerPost": 0.1935483870967742,
-    "sentenceAccRaw": 0,
-    "sentenceAccPost": 0,
-    "editRaw": 12,
-    "editPost": 12,
-    "chars": 62,
-    "perMessage": [
-     {
-      "text": "今天下午三点开会，会议纪要我已经整理好发到群里了，大家有空看一下，有问题随时在群里回复，我这边会统一汇总处理。",
-      "rawText": "今天下午三点开会议纪要我已经整理妤发到群里了，大冢有空音一下，有问题随时在群里回，我这边统一汇处理 ·",
-      "postText": "今天下午三点开会议纪要我已经整理妤发到群里了，大冢有空音一下，有问题随时在群里回，我这边统一汇处理 ·",
-      "changed": false,
-      "cer_raw": 0.16363636363636364,
-      "cer_post": 0.16363636363636364
-     },
-     {
-      "text": "收到，我晚点看",
-      "rawText": "收到，我音",
-      "postText": "收到，我音",
-      "changed": false,
-      "cer_raw": 0.42857142857142855,
-      "cer_post": 0.42857142857142855
-     }
-    ]
-   }
-  },
-  {
-   "captureId": "long_bubble-01",
-   "scenario": "long_bubble",
-   "ok": true,
-   "metrics": {
-    "cerRaw": 0.1111111111111111,
-    "cerPost": 0.1111111111111111,
-    "sentenceAccRaw": 0,
-    "sentenceAccPost": 0,
-    "editRaw": 8,
-    "editPost": 8,
-    "chars": 72,
-    "perMessage": [
-     {
-      "text": "你上次说的那个表情包工程还在吗",
-      "rawText": "你上次说的那个表．青包工程还在吗",
-      "postText": "你上次说的那个表．青包工程还在吗",
-      "changed": false,
-      "cer_raw": 0.13333333333333333,
-      "cer_post": 0.13333333333333333
-     },
-     {
-      "text": "在的，我把仓库地址和说明都放在群公告里了，你按里面的步骤装一下依赖，然后运行测试命令应该就能跑起来，有问题再找我。",
-      "rawText": "在的，我吧仓库地址和说明都放在群公舌里了，你按里面的步骤装一下依赖，然启运行测试舍应该就能跑起来，有问题再找我 ·",
-      "postText": "在的，我吧仓库地址和说明都放在群公舌里了，你按里面的步骤装一下依赖，然启运行测试舍应该就能跑起来，有问题再找我 ·",
-      "changed": false,
-      "cer_raw": 0.10526315789473684,
-      "cer_post": 0.10526315789473684
-     }
-    ]
-   }
-  },
-  {
    "captureId": "repeat_two-00",
    "scenario": "repeat_two",
    "ok": true,
@@ -661,70 +341,6 @@
       "changed": false,
       "cer_raw": 0,
       "cer_post": 0
-     }
-    ]
-   }
-  },
-  {
-   "captureId": "bilingual-00",
-   "scenario": "bilingual",
-   "ok": true,
-   "metrics": {
-    "cerRaw": 0.125,
-    "cerPost": 0.1,
-    "sentenceAccRaw": 0,
-    "sentenceAccPost": 0,
-    "editRaw": 5,
-    "editPost": 4,
-    "chars": 40,
-    "perMessage": [
-     {
-      "text": "OK，明天 10:30 我们开个 Zoom 会议聊一下 OCR 的事情",
-      "rawText": "OK, 明天 1030 我们开个 Zoom 芸议聊一下 OCR 的事情",
-      "postText": "OK, 明天 10 ： 30 我们开个 Zoom 会议聊一下 OC R 的事情",
-      "changed": true,
-      "cer_raw": 0.10344827586206896,
-      "cer_post": 0.06896551724137931
-     },
-     {
-      "text": "收到，会议链接发我一下",
-      "rawText": "收到，芸议链接发我一",
-      "postText": "收到，芸议链接发我一",
-      "changed": false,
-      "cer_raw": 0.18181818181818182,
-      "cer_post": 0.18181818181818182
-     }
-    ]
-   }
-  },
-  {
-   "captureId": "bilingual-01",
-   "scenario": "bilingual",
-   "ok": true,
-   "metrics": {
-    "cerRaw": 0.027777777777777776,
-    "cerPost": 0.027777777777777776,
-    "sentenceAccRaw": 0.5,
-    "sentenceAccPost": 0.5,
-    "editRaw": 1,
-    "editPost": 1,
-    "chars": 36,
-    "perMessage": [
-     {
-      "text": "这个 pipeline 的 CER 大概是多少",
-      "rawText": "这个 pipeline 的 CER 大概是多少",
-      "postText": "这个 pipeline 的 CER 大概是多少",
-      "changed": false,
-      "cer_raw": 0,
-      "cer_post": 0
-     },
-     {
-      "text": "我跑一下 benchmark 再告诉你",
-      "rawText": "我跑一下 benchmark 冉告诉你",
-      "postText": "我跑一下 benchmark 冉告诉你",
-      "changed": false,
-      "cer_raw": 0.058823529411764705,
-      "cer_post": 0.058823529411764705
      }
     ]
    }
@@ -794,70 +410,6 @@
    }
   },
   {
-   "captureId": "emoji-00",
-   "scenario": "emoji",
-   "ok": true,
-   "metrics": {
-    "cerRaw": 0.2916666666666667,
-    "cerPost": 0.2916666666666667,
-    "sentenceAccRaw": 0,
-    "sentenceAccPost": 0,
-    "editRaw": 7,
-    "editPost": 7,
-    "chars": 24,
-    "perMessage": [
-     {
-      "text": "今天好累啊 😂 但是活还得干",
-      "rawText": "今天好累啊但是活还得干",
-      "postText": "今天好累啊但是活还得干",
-      "changed": false,
-      "cer_raw": 0.15384615384615385,
-      "cer_post": 0.15384615384615385
-     },
-     {
-      "text": "抱抱你 (￣▽￣) 早点睡",
-      "rawText": "抱抱你 0 。一）早点睡",
-      "postText": "抱抱你 0 。一）早点睡",
-      "changed": false,
-      "cer_raw": 0.45454545454545453,
-      "cer_post": 0.45454545454545453
-     }
-    ]
-   }
-  },
-  {
-   "captureId": "emoji-01",
-   "scenario": "emoji",
-   "ok": true,
-   "metrics": {
-    "cerRaw": 0.625,
-    "cerPost": 0.625,
-    "sentenceAccRaw": 0,
-    "sentenceAccPost": 0,
-    "editRaw": 10,
-    "editPost": 10,
-    "chars": 16,
-    "perMessage": [
-     {
-      "text": "下班啦 🎉🎉",
-      "rawText": "下班",
-      "postText": "下班",
-      "changed": false,
-      "cer_raw": 0.7142857142857143,
-      "cer_post": 0.7142857142857143
-     },
-     {
-      "text": "收到红包啦 🧧 谢谢",
-      "rawText": "收到红包",
-      "postText": "收到红包",
-      "changed": false,
-      "cer_raw": 0.5555555555555556,
-      "cer_post": 0.5555555555555556
-     }
-    ]
-   }
-  },
-  {
    "captureId": "dark_mode-00",
    "scenario": "dark_mode",
    "ok": true,
@@ -917,70 +469,6 @@
       "changed": false,
       "cer_raw": 0,
       "cer_post": 0
-     }
-    ]
-   }
-  },
-  {
-   "captureId": "occluded-00",
-   "scenario": "occluded",
-   "ok": true,
-   "metrics": {
-    "cerRaw": 0.625,
-    "cerPost": 0.5416666666666666,
-    "sentenceAccRaw": 0,
-    "sentenceAccPost": 0.5,
-    "editRaw": 15,
-    "editPost": 13,
-    "chars": 24,
-    "perMessage": [
-     {
-      "text": "这条消息被通知条挡住了一半",
-      "rawText": "",
-      "postText": "",
-      "changed": false,
-      "cer_raw": 1,
-      "cer_post": 1
-     },
-     {
-      "text": "遮挡的部分还能认出来吗",
-      "rawText": "遮扌当的部分还能认出来吗",
-      "postText": "遮挡的部分还能认出来吗",
-      "changed": true,
-      "cer_raw": 0.18181818181818182,
-      "cer_post": 0
-     }
-    ]
-   }
-  },
-  {
-   "captureId": "occluded-01",
-   "scenario": "occluded",
-   "ok": true,
-   "metrics": {
-    "cerRaw": 0.5625,
-    "cerPost": 0.5625,
-    "sentenceAccRaw": 0,
-    "sentenceAccPost": 0,
-    "editRaw": 9,
-    "editPost": 9,
-    "chars": 16,
-    "perMessage": [
-     {
-      "text": "被遮挡的聊天内容",
-      "rawText": "",
-      "postText": "",
-      "changed": false,
-      "cer_raw": 1,
-      "cer_post": 1
-     },
-     {
-      "text": "只能靠上下文猜了",
-      "rawText": "只能亞上下文猜了",
-      "postText": "只能亞上下文猜了",
-      "changed": false,
-      "cer_raw": 0.125,
-      "cer_post": 0.125
      }
     ]
    }
@@ -1098,86 +586,6 @@
    }
   },
   {
-   "captureId": "short_msgs-00",
-   "scenario": "short_msgs",
-   "ok": true,
-   "metrics": {
-    "cerRaw": 0.2,
-    "cerPost": 0.2,
-    "sentenceAccRaw": 0.6666666666666666,
-    "sentenceAccPost": 0.6666666666666666,
-    "editRaw": 1,
-    "editPost": 1,
-    "chars": 5,
-    "perMessage": [
-     {
-      "text": "嗯",
-      "rawText": "",
-      "postText": "",
-      "changed": false,
-      "cer_raw": 1,
-      "cer_post": 1
-     },
-     {
-      "text": "好的",
-      "rawText": "好的",
-      "postText": "好的",
-      "changed": false,
-      "cer_raw": 0,
-      "cer_post": 0
-     },
-     {
-      "text": "OK",
-      "rawText": "OK",
-      "postText": "OK",
-      "changed": false,
-      "cer_raw": 0,
-      "cer_post": 0
-     }
-    ]
-   }
-  },
-  {
-   "captureId": "short_msgs-01",
-   "scenario": "short_msgs",
-   "ok": true,
-   "metrics": {
-    "cerRaw": 0.3333333333333333,
-    "cerPost": 0.3333333333333333,
-    "sentenceAccRaw": 0.6666666666666666,
-    "sentenceAccPost": 0.6666666666666666,
-    "editRaw": 2,
-    "editPost": 2,
-    "chars": 6,
-    "perMessage": [
-     {
-      "text": "收到",
-      "rawText": "",
-      "postText": "",
-      "changed": false,
-      "cer_raw": 1,
-      "cer_post": 1
-     },
-     {
-      "text": "行",
-      "rawText": "行",
-      "postText": "行",
-      "changed": false,
-      "cer_raw": 0,
-      "cer_post": 0
-     },
-     {
-      "text": "明天见",
-      "rawText": "明天见",
-      "postText": "明天见",
-      "changed": false,
-      "cer_raw": 0,
-      "cer_post": 0
-     }
-    ]
-   }
-  },
-  {
    "captureId": "stretched-00",
    "scenario": "stretched",
    "ok": true,
@@ -1237,70 +645,6 @@
       "changed": false,
       "cer_raw": 1.125,
       "cer_post": 1.125
-     }
-    ]
-   }
-  },
-  {
-   "captureId": "noisy-00",
-   "scenario": "noisy",
-   "ok": true,
-   "metrics": {
-    "cerRaw": 0.047619047619047616,
-    "cerPost": 0.047619047619047616,
-    "sentenceAccRaw": 0.5,
-    "sentenceAccPost": 0.5,
-    "editRaw": 1,
-    "editPost": 1,
-    "chars": 21,
-    "perMessage": [
-     {
-      "text": "压缩噪声让文字边缘变脏",
-      "rawText": "压缩噪声让文字边缘变脏",
-      "postText": "压缩噪声让文字边缘变脏",
-      "changed": false,
-      "cer_raw": 0,
-      "cer_post": 0
-     },
-     {
-      "text": "截图质量差的典型情况",
-      "rawText": "截质量差的典型情况",
-      "postText": "截质量差的典型情况",
-      "changed": false,
-      "cer_raw": 0.1,
-      "cer_post": 0.1
-     }
-    ]
-   }
-  },
-  {
-   "captureId": "noisy-01",
-   "scenario": "noisy",
-   "ok": true,
-   "metrics": {
-    "cerRaw": 0.14285714285714285,
-    "cerPost": 0.14285714285714285,
-    "sentenceAccRaw": 0.5,
-    "sentenceAccPost": 0.5,
-    "editRaw": 2,
-    "editPost": 2,
-    "chars": 14,
-    "perMessage": [
-     {
-      "text": "有噪点的聊天截图",
-      "rawText": "有就点的聊天截",
-      "postText": "有就点的聊天截",
-      "changed": false,
-      "cer_raw": 0.25,
-      "cer_post": 0.25
-     },
-     {
-      "text": "还能认得出来",
-      "rawText": "还能认得出来",
-      "postText": "还能认得出来",
-      "changed": false,
-      "cer_raw": 0,
-      "cer_post": 0
      }
     ]
    }
@@ -1371,41 +715,23 @@
   }
  ],
  "totals": {
-  "images": 40,
-  "okImages": 40,
+  "images": 20,
+  "okImages": 20,
   "failedImages": 0,
-  "messages": 88,
-  "cerRaw": 0.28417653390742736,
-  "cerPost": 0.28094725511302476,
-  "sentenceAccRaw": 0.3181818181818182,
-  "sentenceAccPost": 0.32954545454545453,
-  "changedMessages": 3,
-  "improvedMessages": 2,
+  "messages": 46,
+  "cerRaw": 0.37365010799136067,
+  "cerPost": 0.37365010799136067,
+  "sentenceAccRaw": 0.2826086956521739,
+  "sentenceAccPost": 0.2826086956521739,
+  "changedMessages": 0,
+  "improvedMessages": 0,
   "worsenedMessages": 0,
   "byScenario": {
-   "clear": {
-    "cerRaw": 0.12121212121212122,
-    "cerPost": 0.12121212121212122,
-    "sentenceAccRaw": 0.25,
-    "sentenceAccPost": 0.25,
-    "changed": 1,
-    "improved": 0,
-    "worsened": 0
-   },
    "small_font": {
     "cerRaw": 0.7714285714285715,
     "cerPost": 0.7714285714285715,
     "sentenceAccRaw": 0,
     "sentenceAccPost": 0,
-    "changed": 0,
-    "improved": 0,
-    "worsened": 0
-   },
-   "low_contrast": {
-    "cerRaw": 0.32432432432432434,
-    "cerPost": 0.32432432432432434,
-    "sentenceAccRaw": 0.25,
-    "sentenceAccPost": 0.25,
     "changed": 0,
     "improved": 0,
     "worsened": 0
@@ -1419,29 +745,11 @@
     "improved": 0,
     "worsened": 0
    },
-   "scale_100": {
-    "cerRaw": 0.06666666666666667,
-    "cerPost": 0.06666666666666667,
-    "sentenceAccRaw": 0.5,
-    "sentenceAccPost": 0.5,
-    "changed": 0,
-    "improved": 0,
-    "worsened": 0
-   },
    "scale_125": {
     "cerRaw": 0.06451612903225806,
     "cerPost": 0.06451612903225806,
     "sentenceAccRaw": 0.5,
     "sentenceAccPost": 0.5,
-    "changed": 0,
-    "improved": 0,
-    "worsened": 0
-   },
-   "scale_150": {
-    "cerRaw": 0,
-    "cerPost": 0,
-    "sentenceAccRaw": 1,
-    "sentenceAccPost": 1,
     "changed": 0,
     "improved": 0,
     "worsened": 0
@@ -1455,15 +763,6 @@
     "improved": 0,
     "worsened": 0
    },
-   "long_bubble": {
-    "cerRaw": 0.14925373134328357,
-    "cerPost": 0.14925373134328357,
-    "sentenceAccRaw": 0,
-    "sentenceAccPost": 0,
-    "changed": 0,
-    "improved": 0,
-    "worsened": 0
-   },
    "repeat_two": {
     "cerRaw": 0,
     "cerPost": 0,
@@ -1473,27 +772,9 @@
     "improved": 0,
     "worsened": 0
    },
-   "bilingual": {
-    "cerRaw": 0.07894736842105263,
-    "cerPost": 0.06578947368421052,
-    "sentenceAccRaw": 0.25,
-    "sentenceAccPost": 0.25,
-    "changed": 1,
-    "improved": 1,
-    "worsened": 0
-   },
    "numbers": {
     "cerRaw": 0.2037037037037037,
     "cerPost": 0.2037037037037037,
-    "sentenceAccRaw": 0,
-    "sentenceAccPost": 0,
-    "changed": 0,
-    "improved": 0,
-    "worsened": 0
-   },
-   "emoji": {
-    "cerRaw": 0.425,
-    "cerPost": 0.425,
     "sentenceAccRaw": 0,
     "sentenceAccPost": 0,
     "changed": 0,
@@ -1509,15 +790,6 @@
     "improved": 0,
     "worsened": 0
    },
-   "occluded": {
-    "cerRaw": 0.6,
-    "cerPost": 0.55,
-    "sentenceAccRaw": 0,
-    "sentenceAccPost": 0.25,
-    "changed": 1,
-    "improved": 1,
-    "worsened": 0
-   },
    "multi_message": {
     "cerRaw": 0.20689655172413793,
     "cerPost": 0.20689655172413793,
@@ -1527,29 +799,11 @@
     "improved": 0,
     "worsened": 0
    },
-   "short_msgs": {
-    "cerRaw": 0.2727272727272727,
-    "cerPost": 0.2727272727272727,
-    "sentenceAccRaw": 0.6666666666666666,
-    "sentenceAccPost": 0.6666666666666666,
-    "changed": 0,
-    "improved": 0,
-    "worsened": 0
-   },
    "stretched": {
     "cerRaw": 1.05,
     "cerPost": 1.05,
     "sentenceAccRaw": 0,
     "sentenceAccPost": 0,
-    "changed": 0,
-    "improved": 0,
-    "worsened": 0
-   },
-   "noisy": {
-    "cerRaw": 0.08571428571428572,
-    "cerPost": 0.08571428571428572,
-    "sentenceAccRaw": 0.5,
-    "sentenceAccPost": 0.5,
     "changed": 0,
     "improved": 0,
     "worsened": 0

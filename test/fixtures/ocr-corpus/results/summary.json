@@ -1,8 +1,8 @@
 {
- "generatedAt": "2026-10-31T14:52:36.797Z",
+ "generatedAt": "2026-10-31T15:33:21.692Z",
  "bench": "ocr-benchmark",
  "version": "v3.0.0",
- "command": "node scripts/ocr/bench.mjs --engine=all --pipeline=all",
+ "command": "node scripts/ocr/bench.mjs --engine=all --pipeline=all --split=all",
  "env": {
   "platform": "win32",
   "node": "v26.13.0",
@@ -38,7 +38,34 @@
    "stretched",
    "noisy",
    "ai_disclaimer"
-  ]
+  ],
+  "split": "all",
+  "splitScenarios": {
+   "tune": [
+    "clear",
+    "low_contrast",
+    "scale_100",
+    "scale_150",
+    "long_bubble",
+    "bilingual",
+    "emoji",
+    "occluded",
+    "short_msgs",
+    "noisy"
+   ],
+   "eval": [
+    "small_font",
+    "gaussian_blur",
+    "scale_125",
+    "scale_175",
+    "repeat_two",
+    "numbers",
+    "dark_mode",
+    "multi_message",
+    "stretched",
+    "ai_disclaimer"
+   ]
+  }
  },
  "variants": [
   {
@@ -58,7 +85,7 @@
   {
    "engine": "winrt",
    "variant": "orig",
-   "file": "2026-10-31_14-48-39-winrt-orig.json",
+   "file": "2026-10-31_15-28-57-all-winrt-orig.json",
    "totals": {
     "images": 40,
     "okImages": 40,
@@ -72,8 +99,8 @@
     "falseRate": 0.2222222222222222,
     "dupRate": 0,
     "splitRate": 0.04040404040404041,
-    "p50Ms": 26,
-    "p95Ms": 37,
+    "p50Ms": 25,
+    "p95Ms": 35,
     "gtLines": 97,
     "ocrLines": 99,
     "tp": 73,
@@ -86,7 +113,7 @@
   {
    "engine": "winrt",
    "variant": "upscale2x",
-   "file": "2026-10-31_14-48-39-winrt-upscale2x.json",
+   "file": "2026-10-31_15-28-57-all-winrt-upscale2x.json",
    "totals": {
     "images": 40,
     "okImages": 40,
@@ -114,7 +141,7 @@
   {
    "engine": "winrt",
    "variant": "gray_contrast",
-   "file": "2026-10-31_14-48-39-winrt-gray_contrast.json",
+   "file": "2026-10-31_15-28-57-all-winrt-gray_contrast.json",
    "totals": {
     "images": 40,
     "okImages": 40,
@@ -128,8 +155,8 @@
     "falseRate": 0.22826086956521738,
     "dupRate": 0,
     "splitRate": 0.010869565217391304,
-    "p50Ms": 26,
-    "p95Ms": 37,
+    "p50Ms": 25,
+    "p95Ms": 38,
     "gtLines": 97,
     "ocrLines": 92,
     "tp": 70,
@@ -142,7 +169,7 @@
   {
    "engine": "rapid",
    "variant": "orig",
-   "file": "2026-10-31_14-48-39-rapid-orig.json",
+   "file": "2026-10-31_15-28-57-all-rapid-orig.json",
    "totals": {
     "images": 40,
     "okImages": 40,
@@ -156,8 +183,8 @@
     "falseRate": 0.010638297872340425,
     "dupRate": 0,
     "splitRate": 0.031914893617021274,
-    "p50Ms": 1425,
-    "p95Ms": 1947,
+    "p50Ms": 1459,
+    "p95Ms": 2066,
     "gtLines": 97,
     "ocrLines": 94,
     "tp": 90,
@@ -170,7 +197,7 @@
   {
    "engine": "rapid",
    "variant": "upscale2x",
-   "file": "2026-10-31_14-48-39-rapid-upscale2x.json",
+   "file": "2026-10-31_15-28-57-all-rapid-upscale2x.json",
    "totals": {
     "images": 40,
     "okImages": 40,
@@ -184,8 +211,8 @@
     "falseRate": 0.02040816326530612,
     "dupRate": 0,
     "splitRate": 0.05102040816326531,
-    "p50Ms": 1774,
-    "p95Ms": 2224,
+    "p50Ms": 2008,
+    "p95Ms": 2622,
     "gtLines": 97,
     "ocrLines": 98,
     "tp": 91,
@@ -198,7 +225,7 @@
   {
    "engine": "rapid",
    "variant": "gray_contrast",
-   "file": "2026-10-31_14-48-39-rapid-gray_contrast.json",
+   "file": "2026-10-31_15-28-57-all-rapid-gray_contrast.json",
    "totals": {
     "images": 40,
     "okImages": 40,
@@ -212,8 +239,8 @@
     "falseRate": 0.010638297872340425,
     "dupRate": 0,
     "splitRate": 0.02127659574468085,
-    "p50Ms": 1501,
-    "p95Ms": 1977,
+    "p50Ms": 1773,
+    "p95Ms": 2334,
     "gtLines": 97,
     "ocrLines": 94,
     "tp": 91,
@@ -226,7 +253,7 @@
   {
    "engine": "baseline-v0.2.8",
    "variant": "orig",
-   "file": "2026-10-31_14-48-39-baseline-v028-orig.json",
+   "file": "2026-10-31_15-28-57-all-baseline-v028-orig.json",
    "totals": {
     "images": 40,
     "okImages": 40,
@@ -422,21 +449,765 @@
      }
     }
    }
+  },
+  {
+   "engine": "v3-pipeline",
+   "variant": "novote",
+   "file": "2026-10-31_15-28-57-all-v3-novote.json",
+   "totals": {
+    "images": 40,
+    "okImages": 40,
+    "failedImages": 0,
+    "messages": 88,
+    "cer": 0.1883745963401507,
+    "sentenceAcc": 0.4772727272727273,
+    "garbledMessages": 14,
+    "scriptReplacedMessages": 0,
+    "desktopVotedMessages": 0,
+    "correctedMessages": 1,
+    "protectedSkipped": 0,
+    "byScenario": {
+     "clear": {
+      "messages": 4,
+      "cer": 0.06060606060606061,
+      "sentenceAcc": 0.75,
+      "garbledMessages": 0,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "small_font": {
+      "messages": 4,
+      "cer": 0.34285714285714286,
+      "sentenceAcc": 0,
+      "garbledMessages": 0,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "low_contrast": {
+      "messages": 4,
+      "cer": 0.4594594594594595,
+      "sentenceAcc": 0,
+      "garbledMessages": 0,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "gaussian_blur": {
+      "messages": 4,
+      "cer": 0.75,
+      "sentenceAcc": 0,
+      "garbledMessages": 1,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "scale_100": {
+      "messages": 4,
+      "cer": 0,
+      "sentenceAcc": 1,
+      "garbledMessages": 0,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "scale_125": {
+      "messages": 4,
+      "cer": 0.03225806451612903,
+      "sentenceAcc": 0.75,
+      "garbledMessages": 0,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "scale_150": {
+      "messages": 4,
+      "cer": 0.06666666666666667,
+      "sentenceAcc": 0.75,
+      "garbledMessages": 1,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "scale_175": {
+      "messages": 4,
+      "cer": 0.03333333333333333,
+      "sentenceAcc": 0.75,
+      "garbledMessages": 0,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "long_bubble": {
+      "messages": 4,
+      "cer": 0.04477611940298507,
+      "sentenceAcc": 0.25,
+      "garbledMessages": 0,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 1,
+      "protectedSkipped": 0
+     },
+     "repeat_two": {
+      "messages": 4,
+      "cer": 0.21428571428571427,
+      "sentenceAcc": 0.75,
+      "garbledMessages": 0,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "bilingual": {
+      "messages": 4,
+      "cer": 0.039473684210526314,
+      "sentenceAcc": 0.5,
+      "garbledMessages": 3,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "numbers": {
+      "messages": 4,
+      "cer": 0.1111111111111111,
+      "sentenceAcc": 0,
+      "garbledMessages": 4,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "emoji": {
+      "messages": 4,
+      "cer": 0.4,
+      "sentenceAcc": 0,
+      "garbledMessages": 0,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "dark_mode": {
+      "messages": 4,
+      "cer": 0,
+      "sentenceAcc": 1,
+      "garbledMessages": 0,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "occluded": {
+      "messages": 4,
+      "cer": 0.525,
+      "sentenceAcc": 0.5,
+      "garbledMessages": 0,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "multi_message": {
+      "messages": 10,
+      "cer": 0.05172413793103448,
+      "sentenceAcc": 0.8,
+      "garbledMessages": 0,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "short_msgs": {
+      "messages": 6,
+      "cer": 0.5454545454545454,
+      "sentenceAcc": 0.5,
+      "garbledMessages": 1,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "stretched": {
+      "messages": 4,
+      "cer": 0.825,
+      "sentenceAcc": 0,
+      "garbledMessages": 3,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "noisy": {
+      "messages": 4,
+      "cer": 0.08571428571428572,
+      "sentenceAcc": 0.5,
+      "garbledMessages": 0,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "ai_disclaimer": {
+      "messages": 4,
+      "cer": 0.08974358974358974,
+      "sentenceAcc": 0.25,
+      "garbledMessages": 1,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     }
+    }
+   },
+   "attribution": {
+    "messages": 88,
+    "classified": 69,
+    "correct": 69,
+    "wrong": 0,
+    "uncertain": 19,
+    "sideAccuracy": 1,
+    "coverage": 0.7840909090909091,
+    "uncertainReasons": {
+     "no-margin-contact": 11,
+     "empty": 8
+    },
+    "inbound": {
+     "predicted": 35,
+     "tp": 35,
+     "fp": 0,
+     "precision": 1,
+     "recall": 0.7777777777777778
+    },
+    "outbound": {
+     "predicted": 34,
+     "tp": 34,
+     "fp": 0,
+     "precision": 1,
+     "recall": 0.7906976744186046
+    }
+   }
+  },
+  {
+   "engine": "v3-pipeline",
+   "variant": "vote-garbled",
+   "file": "2026-10-31_15-28-57-all-v3-vote-garbled.json",
+   "totals": {
+    "images": 40,
+    "okImages": 40,
+    "failedImages": 0,
+    "messages": 88,
+    "cer": 0.1883745963401507,
+    "sentenceAcc": 0.4772727272727273,
+    "garbledMessages": 14,
+    "scriptReplacedMessages": 0,
+    "desktopVotedMessages": 0,
+    "correctedMessages": 1,
+    "protectedSkipped": 0,
+    "byScenario": {
+     "clear": {
+      "messages": 4,
+      "cer": 0.06060606060606061,
+      "sentenceAcc": 0.75,
+      "garbledMessages": 0,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "small_font": {
+      "messages": 4,
+      "cer": 0.34285714285714286,
+      "sentenceAcc": 0,
+      "garbledMessages": 0,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "low_contrast": {
+      "messages": 4,
+      "cer": 0.4594594594594595,
+      "sentenceAcc": 0,
+      "garbledMessages": 0,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "gaussian_blur": {
+      "messages": 4,
+      "cer": 0.75,
+      "sentenceAcc": 0,
+      "garbledMessages": 1,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "scale_100": {
+      "messages": 4,
+      "cer": 0,
+      "sentenceAcc": 1,
+      "garbledMessages": 0,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "scale_125": {
+      "messages": 4,
+      "cer": 0.03225806451612903,
+      "sentenceAcc": 0.75,
+      "garbledMessages": 0,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "scale_150": {
+      "messages": 4,
+      "cer": 0.06666666666666667,
+      "sentenceAcc": 0.75,
+      "garbledMessages": 1,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "scale_175": {
+      "messages": 4,
+      "cer": 0.03333333333333333,
+      "sentenceAcc": 0.75,
+      "garbledMessages": 0,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "long_bubble": {
+      "messages": 4,
+      "cer": 0.04477611940298507,
+      "sentenceAcc": 0.25,
+      "garbledMessages": 0,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 1,
+      "protectedSkipped": 0
+     },
+     "repeat_two": {
+      "messages": 4,
+      "cer": 0.21428571428571427,
+      "sentenceAcc": 0.75,
+      "garbledMessages": 0,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "bilingual": {
+      "messages": 4,
+      "cer": 0.039473684210526314,
+      "sentenceAcc": 0.5,
+      "garbledMessages": 3,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "numbers": {
+      "messages": 4,
+      "cer": 0.1111111111111111,
+      "sentenceAcc": 0,
+      "garbledMessages": 4,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "emoji": {
+      "messages": 4,
+      "cer": 0.4,
+      "sentenceAcc": 0,
+      "garbledMessages": 0,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "dark_mode": {
+      "messages": 4,
+      "cer": 0,
+      "sentenceAcc": 1,
+      "garbledMessages": 0,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "occluded": {
+      "messages": 4,
+      "cer": 0.525,
+      "sentenceAcc": 0.5,
+      "garbledMessages": 0,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "multi_message": {
+      "messages": 10,
+      "cer": 0.05172413793103448,
+      "sentenceAcc": 0.8,
+      "garbledMessages": 0,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "short_msgs": {
+      "messages": 6,
+      "cer": 0.5454545454545454,
+      "sentenceAcc": 0.5,
+      "garbledMessages": 1,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "stretched": {
+      "messages": 4,
+      "cer": 0.825,
+      "sentenceAcc": 0,
+      "garbledMessages": 3,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "noisy": {
+      "messages": 4,
+      "cer": 0.08571428571428572,
+      "sentenceAcc": 0.5,
+      "garbledMessages": 0,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "ai_disclaimer": {
+      "messages": 4,
+      "cer": 0.08974358974358974,
+      "sentenceAcc": 0.25,
+      "garbledMessages": 1,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     }
+    }
+   },
+   "attribution": {
+    "messages": 88,
+    "classified": 69,
+    "correct": 69,
+    "wrong": 0,
+    "uncertain": 19,
+    "sideAccuracy": 1,
+    "coverage": 0.7840909090909091,
+    "uncertainReasons": {
+     "no-margin-contact": 11,
+     "empty": 8
+    },
+    "inbound": {
+     "predicted": 35,
+     "tp": 35,
+     "fp": 0,
+     "precision": 1,
+     "recall": 0.7777777777777778
+    },
+    "outbound": {
+     "predicted": 34,
+     "tp": 34,
+     "fp": 0,
+     "precision": 1,
+     "recall": 0.7906976744186046
+    }
+   }
+  },
+  {
+   "engine": "v3-pipeline",
+   "variant": "vote-all",
+   "file": "2026-10-31_15-28-57-all-v3-vote-all.json",
+   "totals": {
+    "images": 40,
+    "okImages": 40,
+    "failedImages": 0,
+    "messages": 88,
+    "cer": 0.14854682454251883,
+    "sentenceAcc": 0.625,
+    "garbledMessages": 14,
+    "scriptReplacedMessages": 13,
+    "desktopVotedMessages": 8,
+    "correctedMessages": 1,
+    "protectedSkipped": 0,
+    "byScenario": {
+     "clear": {
+      "messages": 4,
+      "cer": 0,
+      "sentenceAcc": 1,
+      "garbledMessages": 0,
+      "scriptReplacedMessages": 1,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "small_font": {
+      "messages": 4,
+      "cer": 0.2857142857142857,
+      "sentenceAcc": 0.25,
+      "garbledMessages": 0,
+      "scriptReplacedMessages": 3,
+      "desktopVotedMessages": 1,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "low_contrast": {
+      "messages": 4,
+      "cer": 0,
+      "sentenceAcc": 1,
+      "garbledMessages": 0,
+      "scriptReplacedMessages": 3,
+      "desktopVotedMessages": 1,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "gaussian_blur": {
+      "messages": 4,
+      "cer": 0.6111111111111112,
+      "sentenceAcc": 0.25,
+      "garbledMessages": 1,
+      "scriptReplacedMessages": 1,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "scale_100": {
+      "messages": 4,
+      "cer": 0,
+      "sentenceAcc": 1,
+      "garbledMessages": 0,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "scale_125": {
+      "messages": 4,
+      "cer": 0,
+      "sentenceAcc": 1,
+      "garbledMessages": 0,
+      "scriptReplacedMessages": 1,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "scale_150": {
+      "messages": 4,
+      "cer": 0.06666666666666667,
+      "sentenceAcc": 0.75,
+      "garbledMessages": 1,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "scale_175": {
+      "messages": 4,
+      "cer": 0.03333333333333333,
+      "sentenceAcc": 0.75,
+      "garbledMessages": 0,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "long_bubble": {
+      "messages": 4,
+      "cer": 0.04477611940298507,
+      "sentenceAcc": 0.25,
+      "garbledMessages": 0,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 1,
+      "protectedSkipped": 0
+     },
+     "repeat_two": {
+      "messages": 4,
+      "cer": 0,
+      "sentenceAcc": 1,
+      "garbledMessages": 0,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 1,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "bilingual": {
+      "messages": 4,
+      "cer": 0.02631578947368421,
+      "sentenceAcc": 0.75,
+      "garbledMessages": 3,
+      "scriptReplacedMessages": 1,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "numbers": {
+      "messages": 4,
+      "cer": 0.1111111111111111,
+      "sentenceAcc": 0,
+      "garbledMessages": 4,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "emoji": {
+      "messages": 4,
+      "cer": 0.325,
+      "sentenceAcc": 0,
+      "garbledMessages": 0,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 1,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "dark_mode": {
+      "messages": 4,
+      "cer": 0,
+      "sentenceAcc": 1,
+      "garbledMessages": 0,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "occluded": {
+      "messages": 4,
+      "cer": 0.525,
+      "sentenceAcc": 0.5,
+      "garbledMessages": 0,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 2,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "multi_message": {
+      "messages": 10,
+      "cer": 0,
+      "sentenceAcc": 1,
+      "garbledMessages": 0,
+      "scriptReplacedMessages": 2,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "short_msgs": {
+      "messages": 6,
+      "cer": 0.8181818181818182,
+      "sentenceAcc": 0.5,
+      "garbledMessages": 1,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 2,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "stretched": {
+      "messages": 4,
+      "cer": 0.825,
+      "sentenceAcc": 0,
+      "garbledMessages": 3,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "noisy": {
+      "messages": 4,
+      "cer": 0.08571428571428572,
+      "sentenceAcc": 0.5,
+      "garbledMessages": 0,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "ai_disclaimer": {
+      "messages": 4,
+      "cer": 0.05128205128205128,
+      "sentenceAcc": 0.5,
+      "garbledMessages": 1,
+      "scriptReplacedMessages": 1,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     }
+    }
+   },
+   "attribution": {
+    "messages": 88,
+    "classified": 69,
+    "correct": 69,
+    "wrong": 0,
+    "uncertain": 19,
+    "sideAccuracy": 1,
+    "coverage": 0.7840909090909091,
+    "uncertainReasons": {
+     "no-margin-contact": 11,
+     "empty": 8
+    },
+    "inbound": {
+     "predicted": 35,
+     "tp": 35,
+     "fp": 0,
+     "precision": 1,
+     "recall": 0.7777777777777778
+    },
+    "outbound": {
+     "predicted": 34,
+     "tp": 34,
+     "fp": 0,
+     "precision": 1,
+     "recall": 0.7906976744186046
+    }
+   }
   }
  ],
  "files": [
-  "2026-10-31_14-48-39-winrt-orig.json",
-  "2026-10-31_14-48-39-winrt-upscale2x.json",
-  "2026-10-31_14-48-39-winrt-gray_contrast.json",
-  "2026-10-31_14-48-39-rapid-orig.json",
-  "2026-10-31_14-48-39-rapid-upscale2x.json",
-  "2026-10-31_14-48-39-rapid-gray_contrast.json",
-  "2026-10-31_14-48-39-baseline-v028-orig.json"
+  "2026-10-31_15-28-57-all-winrt-orig.json",
+  "2026-10-31_15-28-57-all-winrt-upscale2x.json",
+  "2026-10-31_15-28-57-all-winrt-gray_contrast.json",
+  "2026-10-31_15-28-57-all-rapid-orig.json",
+  "2026-10-31_15-28-57-all-rapid-upscale2x.json",
+  "2026-10-31_15-28-57-all-rapid-gray_contrast.json",
+  "2026-10-31_15-28-57-all-baseline-v028-orig.json",
+  "2026-10-31_15-28-57-all-v3-novote.json",
+  "2026-10-31_15-28-57-all-v3-vote-garbled.json",
+  "2026-10-31_15-28-57-all-v3-vote-all.json"
  ],
  "baseline": {
   "engine": "baseline-v0.2.8",
   "variant": "orig",
-  "file": "2026-10-31_14-48-39-baseline-v028-orig.json",
+  "file": "2026-10-31_15-28-57-all-baseline-v028-orig.json",
   "totals": {
    "images": 40,
    "okImages": 40,
@@ -633,11 +1404,39 @@
    }
   }
  },
+ "v3Pipeline": {
+  "implementedIn": "scripts/ocr/v3-pipeline.mjs",
+  "configs": [
+   {
+    "id": "novote",
+    "label": "WinRT 2x + 归一 + 受控纠错（不用第二引擎）",
+    "useVote": "none"
+   },
+   {
+    "id": "vote-garbled",
+    "label": "v3 真实等价：可疑消息才用 RapidOCR 同帧投票",
+    "useVote": "garbled"
+   },
+   {
+    "id": "vote-all",
+    "label": "上界参考（非真实可在线）：所有消息都用 RapidOCR 投票",
+    "useVote": "all"
+   }
+  ],
+  "notices": [
+   "离线等价按消息粒度实现：winrt 2x 分组文本 → 归一化 → （可疑时）RapidOCR 同帧按 |y-top|≤26 + 重合度≥0.35 + 更长才替换 → mergeEngineVote/pickBetterText → 受控纠错。",
+   "真实管线在首读可疑时会再换 4x/2x 帧重读；bench 无 4x 变体，本实现只等价到 2x 首读，偏保守。",
+   "消息分组用 GT bbox 近似（与 baseline A/B 同口径）；真实 pipeline 按 UI 坐标分组。",
+   "真实 recheckGarbledText 作用于整段聊天文本；这里按消息粒度做等价投票。",
+   "气泡归属用「行框并集 + 内边距」近似 bubble bbox，pane 取整图宽度（真实由脚本提供 pane 几何）。"
+  ]
+ },
  "notes": [
   "CER = 字符级 Levenshtein / GT 字符数（消息级聚合：Σ edit / Σ GT chars），比较前去空白。",
   "行级 P/R/F1：归一化文本相似度 + IoU 辅助一对一匹配；重复行单独计数并从 TP 之外计。",
   "假消息率 = 未匹配且非重复的 OCR 行 / OCR 内容行；窗口 chrome（标题/输入框/时间戳）按 manifest.expectedContext 豁免。",
   "P50/P95 为引擎自报的 OCR 耗时（不含进程启动/模型加载），RapidOCR 模型加载时间见各 run 的 meta.modelLoadMs。",
-  "baseline 组：分组用 GT bbox 近似，仅衡量「同一批原始行经过 v0.2.8 后处理」的增益，不代表真实 pipeline 的定位能力。"
+  "baseline 组：分组用 GT bbox 近似，仅衡量「同一批原始行经过 v0.2.8 后处理」的增益，不代表真实 pipeline 的定位能力。",
+  "v3 组：离线等价（winrt 2x 首读 → 归一 → 可疑消息 RapidOCR 同帧投票 → 受控纠错），无 4x 帧重读；分组同为 GT bbox 近似。"
  ]
 }

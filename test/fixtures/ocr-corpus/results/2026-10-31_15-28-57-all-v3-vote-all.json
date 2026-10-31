@@ -1,0 +1,2364 @@
+{
+ "meta": {
+  "bench": "ocr-benchmark-v3-pipeline",
+  "version": "v3.0.0",
+  "generatedAt": "2026-10-31T15:33:21.691Z",
+  "command": "--engine=all --pipeline=all --split=all",
+  "pipelineConfig": "vote-all",
+  "pipelineConfigLabel": "上界参考（非真实可在线）：所有消息都用 RapidOCR 投票",
+  "split": "all",
+  "splitScenarios": {
+   "tune": [
+    "clear",
+    "low_contrast",
+    "scale_100",
+    "scale_150",
+    "long_bubble",
+    "bilingual",
+    "emoji",
+    "occluded",
+    "short_msgs",
+    "noisy"
+   ],
+   "eval": [
+    "small_font",
+    "gaussian_blur",
+    "scale_125",
+    "scale_175",
+    "repeat_two",
+    "numbers",
+    "dark_mode",
+    "multi_message",
+    "stretched",
+    "ai_disclaimer"
+   ]
+  },
+  "inputs": {
+   "primary": "winrt × upscale2x 行（坐标 /2 后按 GT bbox 分组）",
+   "secondEngine": "rapidocr × orig 行（同帧；按 |y-top|≤26 + 重合度≥0.35 + 更长才替换）"
+  },
+  "offlineEquivalence": [
+   "离线等价按消息粒度实现：winrt 2x 分组文本 → 归一化 → （可疑时）RapidOCR 同帧按 |y-top|≤26 + 重合度≥0.35 + 更长才替换 → mergeEngineVote/pickBetterText → 受控纠错。",
+   "真实管线在首读可疑时会再换 4x/2x 帧重读；bench 无 4x 变体，本实现只等价到 2x 首读，偏保守。",
+   "消息分组用 GT bbox 近似（与 baseline A/B 同口径）；真实 pipeline 按 UI 坐标分组。",
+   "真实 recheckGarbledText 作用于整段聊天文本；这里按消息粒度做等价投票。",
+   "气泡归属用「行框并集 + 内边距」近似 bubble bbox，pane 取整图宽度（真实由脚本提供 pane 几何）。"
+  ],
+  "corpus": {
+   "manifest": "test\\fixtures\\ocr-corpus\\manifest.json",
+   "seed": 20261031,
+   "scenarioCount": 20,
+   "imageCount": 40,
+   "split": "all",
+   "splitScenarios": {
+    "tune": [
+     "clear",
+     "low_contrast",
+     "scale_100",
+     "scale_150",
+     "long_bubble",
+     "bilingual",
+     "emoji",
+     "occluded",
+     "short_msgs",
+     "noisy"
+    ],
+    "eval": [
+     "small_font",
+     "gaussian_blur",
+     "scale_125",
+     "scale_175",
+     "repeat_two",
+     "numbers",
+     "dark_mode",
+     "multi_message",
+     "stretched",
+     "ai_disclaimer"
+    ]
+   }
+  },
+  "env": {
+   "platform": "win32",
+   "node": "v26.13.0",
+   "pythonVersion": "3.14.2",
+   "pillowVersion": "13.0.0",
+   "rapidocr": "available"
+  }
+ },
+ "images": [
+  {
+   "captureId": "clear-00",
+   "scenario": "clear",
+   "ok": true,
+   "metrics": {
+    "messages": 2,
+    "edit": 0,
+    "chars": 19,
+    "cer": 0,
+    "correct": 2,
+    "sentenceAcc": 1,
+    "garbledCount": 0,
+    "scriptReplacedCount": 0,
+    "desktopVotedCount": 0,
+    "correctedCount": 0,
+    "protectedSkipped": 0,
+    "perMessage": [
+     {
+      "gtText": "今天大肥鱼很好吃",
+      "winText": "今天大肥鱼很好吃",
+      "finalText": "今天大肥鱼很好吃",
+      "cer": 0,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 1,
+      "scriptReplaced": false,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     },
+     {
+      "gtText": "真的吗？我明天也去试试",
+      "winText": "真的吗？我明天也去试试",
+      "finalText": "真的吗？我明天也去试试",
+      "cer": 0,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 1,
+      "scriptReplaced": false,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     }
+    ]
+   }
+  },
+  {
+   "captureId": "clear-01",
+   "scenario": "clear",
+   "ok": true,
+   "metrics": {
+    "messages": 2,
+    "edit": 0,
+    "chars": 14,
+    "cer": 0,
+    "correct": 2,
+    "sentenceAcc": 1,
+    "garbledCount": 0,
+    "scriptReplacedCount": 1,
+    "desktopVotedCount": 0,
+    "correctedCount": 0,
+    "protectedSkipped": 0,
+    "perMessage": [
+     {
+      "gtText": "周末有空吗",
+      "winText": "周末有空吗",
+      "finalText": "周末有空吗",
+      "cer": 0,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 1,
+      "scriptReplaced": false,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     },
+     {
+      "gtText": "有空的，下午三点见",
+      "winText": "有空的，下午三，",
+      "finalText": "有空的，下午三点见",
+      "cer": 0,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 0.8571,
+      "scriptReplaced": true,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     }
+    ]
+   }
+  },
+  {
+   "captureId": "small_font-00",
+   "scenario": "small_font",
+   "ok": true,
+   "metrics": {
+    "messages": 2,
+    "edit": 2,
+    "chars": 21,
+    "cer": 0.09523809523809523,
+    "correct": 0,
+    "sentenceAcc": 0,
+    "garbledCount": 0,
+    "scriptReplacedCount": 2,
+    "desktopVotedCount": 0,
+    "correctedCount": 0,
+    "protectedSkipped": 0,
+    "perMessage": [
+     {
+      "gtText": "这个字号有点小，能看清吗",
+      "winText": "这个字号有点小，吾清吗",
+      "finalText": "这个字号有点小，能若清吗",
+      "cer": 0.08333333333333333,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 0.8571,
+      "scriptReplaced": true,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     },
+     {
+      "gtText": "能看清，就是有点糊",
+      "winText": "吾清，就是有点糊",
+      "finalText": "能若清，就是有点糊",
+      "cer": 0.1111111111111111,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 0.8,
+      "scriptReplaced": true,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     }
+    ]
+   }
+  },
+  {
+   "captureId": "small_font-01",
+   "scenario": "small_font",
+   "ok": true,
+   "metrics": {
+    "messages": 2,
+    "edit": 8,
+    "chars": 14,
+    "cer": 0.5714285714285714,
+    "correct": 1,
+    "sentenceAcc": 0.5,
+    "garbledCount": 0,
+    "scriptReplacedCount": 1,
+    "desktopVotedCount": 1,
+    "correctedCount": 0,
+    "protectedSkipped": 0,
+    "perMessage": [
+     {
+      "gtText": "小字号的截图识别",
+      "winText": "小字号的乏识别",
+      "finalText": "小字号的截图识别",
+      "cer": 0,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 0.8,
+      "scriptReplaced": true,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     },
+     {
+      "gtText": "看看效果如何",
+      "winText": "",
+      "finalText": "小字号的截图识别",
+      "cer": 1.3333333333333333,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 0,
+      "scriptReplaced": false,
+      "desktopVoted": true,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     }
+    ]
+   }
+  },
+  {
+   "captureId": "low_contrast-00",
+   "scenario": "low_contrast",
+   "ok": true,
+   "metrics": {
+    "messages": 2,
+    "edit": 0,
+    "chars": 19,
+    "cer": 0,
+    "correct": 2,
+    "sentenceAcc": 1,
+    "garbledCount": 0,
+    "scriptReplacedCount": 2,
+    "desktopVotedCount": 0,
+    "correctedCount": 0,
+    "protectedSkipped": 0,
+    "perMessage": [
+     {
+      "gtText": "灰字浅底看着有点费劲",
+      "winText": "蔗字浅底看看有点劲",
+      "finalText": "灰字浅底看着有点费劲",
+      "cer": 0,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 0.7368,
+      "scriptReplaced": true,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     },
+     {
+      "gtText": "截图压缩之后就这样",
+      "winText": "截囗压之后就这样",
+      "finalText": "截图压缩之后就这样",
+      "cer": 0,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 0.8235,
+      "scriptReplaced": true,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     }
+    ]
+   }
+  },
+  {
+   "captureId": "low_contrast-01",
+   "scenario": "low_contrast",
+   "ok": true,
+   "metrics": {
+    "messages": 2,
+    "edit": 0,
+    "chars": 18,
+    "cer": 0,
+    "correct": 2,
+    "sentenceAcc": 1,
+    "garbledCount": 0,
+    "scriptReplacedCount": 1,
+    "desktopVotedCount": 1,
+    "correctedCount": 0,
+    "protectedSkipped": 0,
+    "perMessage": [
+     {
+      "gtText": "低对比度的聊天截图",
+      "winText": "",
+      "finalText": "低对比度的聊天截图",
+      "cer": 0,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 0,
+      "scriptReplaced": false,
+      "desktopVoted": true,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     },
+     {
+      "gtText": "识别难度会明显上升",
+      "winText": "识别所会月显上升",
+      "finalText": "识别难度会明显上升",
+      "cer": 0,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 0.7059,
+      "scriptReplaced": true,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     }
+    ]
+   }
+  },
+  {
+   "captureId": "gaussian_blur-00",
+   "scenario": "gaussian_blur",
+   "ok": true,
+   "metrics": {
+    "messages": 2,
+    "edit": 6,
+    "chars": 17,
+    "cer": 0.35294117647058826,
+    "correct": 1,
+    "sentenceAcc": 0.5,
+    "garbledCount": 1,
+    "scriptReplacedCount": 1,
+    "desktopVotedCount": 0,
+    "correctedCount": 0,
+    "protectedSkipped": 0,
+    "perMessage": [
+     {
+      "gtText": "截图被人手抖了一下",
+      "winText": "《人半了一下",
+      "finalText": "截图被人手抖了一下",
+      "cer": 0,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 0.5714,
+      "scriptReplaced": true,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     },
+     {
+      "gtText": "整个窗口都糊掉了",
+      "winText": "0 个过 0- 了",
+      "finalText": "0 个过 0- 了",
+      "cer": 0.75,
+      "garbled": true,
+      "matched": true,
+      "matchedOverlap": 0.3077,
+      "scriptReplaced": false,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     }
+    ]
+   }
+  },
+  {
+   "captureId": "gaussian_blur-01",
+   "scenario": "gaussian_blur",
+   "ok": true,
+   "metrics": {
+    "messages": 2,
+    "edit": 16,
+    "chars": 19,
+    "cer": 0.8421052631578947,
+    "correct": 0,
+    "sentenceAcc": 0,
+    "garbledCount": 0,
+    "scriptReplacedCount": 0,
+    "desktopVotedCount": 0,
+    "correctedCount": 0,
+    "protectedSkipped": 0,
+    "perMessage": [
+     {
+      "gtText": "模糊的截图还能读出来吗",
+      "winText": "- 适满出玛",
+      "finalText": "- 适满出玛",
+      "cer": 0.9090909090909091,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 0.1333,
+      "scriptReplaced": false,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     },
+     {
+      "gtText": "应该会漏掉几个字",
+      "winText": "畲到冲几个",
+      "finalText": "畲到冲几个",
+      "cer": 0.75,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 0.3077,
+      "scriptReplaced": false,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     }
+    ]
+   }
+  },
+  {
+   "captureId": "scale_100-00",
+   "scenario": "scale_100",
+   "ok": true,
+   "metrics": {
+    "messages": 2,
+    "edit": 0,
+    "chars": 16,
+    "cer": 0,
+    "correct": 2,
+    "sentenceAcc": 1,
+    "garbledCount": 0,
+    "scriptReplacedCount": 0,
+    "desktopVotedCount": 0,
+    "correctedCount": 0,
+    "protectedSkipped": 0,
+    "perMessage": [
+     {
+      "gtText": "缩放百分之一百的截图",
+      "winText": "缩放百分之一百的截图",
+      "finalText": "缩放百分之一百的截图",
+      "cer": 0,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 1,
+      "scriptReplaced": false,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     },
+     {
+      "gtText": "这是基准尺寸",
+      "winText": "这是基准尺寸",
+      "finalText": "这是基准尺寸",
+      "cer": 0,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 1,
+      "scriptReplaced": false,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     }
+    ]
+   }
+  },
+  {
+   "captureId": "scale_100-01",
+   "scenario": "scale_100",
+   "ok": true,
+   "metrics": {
+    "messages": 2,
+    "edit": 0,
+    "chars": 14,
+    "cer": 0,
+    "correct": 2,
+    "sentenceAcc": 1,
+    "garbledCount": 0,
+    "scriptReplacedCount": 0,
+    "desktopVotedCount": 0,
+    "correctedCount": 0,
+    "protectedSkipped": 0,
+    "perMessage": [
+     {
+      "gtText": "原始尺寸的界面",
+      "winText": "原始尺寸的界面",
+      "finalText": "原始尺寸的界面",
+      "cer": 0,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 1,
+      "scriptReplaced": false,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     },
+     {
+      "gtText": "文字边缘最清楚",
+      "winText": "文字边缘最清楚",
+      "finalText": "文字边缘最清楚",
+      "cer": 0,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 1,
+      "scriptReplaced": false,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     }
+    ]
+   }
+  },
+  {
+   "captureId": "scale_125-00",
+   "scenario": "scale_125",
+   "ok": true,
+   "metrics": {
+    "messages": 2,
+    "edit": 0,
+    "chars": 18,
+    "cer": 0,
+    "correct": 2,
+    "sentenceAcc": 1,
+    "garbledCount": 0,
+    "scriptReplacedCount": 1,
+    "desktopVotedCount": 0,
+    "correctedCount": 0,
+    "protectedSkipped": 0,
+    "perMessage": [
+     {
+      "gtText": "缩放百分之一百二十五",
+      "winText": "缩放百分之一百二十五",
+      "finalText": "缩放百分之一百二十五",
+      "cer": 0,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 1,
+      "scriptReplaced": false,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     },
+     {
+      "gtText": "看起来清楚了一点",
+      "winText": "看起来清楚了一",
+      "finalText": "看起来清楚了一点",
+      "cer": 0,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 0.9333,
+      "scriptReplaced": true,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     }
+    ]
+   }
+  },
+  {
+   "captureId": "scale_125-01",
+   "scenario": "scale_125",
+   "ok": true,
+   "metrics": {
+    "messages": 2,
+    "edit": 0,
+    "chars": 13,
+    "cer": 0,
+    "correct": 2,
+    "sentenceAcc": 1,
+    "garbledCount": 0,
+    "scriptReplacedCount": 0,
+    "desktopVotedCount": 0,
+    "correctedCount": 0,
+    "protectedSkipped": 0,
+    "perMessage": [
+     {
+      "gtText": "系统缩放调大一档",
+      "winText": "系统缩放调大一档",
+      "finalText": "系统缩放调大一档",
+      "cer": 0,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 1,
+      "scriptReplaced": false,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     },
+     {
+      "gtText": "字也变大了",
+      "winText": "字也变大了",
+      "finalText": "字也变大了",
+      "cer": 0,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 1,
+      "scriptReplaced": false,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     }
+    ]
+   }
+  },
+  {
+   "captureId": "scale_150-00",
+   "scenario": "scale_150",
+   "ok": true,
+   "metrics": {
+    "messages": 2,
+    "edit": 0,
+    "chars": 16,
+    "cer": 0,
+    "correct": 2,
+    "sentenceAcc": 1,
+    "garbledCount": 0,
+    "scriptReplacedCount": 0,
+    "desktopVotedCount": 0,
+    "correctedCount": 0,
+    "protectedSkipped": 0,
+    "perMessage": [
+     {
+      "gtText": "缩放百分之一百五十",
+      "winText": "缩放百分之一百五十",
+      "finalText": "缩放百分之一百五十",
+      "cer": 0,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 1,
+      "scriptReplaced": false,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     },
+     {
+      "gtText": "截图尺寸变大了",
+      "winText": "截图尺寸变大了",
+      "finalText": "截图尺寸变大了",
+      "cer": 0,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 1,
+      "scriptReplaced": false,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     }
+    ]
+   }
+  },
+  {
+   "captureId": "scale_150-01",
+   "scenario": "scale_150",
+   "ok": true,
+   "metrics": {
+    "messages": 2,
+    "edit": 2,
+    "chars": 14,
+    "cer": 0.14285714285714285,
+    "correct": 1,
+    "sentenceAcc": 0.5,
+    "garbledCount": 1,
+    "scriptReplacedCount": 0,
+    "desktopVotedCount": 0,
+    "correctedCount": 0,
+    "protectedSkipped": 0,
+    "perMessage": [
+     {
+      "gtText": "高分屏的常见比例",
+      "winText": "高分屏的常见比例",
+      "finalText": "高分屏的常见比例",
+      "cer": 0,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 1,
+      "scriptReplaced": false,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     },
+     {
+      "gtText": "识别应该更稳",
+      "winText": "识另刂应该更稳",
+      "finalText": "识另刂应该更稳",
+      "cer": 0.3333333333333333,
+      "garbled": true,
+      "matched": true,
+      "matchedOverlap": 0.7692,
+      "scriptReplaced": false,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     }
+    ]
+   }
+  },
+  {
+   "captureId": "scale_175-00",
+   "scenario": "scale_175",
+   "ok": true,
+   "metrics": {
+    "messages": 2,
+    "edit": 0,
+    "chars": 19,
+    "cer": 0,
+    "correct": 2,
+    "sentenceAcc": 1,
+    "garbledCount": 0,
+    "scriptReplacedCount": 0,
+    "desktopVotedCount": 0,
+    "correctedCount": 0,
+    "protectedSkipped": 0,
+    "perMessage": [
+     {
+      "gtText": "缩放百分之一百七十五",
+      "winText": "缩放百分之一百七十五",
+      "finalText": "缩放百分之一百七十五",
+      "cer": 0,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 1,
+      "scriptReplaced": false,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     },
+     {
+      "gtText": "这已经是很大的图了",
+      "winText": "这已经是很大的图了",
+      "finalText": "这已经是很大的图了",
+      "cer": 0,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 1,
+      "scriptReplaced": false,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     }
+    ]
+   }
+  },
+  {
+   "captureId": "scale_175-01",
+   "scenario": "scale_175",
+   "ok": true,
+   "metrics": {
+    "messages": 2,
+    "edit": 1,
+    "chars": 11,
+    "cer": 0.09090909090909091,
+    "correct": 1,
+    "sentenceAcc": 0.5,
+    "garbledCount": 0,
+    "scriptReplacedCount": 0,
+    "desktopVotedCount": 0,
+    "correctedCount": 0,
+    "protectedSkipped": 0,
+    "perMessage": [
+     {
+      "gtText": "大尺寸截图",
+      "winText": "大尺寸截图",
+      "finalText": "大尺寸截图",
+      "cer": 0,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 1,
+      "scriptReplaced": false,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     },
+     {
+      "gtText": "计算量也更大",
+      "winText": "计簋量也更大",
+      "finalText": "计簋量也更大",
+      "cer": 0.16666666666666666,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 0.8333,
+      "scriptReplaced": false,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     }
+    ]
+   }
+  },
+  {
+   "captureId": "long_bubble-00",
+   "scenario": "long_bubble",
+   "ok": true,
+   "metrics": {
+    "messages": 2,
+    "edit": 4,
+    "chars": 62,
+    "cer": 0.06451612903225806,
+    "correct": 0,
+    "sentenceAcc": 0,
+    "garbledCount": 0,
+    "scriptReplacedCount": 0,
+    "desktopVotedCount": 0,
+    "correctedCount": 0,
+    "protectedSkipped": 0,
+    "perMessage": [
+     {
+      "gtText": "今天下午三点开会，会议纪要我已经整理好发到群里了，大家有空看一下，有问题随时在群里回复，我这边会统一汇总处理。",
+      "winText": "今天下午三开会，会议纪要我已经整理好发到群里了，大冢有空音一下，有问题随时在群里回复，我这边会统一汇总处理。",
+      "finalText": "今天下午三开会，会议纪要我已经整理好发到群里了，大冢有空音一下，有问题随时在群里回复，我这边会统一汇总处理。",
+      "cer": 0.05454545454545454,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 0.5507,
+      "scriptReplaced": false,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     },
+     {
+      "gtText": "收到，我晚点看",
+      "winText": "收到，我晚点苷",
+      "finalText": "收到，我晚点苷",
+      "cer": 0.14285714285714285,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 0.8333,
+      "scriptReplaced": false,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     }
+    ]
+   }
+  },
+  {
+   "captureId": "long_bubble-01",
+   "scenario": "long_bubble",
+   "ok": true,
+   "metrics": {
+    "messages": 2,
+    "edit": 2,
+    "chars": 72,
+    "cer": 0.027777777777777776,
+    "correct": 1,
+    "sentenceAcc": 0.5,
+    "garbledCount": 0,
+    "scriptReplacedCount": 0,
+    "desktopVotedCount": 0,
+    "correctedCount": 1,
+    "protectedSkipped": 0,
+    "perMessage": [
+     {
+      "gtText": "你上次说的那个表情包工程还在吗",
+      "winText": "你上次说的那个表盾包工程还在吗",
+      "finalText": "你上次说的那个表情包工程还在吗",
+      "cer": 0,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 0.9333,
+      "scriptReplaced": false,
+      "desktopVoted": false,
+      "corrected": true,
+      "correctedChanges": 1,
+      "protectedSkipped": 0
+     },
+     {
+      "gtText": "在的，我把仓库地址和说明都放在群公告里了，你按里面的步骤装一下依赖，然后运行测试命令应该就能跑起来，有问题再找我。",
+      "winText": "在的，我把仓库地址和说明都放在群公舌里了，你按里面的步骤装一下依赖，然启运行测试命令应该就能跑起来，有问题再找我。",
+      "finalText": "在的，我把仓库地址和说明都放在群公舌里了，你按里面的步骤装一下依赖，然启运行测试命令应该就能跑起来，有问题再找我。",
+      "cer": 0.03508771929824561,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 0.5278,
+      "scriptReplaced": false,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     }
+    ]
+   }
+  },
+  {
+   "captureId": "repeat_two-00",
+   "scenario": "repeat_two",
+   "ok": true,
+   "metrics": {
+    "messages": 2,
+    "edit": 0,
+    "chars": 8,
+    "cer": 0,
+    "correct": 2,
+    "sentenceAcc": 1,
+    "garbledCount": 0,
+    "scriptReplacedCount": 0,
+    "desktopVotedCount": 0,
+    "correctedCount": 0,
+    "protectedSkipped": 0,
+    "perMessage": [
+     {
+      "gtText": "好的收到",
+      "winText": "好的收到",
+      "finalText": "好的收到",
+      "cer": 0,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 1,
+      "scriptReplaced": false,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     },
+     {
+      "gtText": "好的收到",
+      "winText": "好的收到",
+      "finalText": "好的收到",
+      "cer": 0,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 1,
+      "scriptReplaced": false,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     }
+    ]
+   }
+  },
+  {
+   "captureId": "repeat_two-01",
+   "scenario": "repeat_two",
+   "ok": true,
+   "metrics": {
+    "messages": 2,
+    "edit": 0,
+    "chars": 6,
+    "cer": 0,
+    "correct": 2,
+    "sentenceAcc": 1,
+    "garbledCount": 0,
+    "scriptReplacedCount": 0,
+    "desktopVotedCount": 1,
+    "correctedCount": 0,
+    "protectedSkipped": 0,
+    "perMessage": [
+     {
+      "gtText": "明天见",
+      "winText": "",
+      "finalText": "明天见",
+      "cer": 0,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 0,
+      "scriptReplaced": false,
+      "desktopVoted": true,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     },
+     {
+      "gtText": "明天见",
+      "winText": "明天见",
+      "finalText": "明天见",
+      "cer": 0,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 1,
+      "scriptReplaced": false,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     }
+    ]
+   }
+  },
+  {
+   "captureId": "bilingual-00",
+   "scenario": "bilingual",
+   "ok": true,
+   "metrics": {
+    "messages": 2,
+    "edit": 2,
+    "chars": 40,
+    "cer": 0.05,
+    "correct": 1,
+    "sentenceAcc": 0.5,
+    "garbledCount": 1,
+    "scriptReplacedCount": 1,
+    "desktopVotedCount": 0,
+    "correctedCount": 0,
+    "protectedSkipped": 0,
+    "perMessage": [
+     {
+      "gtText": "OK，明天 10:30 我们开个 Zoom 会议聊一下 OCR 的事情",
+      "winText": "OK, 明天 10 ： 30 我们开个 Zoom 会议聊一下 OC R 的事情",
+      "finalText": "OK, 明天 10 ： 30 我们开个 Zoom 会议聊一下 OC R 的事情",
+      "cer": 0.06896551724137931,
+      "garbled": true,
+      "matched": true,
+      "matchedOverlap": 0.8511,
+      "scriptReplaced": false,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     },
+     {
+      "gtText": "收到，会议链接发我一下",
+      "winText": "收到，会议链接发我一",
+      "finalText": "收到，会议链接发我一下",
+      "cer": 0,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 0.9474,
+      "scriptReplaced": true,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     }
+    ]
+   }
+  },
+  {
+   "captureId": "bilingual-01",
+   "scenario": "bilingual",
+   "ok": true,
+   "metrics": {
+    "messages": 2,
+    "edit": 0,
+    "chars": 36,
+    "cer": 0,
+    "correct": 2,
+    "sentenceAcc": 1,
+    "garbledCount": 2,
+    "scriptReplacedCount": 0,
+    "desktopVotedCount": 0,
+    "correctedCount": 0,
+    "protectedSkipped": 0,
+    "perMessage": [
+     {
+      "gtText": "这个 pipeline 的 CER 大概是多少",
+      "winText": "这个 pipeline 的 CER 大概是多少",
+      "finalText": "这个 pipeline 的 CER 大概是多少",
+      "cer": 0,
+      "garbled": true,
+      "matched": true,
+      "matchedOverlap": 1,
+      "scriptReplaced": false,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     },
+     {
+      "gtText": "我跑一下 benchmark 再告诉你",
+      "winText": "我跑一下 benchmark 再告诉你",
+      "finalText": "我跑一下 benchmark 再告诉你",
+      "cer": 0,
+      "garbled": true,
+      "matched": true,
+      "matchedOverlap": 1,
+      "scriptReplaced": false,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     }
+    ]
+   }
+  },
+  {
+   "captureId": "numbers-00",
+   "scenario": "numbers",
+   "ok": true,
+   "metrics": {
+    "messages": 2,
+    "edit": 9,
+    "chars": 68,
+    "cer": 0.1323529411764706,
+    "correct": 0,
+    "sentenceAcc": 0,
+    "garbledCount": 2,
+    "scriptReplacedCount": 0,
+    "desktopVotedCount": 0,
+    "correctedCount": 0,
+    "protectedSkipped": 0,
+    "perMessage": [
+     {
+      "gtText": "订单号 SF0000000000，金额 128.50 元，日期 2026-10-31",
+      "winText": "讠丁单号 SF0000000000 ，全额 128 ． 50 元，日期 2026 · 10 · 31",
+      "finalText": "讠丁单号 SF0000000000 ，全额 128 ． 50 元，日期 2026 · 10 · 31",
+      "cer": 0.15789473684210525,
+      "garbled": true,
+      "matched": true,
+      "matchedOverlap": 0.7368,
+      "scriptReplaced": false,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     },
+     {
+      "gtText": "客服电话 13800000000，工作时间 9:00-18:00",
+      "winText": "客服电话 13800000000 ，工作时间9 ： 00 · 18 ： 00",
+      "finalText": "客服电话 13800000000 ，工作时间9 ： 00 · 18 ： 00",
+      "cer": 0.1,
+      "garbled": true,
+      "matched": true,
+      "matchedOverlap": 0.8444,
+      "scriptReplaced": false,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     }
+    ]
+   }
+  },
+  {
+   "captureId": "numbers-01",
+   "scenario": "numbers",
+   "ok": true,
+   "metrics": {
+    "messages": 2,
+    "edit": 3,
+    "chars": 40,
+    "cer": 0.075,
+    "correct": 0,
+    "sentenceAcc": 0,
+    "garbledCount": 2,
+    "scriptReplacedCount": 0,
+    "desktopVotedCount": 0,
+    "correctedCount": 0,
+    "protectedSkipped": 0,
+    "perMessage": [
+     {
+      "gtText": "转账 66.66 元已到账，余额 1024.00 元",
+      "winText": "转账 66 ， 66 元已到账，余额 1024 ， 00 元",
+      "finalText": "转账 66 ， 66 元已到账，余额 1024 ， 00 元",
+      "cer": 0.09090909090909091,
+      "garbled": true,
+      "matched": true,
+      "matchedOverlap": 1,
+      "scriptReplaced": false,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     },
+     {
+      "gtText": "2 号线转 10 号线，22:15 最后一班",
+      "winText": "2 号线转 10 号线， 22 ： 1 5 最后一班",
+      "finalText": "2 号线转 10 号线， 22 ： 1 5 最后一班",
+      "cer": 0.05555555555555555,
+      "garbled": true,
+      "matched": true,
+      "matchedOverlap": 1,
+      "scriptReplaced": false,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     }
+    ]
+   }
+  },
+  {
+   "captureId": "emoji-00",
+   "scenario": "emoji",
+   "ok": true,
+   "metrics": {
+    "messages": 2,
+    "edit": 7,
+    "chars": 24,
+    "cer": 0.2916666666666667,
+    "correct": 0,
+    "sentenceAcc": 0,
+    "garbledCount": 0,
+    "scriptReplacedCount": 0,
+    "desktopVotedCount": 0,
+    "correctedCount": 0,
+    "protectedSkipped": 0,
+    "perMessage": [
+     {
+      "gtText": "今天好累啊 😂 但是活还得干",
+      "winText": "今天好累啊但是活还得干",
+      "finalText": "今天好累啊但是活还得干",
+      "cer": 0.15384615384615385,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 0.7059,
+      "scriptReplaced": false,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     },
+     {
+      "gtText": "抱抱你 (￣▽￣) 早点睡",
+      "winText": "抱抱你（一 7 一）早点睡",
+      "finalText": "抱抱你（一 7 一）早点睡",
+      "cer": 0.45454545454545453,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 0.8,
+      "scriptReplaced": false,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     }
+    ]
+   }
+  },
+  {
+   "captureId": "emoji-01",
+   "scenario": "emoji",
+   "ok": true,
+   "metrics": {
+    "messages": 2,
+    "edit": 6,
+    "chars": 16,
+    "cer": 0.375,
+    "correct": 0,
+    "sentenceAcc": 0,
+    "garbledCount": 0,
+    "scriptReplacedCount": 0,
+    "desktopVotedCount": 1,
+    "correctedCount": 0,
+    "protectedSkipped": 0,
+    "perMessage": [
+     {
+      "gtText": "下班啦 🎉🎉",
+      "winText": "",
+      "finalText": "下班啦",
+      "cer": 0.5714285714285714,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 0,
+      "scriptReplaced": false,
+      "desktopVoted": true,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     },
+     {
+      "gtText": "收到红包啦 🧧 谢谢",
+      "winText": "收到红包啦 0 谢谢",
+      "finalText": "收到红包啦 0 谢谢",
+      "cer": 0.2222222222222222,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 0.7692,
+      "scriptReplaced": false,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     }
+    ]
+   }
+  },
+  {
+   "captureId": "dark_mode-00",
+   "scenario": "dark_mode",
+   "ok": true,
+   "metrics": {
+    "messages": 2,
+    "edit": 0,
+    "chars": 19,
+    "cer": 0,
+    "correct": 2,
+    "sentenceAcc": 1,
+    "garbledCount": 0,
+    "scriptReplacedCount": 0,
+    "desktopVotedCount": 0,
+    "correctedCount": 0,
+    "protectedSkipped": 0,
+    "perMessage": [
+     {
+      "gtText": "深色模式下看得更舒服",
+      "winText": "深色模式下看得更舒服",
+      "finalText": "深色模式下看得更舒服",
+      "cer": 0,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 1,
+      "scriptReplaced": false,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     },
+     {
+      "gtText": "夜里刷手机就靠它了",
+      "winText": "夜里刷手机就靠它了",
+      "finalText": "夜里刷手机就靠它了",
+      "cer": 0,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 1,
+      "scriptReplaced": false,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     }
+    ]
+   }
+  },
+  {
+   "captureId": "dark_mode-01",
+   "scenario": "dark_mode",
+   "ok": true,
+   "metrics": {
+    "messages": 2,
+    "edit": 0,
+    "chars": 14,
+    "cer": 0,
+    "correct": 2,
+    "sentenceAcc": 1,
+    "garbledCount": 0,
+    "scriptReplacedCount": 0,
+    "desktopVotedCount": 0,
+    "correctedCount": 0,
+    "protectedSkipped": 0,
+    "perMessage": [
+     {
+      "gtText": "黑色背景的截图",
+      "winText": "黑色背景的截图",
+      "finalText": "黑色背景的截图",
+      "cer": 0,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 1,
+      "scriptReplaced": false,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     },
+     {
+      "gtText": "对比度其实不低",
+      "winText": "对比度其实不低",
+      "finalText": "对比度其实不低",
+      "cer": 0,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 1,
+      "scriptReplaced": false,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     }
+    ]
+   }
+  },
+  {
+   "captureId": "occluded-00",
+   "scenario": "occluded",
+   "ok": true,
+   "metrics": {
+    "messages": 2,
+    "edit": 13,
+    "chars": 24,
+    "cer": 0.5416666666666666,
+    "correct": 1,
+    "sentenceAcc": 0.5,
+    "garbledCount": 0,
+    "scriptReplacedCount": 0,
+    "desktopVotedCount": 1,
+    "correctedCount": 0,
+    "protectedSkipped": 0,
+    "perMessage": [
+     {
+      "gtText": "这条消息被通知条挡住了一半",
+      "winText": "",
+      "finalText": "遮挡的部分还能认出来吗",
+      "cer": 1,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 0,
+      "scriptReplaced": false,
+      "desktopVoted": true,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     },
+     {
+      "gtText": "遮挡的部分还能认出来吗",
+      "winText": "遮挡的部分还能认出来吗",
+      "finalText": "遮挡的部分还能认出来吗",
+      "cer": 0,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 1,
+      "scriptReplaced": false,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     }
+    ]
+   }
+  },
+  {
+   "captureId": "occluded-01",
+   "scenario": "occluded",
+   "ok": true,
+   "metrics": {
+    "messages": 2,
+    "edit": 8,
+    "chars": 16,
+    "cer": 0.5,
+    "correct": 1,
+    "sentenceAcc": 0.5,
+    "garbledCount": 0,
+    "scriptReplacedCount": 0,
+    "desktopVotedCount": 1,
+    "correctedCount": 0,
+    "protectedSkipped": 0,
+    "perMessage": [
+     {
+      "gtText": "被遮挡的聊天内容",
+      "winText": "",
+      "finalText": "只能靠上下文猜了",
+      "cer": 1,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 0,
+      "scriptReplaced": false,
+      "desktopVoted": true,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     },
+     {
+      "gtText": "只能靠上下文猜了",
+      "winText": "只能靠上下文猜了",
+      "finalText": "只能靠上下文猜了",
+      "cer": 0,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 1,
+      "scriptReplaced": false,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     }
+    ]
+   }
+  },
+  {
+   "captureId": "multi_message-00",
+   "scenario": "multi_message",
+   "ok": true,
+   "metrics": {
+    "messages": 6,
+    "edit": 0,
+    "chars": 30,
+    "cer": 0,
+    "correct": 6,
+    "sentenceAcc": 1,
+    "garbledCount": 0,
+    "scriptReplacedCount": 1,
+    "desktopVotedCount": 0,
+    "correctedCount": 0,
+    "protectedSkipped": 0,
+    "perMessage": [
+     {
+      "gtText": "在吗",
+      "winText": "在吗",
+      "finalText": "在吗",
+      "cer": 0,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 1,
+      "scriptReplaced": false,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     },
+     {
+      "gtText": "在的",
+      "winText": "在的",
+      "finalText": "在的",
+      "cer": 0,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 1,
+      "scriptReplaced": false,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     },
+     {
+      "gtText": "晚上一起吃饭吗",
+      "winText": "旨一起吃饭吗",
+      "finalText": "晚上一起吃饭吗",
+      "cer": 0,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 0.7692,
+      "scriptReplaced": true,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     },
+     {
+      "gtText": "可以啊，吃什么",
+      "winText": "可以啊，吃什么",
+      "finalText": "可以啊，吃什么",
+      "cer": 0,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 1,
+      "scriptReplaced": false,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     },
+     {
+      "gtText": "大肥鱼怎么样",
+      "winText": "大肥鱼怎么样",
+      "finalText": "大肥鱼怎么样",
+      "cer": 0,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 1,
+      "scriptReplaced": false,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     },
+     {
+      "gtText": "行，六点半见",
+      "winText": "行，六点半见",
+      "finalText": "行，六点半见",
+      "cer": 0,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 1,
+      "scriptReplaced": false,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     }
+    ]
+   }
+  },
+  {
+   "captureId": "multi_message-01",
+   "scenario": "multi_message",
+   "ok": true,
+   "metrics": {
+    "messages": 4,
+    "edit": 0,
+    "chars": 28,
+    "cer": 0,
+    "correct": 4,
+    "sentenceAcc": 1,
+    "garbledCount": 0,
+    "scriptReplacedCount": 1,
+    "desktopVotedCount": 0,
+    "correctedCount": 0,
+    "protectedSkipped": 0,
+    "perMessage": [
+     {
+      "gtText": "下午的会议改到三点了",
+      "winText": "下午的会议改到三了",
+      "finalText": "下午的会议改到三点了",
+      "cer": 0,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 0.9474,
+      "scriptReplaced": true,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     },
+     {
+      "gtText": "收到",
+      "winText": "收到",
+      "finalText": "收到",
+      "cer": 0,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 1,
+      "scriptReplaced": false,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     },
+     {
+      "gtText": "会议纪要记得发我",
+      "winText": "会议纪要记得发我",
+      "finalText": "会议纪要记得发我",
+      "cer": 0,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 1,
+      "scriptReplaced": false,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     },
+     {
+      "gtText": "好的，整理完发你",
+      "winText": "好的，整理完发你",
+      "finalText": "好的，整理完发你",
+      "cer": 0,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 1,
+      "scriptReplaced": false,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     }
+    ]
+   }
+  },
+  {
+   "captureId": "short_msgs-00",
+   "scenario": "short_msgs",
+   "ok": true,
+   "metrics": {
+    "messages": 3,
+    "edit": 6,
+    "chars": 5,
+    "cer": 1.2,
+    "correct": 1,
+    "sentenceAcc": 0.3333333333333333,
+    "garbledCount": 1,
+    "scriptReplacedCount": 0,
+    "desktopVotedCount": 1,
+    "correctedCount": 0,
+    "protectedSkipped": 0,
+    "perMessage": [
+     {
+      "gtText": "嗯",
+      "winText": "",
+      "finalText": "好的",
+      "cer": 2,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 0,
+      "scriptReplaced": false,
+      "desktopVoted": true,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     },
+     {
+      "gtText": "好的",
+      "winText": "女子自笥",
+      "finalText": "女子自笥",
+      "cer": 2,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 0,
+      "scriptReplaced": false,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     },
+     {
+      "gtText": "OK",
+      "winText": "OK",
+      "finalText": "OK",
+      "cer": 0,
+      "garbled": true,
+      "matched": true,
+      "matchedOverlap": 1,
+      "scriptReplaced": false,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     }
+    ]
+   }
+  },
+  {
+   "captureId": "short_msgs-01",
+   "scenario": "short_msgs",
+   "ok": true,
+   "metrics": {
+    "messages": 3,
+    "edit": 3,
+    "chars": 6,
+    "cer": 0.5,
+    "correct": 2,
+    "sentenceAcc": 0.6666666666666666,
+    "garbledCount": 0,
+    "scriptReplacedCount": 0,
+    "desktopVotedCount": 1,
+    "correctedCount": 0,
+    "protectedSkipped": 0,
+    "perMessage": [
+     {
+      "gtText": "收到",
+      "winText": "收到",
+      "finalText": "收到",
+      "cer": 0,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 0,
+      "scriptReplaced": false,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     },
+     {
+      "gtText": "行",
+      "winText": "",
+      "finalText": "明天见",
+      "cer": 3,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 0,
+      "scriptReplaced": false,
+      "desktopVoted": true,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     },
+     {
+      "gtText": "明天见",
+      "winText": "明天见",
+      "finalText": "明天见",
+      "cer": 0,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 1,
+      "scriptReplaced": false,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     }
+    ]
+   }
+  },
+  {
+   "captureId": "stretched-00",
+   "scenario": "stretched",
+   "ok": true,
+   "metrics": {
+    "messages": 2,
+    "edit": 17,
+    "chars": 22,
+    "cer": 0.7727272727272727,
+    "correct": 0,
+    "sentenceAcc": 0,
+    "garbledCount": 1,
+    "scriptReplacedCount": 0,
+    "desktopVotedCount": 0,
+    "correctedCount": 0,
+    "protectedSkipped": 0,
+    "perMessage": [
+     {
+      "gtText": "这是一张被横向拉伸的截图",
+      "winText": "这是一弓长衤为黄向扌立亻申的截图",
+      "finalText": "这是一弓长衤为黄向扌立亻申的截图",
+      "cer": 0.75,
+      "garbled": true,
+      "matched": true,
+      "matchedOverlap": 0.5,
+      "scriptReplaced": false,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     },
+     {
+      "gtText": "比例不对，文字会变形",
+      "winText": "上匕伊」不又寸，文字会变开彡",
+      "finalText": "上匕伊」不又寸，文字会变开彡",
+      "cer": 0.8,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 0.4762,
+      "scriptReplaced": false,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     }
+    ]
+   }
+  },
+  {
+   "captureId": "stretched-01",
+   "scenario": "stretched",
+   "ok": true,
+   "metrics": {
+    "messages": 2,
+    "edit": 16,
+    "chars": 18,
+    "cer": 0.8888888888888888,
+    "correct": 0,
+    "sentenceAcc": 0,
+    "garbledCount": 2,
+    "scriptReplacedCount": 0,
+    "desktopVotedCount": 0,
+    "correctedCount": 0,
+    "protectedSkipped": 0,
+    "perMessage": [
+     {
+      "gtText": "拉伸后的文字宽度变了",
+      "winText": "扌立亻电后．的文字夺．了",
+      "finalText": "扌立亻电后．的文字夺．了",
+      "cer": 0.8,
+      "garbled": true,
+      "matched": true,
+      "matchedOverlap": 0.5,
+      "scriptReplaced": false,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     },
+     {
+      "gtText": "识别率可能会下降",
+      "winText": "` 识．另刂率可乭会一下阝条",
+      "finalText": "` 识．另刂率可乭会一下阝条",
+      "cer": 1,
+      "garbled": true,
+      "matched": true,
+      "matchedOverlap": 0.5263,
+      "scriptReplaced": false,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     }
+    ]
+   }
+  },
+  {
+   "captureId": "noisy-00",
+   "scenario": "noisy",
+   "ok": true,
+   "metrics": {
+    "messages": 2,
+    "edit": 3,
+    "chars": 21,
+    "cer": 0.14285714285714285,
+    "correct": 0,
+    "sentenceAcc": 0,
+    "garbledCount": 0,
+    "scriptReplacedCount": 0,
+    "desktopVotedCount": 0,
+    "correctedCount": 0,
+    "protectedSkipped": 0,
+    "perMessage": [
+     {
+      "gtText": "压缩噪声让文字边缘变脏",
+      "winText": "压缩噪声让文字边缘夺將",
+      "finalText": "压缩噪声让文字边缘夺將",
+      "cer": 0.18181818181818182,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 0.8182,
+      "scriptReplaced": false,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     },
+     {
+      "gtText": "截图质量差的典型情况",
+      "winText": "截图质是差的典型情况",
+      "finalText": "截图质是差的典型情况",
+      "cer": 0.1,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 0.9,
+      "scriptReplaced": false,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     }
+    ]
+   }
+  },
+  {
+   "captureId": "noisy-01",
+   "scenario": "noisy",
+   "ok": true,
+   "metrics": {
+    "messages": 2,
+    "edit": 0,
+    "chars": 14,
+    "cer": 0,
+    "correct": 2,
+    "sentenceAcc": 1,
+    "garbledCount": 0,
+    "scriptReplacedCount": 0,
+    "desktopVotedCount": 0,
+    "correctedCount": 0,
+    "protectedSkipped": 0,
+    "perMessage": [
+     {
+      "gtText": "有噪点的聊天截图",
+      "winText": "有噪点的聊天截图",
+      "finalText": "有噪点的聊天截图",
+      "cer": 0,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 1,
+      "scriptReplaced": false,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     },
+     {
+      "gtText": "还能认得出来",
+      "winText": "还能认得出来",
+      "finalText": "还能认得出来",
+      "cer": 0,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 1,
+      "scriptReplaced": false,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     }
+    ]
+   }
+  },
+  {
+   "captureId": "ai_disclaimer-00",
+   "scenario": "ai_disclaimer",
+   "ok": true,
+   "metrics": {
+    "messages": 2,
+    "edit": 2,
+    "chars": 45,
+    "cer": 0.044444444444444446,
+    "correct": 1,
+    "sentenceAcc": 0.5,
+    "garbledCount": 1,
+    "scriptReplacedCount": 1,
+    "desktopVotedCount": 0,
+    "correctedCount": 0,
+    "protectedSkipped": 0,
+    "perMessage": [
+     {
+      "gtText": "本消息由 AI 分身自动生成，若不需要请回复「停」，人工会尽快接手处理。",
+      "winText": "本氵肖息由 AI 分身自动生成，若不需要请回复「停」，人工会尽快接手处理。",
+      "finalText": "本氵肖息由 AI 分身自动生成，若不需要请回复「停」，人工会尽快接手处理。",
+      "cer": 0.058823529411764705,
+      "garbled": true,
+      "matched": true,
+      "matchedOverlap": 0.7347,
+      "scriptReplaced": false,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     },
+     {
+      "gtText": "好的，知道了，谢谢提醒",
+      "winText": "好的，道了，谢谢堤醍",
+      "finalText": "好的，知道了，谢谢提醒",
+      "cer": 0,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 0.7059,
+      "scriptReplaced": true,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     }
+    ]
+   }
+  },
+  {
+   "captureId": "ai_disclaimer-01",
+   "scenario": "ai_disclaimer",
+   "ok": true,
+   "metrics": {
+    "messages": 2,
+    "edit": 2,
+    "chars": 33,
+    "cer": 0.06060606060606061,
+    "correct": 1,
+    "sentenceAcc": 0.5,
+    "garbledCount": 0,
+    "scriptReplacedCount": 0,
+    "desktopVotedCount": 0,
+    "correctedCount": 0,
+    "protectedSkipped": 0,
+    "perMessage": [
+     {
+      "gtText": "提示：本消息由 AI 分身自动回复，内容仅供参考。",
+      "winText": "堤示，本消息由 AI 分身自动回复，内容仅供参考。",
+      "finalText": "堤示，本消息由 AI 分身自动回复，内容仅供参考。",
+      "cer": 0.08695652173913043,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 0.9231,
+      "scriptReplaced": false,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     },
+     {
+      "gtText": "明白，那我先不打扰了",
+      "winText": "明白，那我先不打扰了",
+      "finalText": "明白，那我先不打扰了",
+      "cer": 0,
+      "garbled": false,
+      "matched": true,
+      "matchedOverlap": 1,
+      "scriptReplaced": false,
+      "desktopVoted": false,
+      "corrected": false,
+      "correctedChanges": 0,
+      "protectedSkipped": 0
+     }
+    ]
+   }
+  }
+ ],
+ "totals": {
+  "images": 40,
+  "okImages": 40,
+  "failedImages": 0,
+  "messages": 88,
+  "cer": 0.14854682454251883,
+  "sentenceAcc": 0.625,
+  "garbledMessages": 14,
+  "scriptReplacedMessages": 13,
+  "desktopVotedMessages": 8,
+  "correctedMessages": 1,
+  "protectedSkipped": 0,
+  "byScenario": {
+   "clear": {
+    "messages": 4,
+    "cer": 0,
+    "sentenceAcc": 1,
+    "garbledMessages": 0,
+    "scriptReplacedMessages": 1,
+    "desktopVotedMessages": 0,
+    "correctedMessages": 0,
+    "protectedSkipped": 0
+   },
+   "small_font": {
+    "messages": 4,
+    "cer": 0.2857142857142857,
+    "sentenceAcc": 0.25,
+    "garbledMessages": 0,
+    "scriptReplacedMessages": 3,
+    "desktopVotedMessages": 1,
+    "correctedMessages": 0,
+    "protectedSkipped": 0
+   },
+   "low_contrast": {
+    "messages": 4,
+    "cer": 0,
+    "sentenceAcc": 1,
+    "garbledMessages": 0,
+    "scriptReplacedMessages": 3,
+    "desktopVotedMessages": 1,
+    "correctedMessages": 0,
+    "protectedSkipped": 0
+   },
+   "gaussian_blur": {
+    "messages": 4,
+    "cer": 0.6111111111111112,
+    "sentenceAcc": 0.25,
+    "garbledMessages": 1,
+    "scriptReplacedMessages": 1,
+    "desktopVotedMessages": 0,
+    "correctedMessages": 0,
+    "protectedSkipped": 0
+   },
+   "scale_100": {
+    "messages": 4,
+    "cer": 0,
+    "sentenceAcc": 1,
+    "garbledMessages": 0,
+    "scriptReplacedMessages": 0,
+    "desktopVotedMessages": 0,
+    "correctedMessages": 0,
+    "protectedSkipped": 0
+   },
+   "scale_125": {
+    "messages": 4,
+    "cer": 0,
+    "sentenceAcc": 1,
+    "garbledMessages": 0,
+    "scriptReplacedMessages": 1,
+    "desktopVotedMessages": 0,
+    "correctedMessages": 0,
+    "protectedSkipped": 0
+   },
+   "scale_150": {
+    "messages": 4,
+    "cer": 0.06666666666666667,
+    "sentenceAcc": 0.75,
+    "garbledMessages": 1,
+    "scriptReplacedMessages": 0,
+    "desktopVotedMessages": 0,
+    "correctedMessages": 0,
+    "protectedSkipped": 0
+   },
+   "scale_175": {
+    "messages": 4,
+    "cer": 0.03333333333333333,
+    "sentenceAcc": 0.75,
+    "garbledMessages": 0,
+    "scriptReplacedMessages": 0,
+    "desktopVotedMessages": 0,
+    "correctedMessages": 0,
+    "protectedSkipped": 0
+   },
+   "long_bubble": {
+    "messages": 4,
+    "cer": 0.04477611940298507,
+    "sentenceAcc": 0.25,
+    "garbledMessages": 0,
+    "scriptReplacedMessages": 0,
+    "desktopVotedMessages": 0,
+    "correctedMessages": 1,
+    "protectedSkipped": 0
+   },
+   "repeat_two": {
+    "messages": 4,
+    "cer": 0,
+    "sentenceAcc": 1,
+    "garbledMessages": 0,
+    "scriptReplacedMessages": 0,
+    "desktopVotedMessages": 1,
+    "correctedMessages": 0,
+    "protectedSkipped": 0
+   },
+   "bilingual": {
+    "messages": 4,
+    "cer": 0.02631578947368421,
+    "sentenceAcc": 0.75,
+    "garbledMessages": 3,
+    "scriptReplacedMessages": 1,
+    "desktopVotedMessages": 0,
+    "correctedMessages": 0,
+    "protectedSkipped": 0
+   },
+   "numbers": {
+    "messages": 4,
+    "cer": 0.1111111111111111,
+    "sentenceAcc": 0,
+    "garbledMessages": 4,
+    "scriptReplacedMessages": 0,
+    "desktopVotedMessages": 0,
+    "correctedMessages": 0,
+    "protectedSkipped": 0
+   },
+   "emoji": {
+    "messages": 4,
+    "cer": 0.325,
+    "sentenceAcc": 0,
+    "garbledMessages": 0,
+    "scriptReplacedMessages": 0,
+    "desktopVotedMessages": 1,
+    "correctedMessages": 0,
+    "protectedSkipped": 0
+   },
+   "dark_mode": {
+    "messages": 4,
+    "cer": 0,
+    "sentenceAcc": 1,
+    "garbledMessages": 0,
+    "scriptReplacedMessages": 0,
+    "desktopVotedMessages": 0,
+    "correctedMessages": 0,
+    "protectedSkipped": 0
+   },
+   "occluded": {
+    "messages": 4,
+    "cer": 0.525,
+    "sentenceAcc": 0.5,
+    "garbledMessages": 0,
+    "scriptReplacedMessages": 0,
+    "desktopVotedMessages": 2,
+    "correctedMessages": 0,
+    "protectedSkipped": 0
+   },
+   "multi_message": {
+    "messages": 10,
+    "cer": 0,
+    "sentenceAcc": 1,
+    "garbledMessages": 0,
+    "scriptReplacedMessages": 2,
+    "desktopVotedMessages": 0,
+    "correctedMessages": 0,
+    "protectedSkipped": 0
+   },
+   "short_msgs": {
+    "messages": 6,
+    "cer": 0.8181818181818182,
+    "sentenceAcc": 0.5,
+    "garbledMessages": 1,
+    "scriptReplacedMessages": 0,
+    "desktopVotedMessages": 2,
+    "correctedMessages": 0,
+    "protectedSkipped": 0
+   },
+   "stretched": {
+    "messages": 4,
+    "cer": 0.825,
+    "sentenceAcc": 0,
+    "garbledMessages": 3,
+    "scriptReplacedMessages": 0,
+    "desktopVotedMessages": 0,
+    "correctedMessages": 0,
+    "protectedSkipped": 0
+   },
+   "noisy": {
+    "messages": 4,
+    "cer": 0.08571428571428572,
+    "sentenceAcc": 0.5,
+    "garbledMessages": 0,
+    "scriptReplacedMessages": 0,
+    "desktopVotedMessages": 0,
+    "correctedMessages": 0,
+    "protectedSkipped": 0
+   },
+   "ai_disclaimer": {
+    "messages": 4,
+    "cer": 0.05128205128205128,
+    "sentenceAcc": 0.5,
+    "garbledMessages": 1,
+    "scriptReplacedMessages": 1,
+    "desktopVotedMessages": 0,
+    "correctedMessages": 0,
+    "protectedSkipped": 0
+   }
+  }
+ },
+ "attribution": {
+  "messages": 88,
+  "classified": 69,
+  "correct": 69,
+  "wrong": 0,
+  "uncertain": 19,
+  "sideAccuracy": 1,
+  "coverage": 0.7840909090909091,
+  "uncertainReasons": {
+   "no-margin-contact": 11,
+   "empty": 8
+  },
+  "inbound": {
+   "predicted": 35,
+   "tp": 35,
+   "fp": 0,
+   "precision": 1,
+   "recall": 0.7777777777777778
+  },
+  "outbound": {
+   "predicted": 34,
+   "tp": 34,
+   "fp": 0,
+   "precision": 1,
+   "recall": 0.7906976744186046
+  }
+ }
+}

@@ -244,12 +244,119 @@ script I/O 换成注入的帧候选，**决策顺序、阈值、选优函数一�
 结论：
 
 - v0.2.8 后处理主要靠 `DEFAULT_OCR_DICT` 纠正**固定词误读**（`芸议→会议`、`遮扌当→遮挡`），这类修正在本语料上只有 2 条收益；对**漏字**没有帮助（`今天大肥很好吃→今天大肥鱼好吃` 补了字但位置错，CER 不变）。
-- 因此 v3 新方案要证明价值，必须在这套指标上显著超过 **CER ≤ 28.09% / 整句 ≥ 32.95%** 这条 v0.2.8 基线；只靠词典纠错不够。
+- 因此 v3 新方案要证明价值，必须在这套指标上显著超过 **CER ≤ 28.09% / 整句 ≥ 32.95%** 这条 v0.2.8 基线；只靠词典纠错不够。v3 管线的验证结果见 **§6.5**。
 
 口径说明（重要）：
 
 - baseline 组用 **GT bbox 近似分组**（把这组文字按消息框归类），而引擎总表用的是「行匹配 + GT 行序拼接」，两者口径略有差异，所以 baseline 的 raw CER（28.42%）与 §5 表里 winrt-orig 的 CER（31.22%）不完全相等；**raw 与 post 两列同口径，可直接对比**。
 - 真实 `recheckGarbledText` 用 4x + 2x 双帧投票；本 bench 只生成了 2x 变体，`frames['4']` **未采集（未测）**，投票退化为单 2x 帧 + 第二引擎（RapidOCR orig）投票。因此这里的 baseline 是**偏保守的近似**，不包含 4x 帧带来的潜在收益。
+
+---
+
+## 6.5 v3 管线 vs v0.2.8 baseline（eval 集，Phase C 验证）
+
+**目标**：验证发布门槛第 2 条「OCR 相对 v0.2.8 可测量改善」，目标线即 §6 的 `CER ≤ 28.09% / 整句 ≥ 32.95%`。
+
+**语料拆分（tune / eval 不重叠，按 `manifest.scenarios` 0-based 奇偶）**：
+
+| 拆分 | 场景数 | 图数 | GT 消息数 | 场景 |
+|---|---|---|---|---|
+| tune（只用于调试/看趋势） | 10 | 20 | 42 | clear、low_contrast、scale_100、scale_150、long_bubble、bilingual、emoji、occluded、short_msgs、noisy |
+| eval（只跑一次，只报结果） | 10 | 20 | 46 | small_font、gaussian_blur、scale_125、scale_175、repeat_two、numbers、dark_mode、multi_message、stretched、ai_disclaimer |
+
+本轮结果文件：`results/2026-10-31_15-25-03-tune-*.json`（已清理到临时目录，不在仓库）、`results/2026-10-31_15-26-56-eval-*.json`、`results/2026-10-31_15-28-57-all-*.json`。
+
+### 实现与离线等价说明
+
+`scripts/ocr/v3-pipeline.mjs` 把 `src/core/ocr/` 的纯函数**逐行转写成 JS**（不直接 import TS：bench 是纯 Node 脚本，且 `src/core/ocr/` 当时在并行改造）：
+
+1. `normalizeOcrText`（CJK 间空格归一）→ 2. WinRT 2x 首读行按 GT bbox 分组、拼成消息文本 → 3. `looksGarbled` 判定可疑消息 → 4. 可疑时用 **RapidOCR 同图（orig）行**做第二引擎匹配（`|rapid.y - winTop| ≤ 26` 取最高重合度，<0.35 全局兜底；重合度 ≥0.35 且**更长**才替换，对齐 `wechat-uia.ps1:1906-1954` 的 SecondOcr）→ 5. `mergeEngineVote` + `pickBetterText`（对齐 `desktop.ts:389-437`）→ 6. `applyControlledCorrection`（对齐 `src/core/ocr/correction.ts:179-235`）。
+
+三种配置：
+
+| 配置 id | 行为 | 用途 |
+|---|---|---|
+| `novote` | WinRT 2x + 归一 + 受控纠错（不用第二引擎） | 拆出「只换 2x 首读」的贡献 |
+| `vote-garbled` | 可疑消息才做 RapidOCR 同帧投票 | **v3 真实等价（结论用这一行）** |
+| `vote-all` | 所有消息都跑 RapidOCR 投票 | 上界参考：在线每帧 1.4-2.1s，非真实可行方案 |
+
+离线等价与真实 pipeline 的 5 处已知偏差（也见 §8）：无 4x 帧（真实首读可疑时会再换 4x/2x 帧重读，本实现等价到 2x 为止，偏保守）；消息分组用 GT bbox 近似（真实按 UI 坐标）；`recheckGarbledText` 真实作用于整段文本，这里按消息粒度；pane 取整图宽度；气泡归属用行框并集 + 4% 内边距近似 bubble bbox。
+
+### tune 集结果（选参用）
+
+| 组 | CER | 整句 | 可疑消息 | 第二引擎替换 | 桌面投票 | 纠错 |
+|---|---|---|---|---|---|---|
+| v0.2.8 raw | 19.53% | 35.71% | — | — | — | — |
+| v0.2.8 post | 18.88% | 38.10% | — | — | — | — |
+| winrt 2x（首读） | 18.45% | 45.24% | — | — | — | — |
+| rapid orig（单引擎参考） | 11.80% | 76.19% | — | — | — | — |
+| **v3 novote** | 16.31% | 47.62% | 5 | 0 | 0 | 1 |
+| **v3 vote-garbled** | 16.31% | 47.62% | 5 | 0 | 0 | 1 |
+| v3 vote-all（上界） | 12.02% | 61.90% | 5 | 5 | 6 | 1 |
+
+tune 上的结论：`novote` 与 `vote-garbled` 完全相同 → **没有可调参数**（配置在调参前就由真实实现固定），因此 eval 只跑一次 `vote-garbled`。`vote-all` 明显更好，但它要求每条消息都跑 RapidOCR（1.4-2.1s/帧），只作为上界参考。
+
+### eval 集结果（只报一次，真实实测）
+
+| 组 | CER | 整句 | 消息数 | 可疑消息 | 第二引擎替换 | 桌面投票 | 纠错 |
+|---|---|---|---|---|---|---|---|
+| v0.2.8 raw | 37.37% | 28.26% | 46 | — | — | — | — |
+| v0.2.8 post | 37.37% | 28.26% | 46 | — | — | — | — |
+| winrt 2x（首读） | 24.84% | 47.83% | 46 | — | — | — | — |
+| rapid orig（单引擎参考） | 1.30% | 89.13% | 46 | — | — | — | — |
+| v3 novote | 21.38% | 47.83% | 46 | 9 | 0 | 0 | 0 |
+| **v3 vote-garbled（结论）** | **21.38%** | **47.83%** | 46 | 9 | 0 | 0 | 0 |
+| v3 vote-all（上界） | 17.71% | 63.04% | 46 | 9 | 8 | 2 | 0 |
+
+**相对同集 v0.2.8**：CER 37.37% → 21.38%（**−15.99pp**），整句 28.26% → 47.83%（**+19.57pp**）；逐消息 46 条中 **27 条改善、16 条持平、3 条变差**。
+
+**相对 §6 发布门槛（跨口径对照）**：21.38% ≤ 28.09%、47.83% ≥ 32.95% —— **两条门槛均满足**。注意 §6 门槛是 40 图全量集合上的数字，而 eval 是 10 个场景的硬场景子集（baseline 在 eval 上只有 37.37%/28.26%），因此上面同时列了「同集对比」与「跨口径对照」两种读法。
+
+eval 分场景：
+
+| 场景 | 消息 | v0.2.8 post CER | winrt 2x CER | rapid orig CER | v3 vote-garbled CER | v3 vote-all CER | v3 vote-garbled 整句 |
+|---|---|---|---|---|---|---|---|
+| small_font | 4 | 77.14% | 34.29% | 11.43% | 34.29% | 28.57% | 0.00% |
+| gaussian_blur | 4 | 100.00% | 100.00% | 0.00% | 75.00% | 61.11% | 0.00% |
+| scale_125 | 4 | 6.45% | 3.23% | 0.00% | 3.23% | 0.00% | 75.00% |
+| scale_175 | 4 | 3.33% | 3.33% | 0.00% | 3.33% | 3.33% | 75.00% |
+| repeat_two | 4 | 0.00% | 21.43% | 0.00% | 21.43% | 0.00% | 75.00% |
+| numbers | 4 | 20.37% | 11.11% | 0.93% | 11.11% | 11.11% | 0.00% |
+| dark_mode | 4 | 12.12% | 0.00% | 0.00% | 0.00% | 0.00% | 100.00% |
+| multi_message | 10 | 20.69% | 5.17% | 0.00% | 5.17% | 0.00% | 80.00% |
+| stretched | 4 | 105.00% | 100.00% | 0.00% | 82.50% | 82.50% | 0.00% |
+| ai_disclaimer | 4 | 34.62% | 8.97% | 1.28% | 8.97% | 5.13% | 25.00% |
+
+改善来自哪里（逐消息抽样）：
+
+- 最大改善是 **baseline 完全没读到整条消息（raw=''，CER 100%）**：`multi_message-00`「在吗」「在的」、`multi_message-01`「收到」、`ai_disclaimer-01`「明白，那我先不打扰了」——v3 的 2x 首读把这些短消息读出来了（ΔCER −100pp）。
+- 硬场景：`stretched-00`「比例不对，文字会变形」CER 160%→80%；`small_font-00`「能看清，就是有点糊」66.67%→22.22%；`gaussian_blur-00`「整个窗口都糊掉了」100%→75%。
+- 3 条变差：`repeat_two-01`「明天见」0%→100%（2x 放大后这条完全漏读，属引擎行为，不是后处理引入）；`stretched-01`「拉伸后的文字宽度变了」50%→80%；`multi_message-00`「晚上一起吃饭吗」0%→28.57%。
+
+### 气泡归属（eval / all）
+
+| 指标 | eval | all（40 图） |
+|---|---|---|
+| 消息数 | 46 | 88 |
+| 判定出左右 | 37（覆盖率 80.43%） | 69（78.41%） |
+| 左右正确率 | 100.00% | 100.00% |
+| inbound 精确率 / 召回率 | 100.00% / 82.61% | 100.00% / 77.78% |
+| outbound 精确率 / 召回率 | 100.00% / 78.26% | 100.00% / 79.07% |
+| uncertain 原因 | 7 条贴边距离不足 + 2 条 OCR 无行 | 11 + 8 |
+
+归属判定用的是「行框并集 + 4% 内边距」近似 bubble bbox（真实由脚本给 pane/气泡几何）；**判错的 0 条、uncertain 的 9 条全部是「宁可不回」**——在 OCR 漏行的消息上，这等价于漏回，属于真实场景需要权衡的保守策略。
+
+### 结论（发布门槛第 2 条）
+
+**达成**（限定在本离线等价口径与合成语料上）：v3 真实等价配置在 eval 上 `CER 21.38% / 整句 47.83%`，相对同集 v0.2.8（37.37% / 28.26%）显著改善，且同时低于/高于 §6 的发布门槛绝对值。
+
+但必须同时记录三条限制，避免过度声明：
+
+1. 本轮的增益**几乎全部来自「WinRT 首读从 orig 换成 2x」+ 文本归一化**（同集 winrt 2x 24.84% 已明显好于 baseline 37.37%）。第二引擎融合在离线等价里 **0 次替换**：9 条可疑消息虽然都匹配到了 RapidOCR 行（重合度 0.31-1.00），但 RapidOCR 文本长度都不大于 WinRT 原文（数字/时间戳场景 WinRT 带全角标点和空格），脚本层「更长才替换」门槛一次都没通过；受控纠错词表（37 词）也没覆盖这些误读，故 0 条纠错。
+2. `vote-all` 上界（17.71% / 63.04%）说明**融合的潜在空间存在**（放宽「更长」门槛或对每帧跑 RapidOCR 可再降 3.7pp），但每帧 1.4-2.1s 的成本不适合在线逐帧执行——是否值得改写门槛，需要真实微信数据支撑。
+3. 离线等价无 4x 帧、无真实 pane/消息分组、语料仅 20 图/46 条消息：结论方向可信，绝对数字需在真实微信截图与更大语料上复测后再对外引用。
+
+耗时（本次本机）：tune 组 113s、eval 组 121s、all 组 264s（均含 6 组引擎识别 + baseline + v3 三配置）；v3 后处理本身是纯 JS、毫秒级，瓶颈仍在 RapidOCR（eval：P50 1463ms / P95 2107ms，模型加载 774ms；WinRT 2x：P50 35ms / P95 53ms）。
 
 ---
 
@@ -261,28 +368,35 @@ script I/O 换成注入的帧候选，**决策顺序、阈值、选优函数一�
 # 1) 生成语料（固定 seed，可重复生成同样的 40 张）
 python scripts/ocr/gen_corpus.py
 
-# 2) 全量基准（两个引擎 × 3 个变体 + baseline 组），约 4 分钟
-node scripts/ocr/bench.mjs --engine=all
+# 2) 全量基准（2 引擎 × 3 变体 + v0.2.8 baseline + v3 三配置），约 4-5 分钟
+node scripts/ocr/bench.mjs --engine=all --pipeline=all
 
-# 3) 冒烟/子集
+# 3) tune/eval 拆分复跑（v3 结论只看 eval；tune 用来调试）
+node scripts/ocr/bench.mjs --engine=all --pipeline=all --split=tune
+node scripts/ocr/bench.mjs --engine=all --pipeline=all --split=eval
+
+# 4) 冒烟/子集
 node scripts/ocr/bench.mjs --engine=winrt --limit=6 --scenario=clear,dark_mode
 node scripts/ocr/bench.mjs --engine=rapid --pipeline=baseline --limit=10
+node scripts/ocr/bench.mjs --engine=all --pipeline=v3 --split=eval --limit=4 --out-dir=%TEMP%\ocr-bench-smoke
 # 自定义结果目录（避免覆盖工作区结果）
 node scripts/ocr/bench.mjs --engine=winrt --limit=2 --out-dir=%TEMP%\ocr-bench-smoke
 
-# 4) 单独跑一次 WinRT helper（单图）
+# 5) 单独跑一次 WinRT helper（单图）
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/pwsh/ocr-winrt.ps1 -Path test/fixtures/ocr-corpus/images/clear-00.png
 ```
 
 输出：
 
-- `results/<时间戳>-<engine>-<variant>.json`：每次（引擎×变体）一份，含 `meta`（环境/命令/语料信息）、`images`（每图识别行 + 指标 + perMessage）、`totals`（总指标）、`byScenario`（分场景）。
-- `results/<时间戳>-baseline-v028-orig.json`：baseline raw/post 对照（`--pipeline=baseline|all` 时生成）。
-- `results/summary.json`：本次所有 run 的汇总，供文档/CI 取值。
+- `results/<时间戳>-<split>-<engine>-<variant>.json`：每次（引擎×变体）一份，含 `meta`（环境/命令/split/语料信息）、`images`（每图识别行 + 指标 + perMessage）、`totals`（总指标）、`byScenario`（分场景）。
+- `results/<时间戳>-<split>-baseline-v028-orig.json`：baseline raw/post 对照（`--pipeline=baseline|all` 时生成）。
+- `results/<时间戳>-<split>-v3-<config>.json`：v3 三配置（`novote` / `vote-garbled` / `vote-all`）的 CER/整句 + 事件计数 + 气泡归属（`--pipeline=v3|all` 时生成）。
+- `results/summary.json`：最近一次 run 的所有 run 汇总，供文档/CI 取值。
+- 仓库里保留了 `2026-10-31_15-26-56-eval-*`（§6.5 结论依据）与 `2026-10-31_15-28-57-all-*`（最新全量）两组共 20 份 JSON + `summary.json`；更早的 run 与 `results/derived/`（派生变体图，可重建）已移出仓库。
 
-参数：`--engine=winrt|rapid|all`、`--limit=N`、`--scenario=a,b`、`--pipeline=raw|baseline|all`、`--out-dir=<path>`、`--python=<path>`。单图失败不会中断整体（失败记录写入 JSON 的 `ok:false`）。
+参数：`--engine=winrt|rapid|all`、`--pipeline=raw|baseline|v3|all`、`--split=all|tune|eval`、`--limit=N`、`--scenario=a,b`、`--out-dir=<path>`、`--python=<path>`。v3 组需要同时有 winrt 与 rapid 结果。单图失败不会中断整体（失败记录写入 JSON 的 `ok:false`）。
 
-全量耗时参考（本机）：变体图生成 80 张 ≈1.6s；winrt 3 组 × 40 张 ≈13.4/14.1/13.7s；rapid 3 组 × 40 张 ≈58.3/74.1/62.3s；总 **237.5s**。
+耗时参考（本机）：变体图生成 40 张 ≈0.86s（全量 80 张 ≈1.7s）；winrt 3 组 × 40 张 ≈13.1-14.0s；rapid 3 组 × 40 张 ≈58.3-74.1s；含 v3 组的全量 run 实测 **264s**（另一次无 v3 时为 237.5s，差异来自机器负载）；tune / eval 各约 113s / 121s。
 
 ---
 
@@ -299,22 +413,29 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/pwsh/ocr-winrt.p
 9. **行级指标对切行策略敏感**：引擎把一条 GT 行切成两行时记为 fragment（不算假消息、计入 precision 分母），指标仍会略吃亏；这是刻意的保守口径。
 10. **baseline 组的 4x 帧未采集**（见 §6 口径说明），真实 v0.2.8 的 4x/2x 双帧投票收益未测。
 11. **单机单次测量**：P50/P95 未做多次重复与置信区间；RapidOCR 首次加载模型耗时（0.8-1.0s）单独记录，但不同机器差异可能很大。
-12. **未接入真实 UI 坐标分组**：baseline 分组用 GT bbox 近似，真实 pipeline 按 UI 元素坐标分组；分组误差会轻微影响 baseline 数字。
+12. **未接入真实 UI 坐标分组**：baseline / v3 分组都用 GT bbox 近似，真实 pipeline 按 UI 元素坐标分组；分组误差会轻微影响数字。
+13. **v3 离线等价有 5 处偏差**（见 §6.5）：无 4x 帧重读、消息分组用 GT bbox、投票按消息粒度而非整段文本、pane 取整图宽度、气泡归属用行框并集近似；真实 pipeline 的定位/分组误差未计入。
+14. **tune/eval 规模小**：各 10 场景 / 20 图 / 42-46 条消息，单条消息就能移动整句准确率约 2pp；结论方向可信，具体数值需扩量复测。
+15. **第二引擎融合与受控纠错在本语料几乎没触发**（eval：替换 0、纠错 0；tune：纠错仅 1 条），它们的独立收益**未被本 bench 证明**；`vote-all` 上界不能当成在线可达结果。
+16. **归属指标是近似**：pane 取整图宽度、bubble bbox 用行框并集 + 4% 内边距；真实脚本提供窗口/气泡几何，判左右准确率会受此近似影响。
 
 ---
 
 ## 9. 本次改动范围
 
-只新增文件，未修改任何既有文件：
+新增/修改范围（都在允许目录内，未 commit）：
 
 ```text
 scripts/ocr/gen_corpus.py        # 合成语料生成器
 scripts/ocr/engines.mjs          # 引擎适配层（WinRT / RapidOCR / 预处理 / 文本工具）
-scripts/ocr/bench.mjs            # 基准编排 + 指标 + 结果落盘
+scripts/ocr/bench.mjs            # 基准编排 + 指标 + 结果落盘（本次扩展 --split 与 --pipeline=v3）
 scripts/ocr/baseline-v028.mjs    # v0.2.8 后处理逐行转写（A/B baseline）
+scripts/ocr/v3-pipeline.mjs      # v3 管线离线等价（normalize/correction/vote 纯函数转写）
 scripts/pwsh/ocr-winrt.ps1       # WinRT OCR helper（PS 5.1，UTF-8 带 BOM）
-test/fixtures/ocr-corpus/        # 40 张合成图 + manifest.json + results/
+test/fixtures/ocr-corpus/        # 40 张合成图 + manifest.json + results/（eval 与 all 两组 + summary.json）
 docs/OCR-BENCHMARK.md            # 本文
 ```
 
-`scripts/py/rapid_ocr.py`、`scripts/pwsh/wechat-uia.ps1`、`src/**`、`package.json`、`.gitignore` 等既有文件均未改动（仓库工作区里其它未提交改动来自并行任务，与本目录无关）。
+- `bench.mjs` 是 `scripts/ocr/` 内的既有文件，本任务按范围扩展了 `--split` 与 `--pipeline=v3`。
+- `test/fixtures/ocr-corpus/results/` 只保留最新全量 run 与 eval 证据组；`derived/`（派生变体图，可由 manifest 重建）不入库。
+- `src/**`、`scripts/pwsh/wechat-uia.ps1`、`scripts/py/rapid_ocr.py`、`package.json`、`.gitignore` 等既有文件均未改动（仓库工作区里其它未提交改动来自并行任务，与本目录无关）。
