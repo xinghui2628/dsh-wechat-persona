@@ -80,6 +80,9 @@ export class DesktopChannel {
     this.lastRows = new Map();
     this.lastActiveContact = '';
     this.lastActiveContactAt = 0;
+    // 当前打开的会话收到新消息时不会出现未读红点（聊天窗口已打开=已读），
+    // 列表里的绿底选中行文字 OCR 也常常认不出来，所以对最近交互的会话做低频轮询读取，避免漏回。
+    this.lastOpenReadAt = new Map();
     this.inFlight = new Set();
     // 自己刚发出的文本（按联系人）：防止把「自己的回复」误判成对方的新消息。
     this.lastSentText = new Map();
@@ -289,14 +292,37 @@ export class DesktopChannel {
       }
     }
 
+    // 当前打开的会话收到新消息时列表不会有未读红点（聊天窗口已打开=已读），
+    // 列表 OCR 里的绿底选中行文字也常常识别不出来，所以对「当前正在看的会话」做低频轮询读取，
+    // 否则「回完一条后对方继续发」会一直漏回。脚本用 -NoSearch 只读已打开的聊天，绝不会 Ctrl+F 搜索。
+    const selectedRow = parsed.rows.find((row) => row && row.found && row.selected);
+    const openName = selectedRow ? String(selectedRow.name) : '';
+    const noSearchNames = new Set();
+    if (
+      openName &&
+      !selectedRow.unread &&
+      Date.now() - (this.lastOpenReadAt.get(openName) || 0) > 8000 &&
+      !needRead.includes(openName)
+    ) {
+      needRead.push(openName);
+      noSearchNames.add(openName);
+      this.lastOpenReadAt.set(openName, Date.now());
+      this.logger.debug?.(`[desktop] 当前打开的会话低频轮询读取：${openName}`);
+    }
+
     for (const name of needRead.filter(Boolean)) {
       if (this.stopped) return;
-      const read = await this.runScript('wechat-uia', [
+      const args = [
         '-Action', 'read',
         '-WindowTitle', cfg.windowTitle || '微信',
         '-Contact', name,
         '-MaxMessages', '10',
-      ]);
+      ];
+      if (noSearchNames.has(name)) {
+        // 只读当前已经打开的会话：脚本在标题与 CurrentContact 都对不上时直接返回 ok:false，不做 Ctrl+F。
+        args.push('-NoSearch', '-CurrentContact', name);
+      }
+      const read = await this.runScript('wechat-uia', args);
       const data = this.parseJson(read);
       if (!data || data.ok !== true || !Array.isArray(data.messages)) {
         this.logger.warn?.(`[desktop] read ${name} 失败 code=${read.code} ${String(read.stderr || '').slice(0, 160)}`);

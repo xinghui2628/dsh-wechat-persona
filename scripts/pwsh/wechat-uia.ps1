@@ -47,7 +47,9 @@ param(
     [int]$RowLeft = 0,
     [int]$RowHeight = 0,
     # 可选：右侧聊天面板起点占窗口宽度比例；0 = 用环境变量/默认 0.62。
-    [double]$PaneLeftRatio = 0
+    [double]$PaneLeftRatio = 0,
+    # 可选：read 时只读“当前已打开的会话”，标题/CurrentContact 都对不上时绝不 Ctrl+F 搜索（避免抢前台、搜索框闪烁）。
+    [switch]$NoSearch
 )
 
 $ErrorActionPreference = 'Stop'
@@ -1343,7 +1345,7 @@ function Get-ListRows([IntPtr]$Hwnd, [string[]]$Names) {
                 if ($score -gt $bestScore) { $bestScore = $score; $bestRd = $rd }
             }
             if (-not $bestRd -or $bestScore -lt 10) {
-                $rows += @{ name = $name; found = $false; unread = $false; preview = '' }
+                $rows += @{ name = $name; found = $false; unread = $false; preview = ''; selected = $false }
                 continue
             }
             $usedAnchors[[int]$bestRd.anchor] = $true
@@ -1353,7 +1355,7 @@ function Get-ListRows([IntPtr]$Hwnd, [string[]]$Names) {
             $unread = Test-RedBadge $bmp $scale ([math]::Max(0, $nx - 62)) ([math]::Max(0, $rt + 6)) ([math]::Max(0, $nx - 14)) ($rt + 28)
             $preview = ''
             if ($bestRd.previewLine) { $preview = (([string]$bestRd.previewLine.text) -replace '\s+', '').Trim() }
-            $rows += @{ name = $name; found = $true; unread = [bool]$unread; preview = $preview; top = $rt; left = [int]$nx; height = [int][math]::Round($pitch) }
+            $rows += @{ name = $name; found = $true; unread = [bool]$unread; preview = $preview; top = $rt; left = [int]$nx; height = [int][math]::Round($pitch); selected = [bool]$bestRd.selected }
         }
         # 二遍：整栏 OCR 把名字认成乱码（如 张三→张，三）时，按行单独裁名字条重识别后再匹配。
         $failedRows = @($rows | Where-Object { -not $_.found })
@@ -1389,6 +1391,7 @@ function Get-ListRows([IntPtr]$Hwnd, [string[]]$Names) {
                 $newRow = @{
                     name = $fn; found = $true; unread = $false; preview = ''
                     top = [int][math]::Max(0, ($bestRd.anchor - 26)); left = [int](0.35 * $listReal); height = [int][math]::Round($pitch)
+                    selected = [bool]$bestRd.selected
                 }
                 if ($bestRd.previewLine) { $newRow.preview = (([string]$bestRd.previewLine.text) -replace '\s+', '').Trim() }
                 for ($i = 0; $i -lt $rows.Count; $i++) {
@@ -1657,8 +1660,28 @@ if ($hwnd -ne [IntPtr]::Zero) { Ensure-UsableWindow $hwnd }
         }
     }
 
-    $snap = Enter-Chat $hwnd
-    Write-Debug-Log ("进入聊天 via=" + $snap.via + " exact=" + $snap.exact + " contact=" + $Contact)
+    if ($Action -eq 'read' -and $NoSearch) {
+        # 只认“当前已经打开的会话”：标题 OCR 命中、或插件通过 list 的绿底选中行传回的 CurrentContact 与目标一致；
+        # 两者都不成立时直接放弃读取，绝不 Ctrl+F 搜索（避免抢前台和搜索框闪烁）。
+        $openSnap = Get-WindowSnapshot $hwnd 'read-nosearch'
+        $openHit = [bool](Test-IsTargetChat $openSnap $Contact) -or [bool](Test-IsTargetChatLoose $openSnap $Contact)
+        if (-not $openHit -and -not [string]::IsNullOrWhiteSpace($CurrentContact)) {
+            if ((Normalize-Text $CurrentContact) -eq (Normalize-Text $Contact)) {
+                $openHit = $true
+                Write-Debug-Log ("NoSearch 读取用 CurrentContact 信任判定 contact=" + $Contact)
+            }
+        }
+        if (-not $openHit) {
+            Write-Debug-Log ("NoSearch 读取：当前未打开目标聊天 contact=" + $Contact)
+            Write-Result @{ ok = $false; error = ('当前未打开「' + $Contact + '」的聊天（NoSearch），已跳过读取') }
+            exit 0
+        }
+        $snap = @{ geo = $openSnap.geo; lines = $openSnap.lines; exact = $true; via = 'nosearch-open' }
+        Write-Debug-Log ("进入聊天 via=nosearch-open contact=" + $Contact)
+    } else {
+        $snap = Enter-Chat $hwnd
+        Write-Debug-Log ("进入聊天 via=" + $snap.via + " exact=" + $snap.exact + " contact=" + $Contact)
+    }
 
     $chatConfirmed = [bool]$snap.exact -or ($snap.via -eq 'search')
 
