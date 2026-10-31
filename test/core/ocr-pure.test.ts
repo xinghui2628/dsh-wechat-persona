@@ -166,7 +166,7 @@ describe('ocr correction 受控纠错', () => {
     const samples = [
       '我的手机号是13800001111',
       '转账 128.50 元给你',
-      'wxid_abc123def 是我的',
+      'wxid_placeholder 是我的',
       '邮箱 a1b2@example.com',
       '验证码 889900 别告诉别人',
       '2026-10-31 见',

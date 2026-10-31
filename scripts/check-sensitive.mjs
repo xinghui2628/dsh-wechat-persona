@@ -62,6 +62,12 @@ const EMAIL_DOMAIN_ALLOW = [
   'example.com', 'example.org', 'example.net',
 ]
 
+/** 允许的合成占位手机号（测试夹具/文档示例；均为非真实号段的重复数字） */
+const PHONE_ALLOW = new Set([
+  '13800000000', '13800001111', '13800138000',
+  '13900000000', '18800000000', '18888888888',
+])
+
 /** 允许的姓名 / 昵称（虚构测试名 + 微信官方账号 + 常见非姓名短词） */
 const NAME_ALLOW = new Set([
   // 文档/测试里长期使用的虚构名（0.2.x 起沿用，均为示例化名）
@@ -157,6 +163,7 @@ const RULES = [
     test(line) {
       const out = []
       for (const m of line.matchAll(/(?<![0-9A-Za-z])1[3-9]\d{9}(?![0-9A-Za-z])/gu)) {
+        if (PHONE_ALLOW.has(m[0])) continue
         out.push({ index: m.index, length: m[0].length, masked: maskSecret(m[0]) })
       }
       return out
