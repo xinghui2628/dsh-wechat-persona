@@ -94,6 +94,74 @@ export function pickBetterText(a, b) {
   return y.length > x.length ? y : x;
 }
 
+// ── 常用词字典纠错（性价比最高的离线方案）──────────────────────────────
+// Windows OCR 对常见词里的形近字容易认错（大肥鱼→大吧鱼、幽默度→幽黑度）。
+// 用一份小规模、强领域的词典做「同长度、只差一个字」的受控替换：只改高频词，
+// 不动普通文本，避免误伤；词表可由调用方追加（例如白名单联系人名）。
+export const DEFAULT_OCR_DICT = [
+  '大肥鱼', '本鱼', '幽默度', '幽默', '暗号', '哦鲸鲸', '拉高', '表情包', '红包', '转账',
+  '聊天', '微信', '测试', '机器人', '人格', '分身', '白名单', '空闲', '预算', '审计',
+  '消息', '好友', '语音', '图片', '截图', '识别', '误读', '形近字', '吐槽', '键盘',
+];
+
+/** 用常用词词典纠正 OCR 形近字（只替换高频词，同长度且至多差一个字）。 */
+export function correctOcrText(text, extraWords = []) {
+  const src = String(text || '');
+  if (!src) return src;
+  // 只对长度≥3的词做「差一个字」替换：2 字词只差一个字就等于改掉一半，
+  // 太容易误伤正常文本（如「今天」被改成「聊天」），所以 2 字词只做精确匹配（等于不替换）。
+  const words = [...new Set([...(DEFAULT_OCR_DICT || []), ...(extraWords || [])])]
+    .filter((w) => typeof w === 'string' && w.length >= 3 && w.length <= 6 && /^[\u4e00-\u9fff]+$/.test(w))
+    .sort((a, b) => b.length - a.length);
+  const chars = src.split('');
+  const used = new Array(chars.length).fill(false);
+  for (const word of words) {
+    const len = word.length;
+    for (let i = 0; i + len <= chars.length; i++) {
+      let conflict = false;
+      for (let k = 0; k < len; k++) { if (used[i + k]) { conflict = true; break; } }
+      if (conflict) continue;
+      const frag = chars.slice(i, i + len).join('');
+      if (frag === word) continue;
+      if (!/^[\u4e00-\u9fff]+$/.test(frag)) continue;
+      let matched = 0;
+      for (let k = 0; k < len; k++) { if (frag[k] === word[k]) matched++; }
+      if (matched < len - 1) continue;
+      for (let k = 0; k < len; k++) { chars[i + k] = word[k]; used[i + k] = true; }
+    }
+  }
+  return chars.join('');
+}
+
+/** 两段文本的字符重合度（多重集交集*2/总长），用于双引擎 OCR 结果投票。 */
+export function textOverlapRatio(a, b) {
+  const x = String(a || '').replace(/[\s\p{P}]+/gu, '');
+  const y = String(b || '').replace(/[\s\p{P}]+/gu, '');
+  if (!x || !y) return 0;
+  const counts = new Map();
+  for (const ch of x) counts.set(ch, (counts.get(ch) || 0) + 1);
+  let common = 0;
+  for (const ch of y) {
+    const n = counts.get(ch) || 0;
+    if (n > 0) { counts.set(ch, n - 1); common++; }
+  }
+  return (2 * common) / (x.length + y.length);
+}
+
+/** 双引擎投票：系统 OCR 与第二引擎（RapidOCR）文本重合度高时，取更完整/噪声更低的一份。 */
+export function mergeEngineVote(winText, engineText) {
+  const win = String(winText || '').trim();
+  const eng = String(engineText || '').trim();
+  if (!eng) return win;
+  if (!win) return eng;
+  if (textOverlapRatio(win, eng) < 0.35) return win;
+  const sw = ocrNoiseScore(win);
+  const se = ocrNoiseScore(eng);
+  if (eng.length > win.length + 1) return eng;
+  if (eng.length >= win.length && se < sw - 0.5) return eng;
+  return win;
+}
+
 export class DesktopChannel {
   id: any = 'desktop';
   // 桌面视觉驱动目前只能发文本：表情/图片/语音没有 UIA 实现。
@@ -241,7 +309,7 @@ export class DesktopChannel {
    * 第一遍不确定就不硬猜，多读一帧再投票，比拿错字去回复便宜得多。
    */
   async recheckGarbledText(name, args, text) {
-    if (!looksGarbled(text)) return text;
+    if (!looksGarbled(text)) return correctOcrText(text, this.contactNames());
     let best = text;
     // 多帧投票：可疑时换不同放大倍数各读一帧，取噪声最低/最完整的一份。
     // 4 倍对形近字更准，2 倍对整体偏糊的窗口更稳；两帧都差就保留原文本，绝不空手丢消息。
@@ -265,7 +333,25 @@ export class DesktopChannel {
         best = chosen;
       } catch { /* 单帧失败不影响其他帧 */ }
     }
-    return best;
+    // 双引擎投票：多帧系统 OCR 仍可疑时，让脚本调用第二引擎（RapidOCR）独立识别同一截图，
+    // 两路结果重合度高时取更完整的一份；python/依赖缺失时脚本静默回退，不影响主流程。
+    if (looksGarbled(best)) {
+      try {
+        const retry = await this.runScript('wechat-uia', [...args, '-SecondOcr']);
+        const data = this.parseJson(retry);
+        if (data && data.ok === true && Array.isArray(data.messages)) {
+          for (const message of data.messages) {
+            const item = String(message?.text || '').trim();
+            if (!item || this.isOwnText(name, item)) continue;
+            best = pickBetterText(best, mergeEngineVote(best, item));
+          }
+          if (!looksGarbled(best)) {
+            this.logger.debug?.(`[desktop] OCR 双引擎投票选优：${name} 「${text.slice(0, 24)}」→「${best.slice(0, 24)}」`);
+          }
+        }
+      } catch { /* 第二引擎不可用时保留原结果 */ }
+    }
+    return correctOcrText(best, this.contactNames());
   }
 
   contactNames() {
@@ -454,7 +540,7 @@ export class DesktopChannel {
       const useFull = fullText.length >= preview.length || fullText.includes(preview) || preview.includes(fullText);
       this.emitMessage(item.name, useFull ? fullText : preview, verified.id);
     }
-    for (const item of previewFallbacks) this.emitPreview(item.name, item.preview);
+    for (const item of previewFallbacks) this.emitPreview(item.name, correctOcrText(item.preview, this.contactNames()));
 
     for (const name of needRead.filter(Boolean)) {
       if (this.stopped) return;

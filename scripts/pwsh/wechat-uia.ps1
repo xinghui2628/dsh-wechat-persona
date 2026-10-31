@@ -36,7 +36,7 @@
 
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory = $true)][ValidateSet('send', 'read', 'list')][string]$Action,
+    [Parameter(Mandatory = $true)][ValidateSet('send', 'read', 'list', 'shot')][string]$Action,
     [string]$WindowTitle = '微信',
     [string]$Contact = '',
     [string]$Contacts = '',
@@ -51,7 +51,11 @@ param(
     # 可选：read 时只读“当前已打开的会话”，标题/CurrentContact 都对不上时绝不 Ctrl+F 搜索（避免抢前台、搜索框闪烁）。
     [switch]$NoSearch,
     # 可选：read 时覆盖本次截图放大倍数（0=默认；4=更高倍最近邻放大，用于二次识别投票）。
-    [int]$Upscale = 0
+    [int]$Upscale = 0,
+    # 可选：read 时调用第二 OCR 引擎（RapidOCR）对同一截图再识别一次，和系统 OCR 结果合并投票。
+    [switch]$SecondOcr,
+    # 可选：shot 动作的截图输出路径（默认写到临时目录）。
+    [string]$OutPath = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -687,6 +691,24 @@ function Merge-OcrLines($Lines) {
         $merged.Add($current)
     }
     return $merged.ToArray()
+}
+
+# 两段文本的字符重合度（多重集交集*2/总长），用于双引擎 OCR 结果投票。
+function Get-TextOverlap([string]$A, [string]$B) {
+    $a = Normalize-Text $A
+    $b = Normalize-Text $B
+    if ([string]::IsNullOrEmpty($a) -or [string]::IsNullOrEmpty($b)) { return 0.0 }
+    $counts = @{}
+    foreach ($ch in $a.ToCharArray()) {
+        $k = [string]$ch
+        if ($counts.ContainsKey($k)) { $counts[$k] = $counts[$k] + 1 } else { $counts[$k] = 1 }
+    }
+    $common = 0
+    foreach ($ch in $b.ToCharArray()) {
+        $k = [string]$ch
+        if ($counts.ContainsKey($k) -and $counts[$k] -gt 0) { $counts[$k] = $counts[$k] - 1; $common++ }
+    }
+    return (2.0 * $common) / ($a.Length + $b.Length)
 }
 
 # 从聊天面板提取“对方发来的消息”候选（右侧自己发的气泡按中心点过滤掉）。
@@ -1535,6 +1557,17 @@ if ($hwnd -ne [IntPtr]::Zero) { Ensure-UsableWindow $hwnd }
         $cursorSaved = $true
     } catch {}
 
+    # ── shot：保存当前微信窗口截图，供第二 OCR 引擎（RapidOCR）识别，与系统 OCR 形成双引擎投票 ──
+    if ($Action -eq 'shot') {
+        $shotPath = $OutPath
+        if ([string]::IsNullOrWhiteSpace($shotPath)) {
+            $shotPath = Join-Path $env:TEMP ("wxuia-shot-" + (Get-Date -Format 'yyyyMMddHHmmssfff') + ".png")
+        }
+        Get-WindowShot $hwnd $shotPath
+        Write-Result @{ ok = $true; path = $shotPath }
+        exit 0
+    }
+
     # ── list：一次截图拿到白名单联系人的会话行+未读红点（不打开聊天） ──
     if ($Action -eq 'list') {
         $names = @()
@@ -1799,6 +1832,59 @@ if ($hwnd -ne [IntPtr]::Zero) { Ensure-UsableWindow $hwnd }
 
     # ── read ────────────────────────────────────────────────────────────
     $candidates = @(Get-InboundCandidates $snap)
+
+    # 双引擎投票：第二引擎（RapidOCR）独立识别同一截图；只在「重叠度高且更完整」时替换候选文本，
+    # 这样两套模型同时认错的概率远低于单引擎，且 python/依赖缺失时静默回退系统 OCR。
+    if ($Action -eq 'read' -and $SecondOcr) {
+        try {
+            $ocrShot = Join-Path $env:TEMP ("wxuia-ocr-" + (Get-Date -Format 'yyyyMMddHHmmssfff') + ".png")
+            $ocrGeo = Get-WindowShot $hwnd $ocrShot
+            $ocrScale = 1.0
+            try { $ocrScale = [double]$ocrGeo.scale } catch { }
+            if ($ocrScale -le 0) { $ocrScale = 1.0 }
+            $pyScript = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\py\rapid_ocr.py'))
+            $rawJson = (& python -X utf8 $pyScript $ocrShot 2>$null | Out-String)
+            $second = $rawJson | ConvertFrom-Json
+            if ($second -and $second.ok -and @($second.lines).Count -gt 0) {
+                $mergedCount = 0
+                foreach ($c in $candidates) {
+                    $oldText = [string]$c.text
+                    $cTop = [double]$c.top
+                    $best = $null
+                    $bestOverlap = 0.0
+                    # 第一轮：只认同一条消息（行 y 坐标接近）的第二引擎结果，避免把别的消息张冠李戴。
+                    foreach ($ln in @($second.lines)) {
+                        $lt = [string]$ln.text
+                        if ([string]::IsNullOrWhiteSpace($lt)) { continue }
+                        $lnTop = [double]$ln.y / $ocrScale
+                        if ([math]::Abs($lnTop - $cTop) -gt 26.0) { continue }
+                        $ov = Get-TextOverlap $oldText $lt
+                        if ($ov -gt $bestOverlap) { $bestOverlap = $ov; $best = $lt }
+                    }
+                    # 第二轮兜底：万一行坐标因滚动/缩放对不上，改用全局高重合度匹配（更严格）。
+                    if ($null -eq $best -or $bestOverlap -lt 0.35) {
+                        foreach ($ln in @($second.lines)) {
+                            $lt = [string]$ln.text
+                            if ([string]::IsNullOrWhiteSpace($lt)) { continue }
+                            $ov = Get-TextOverlap $oldText $lt
+                            if ($ov -gt $bestOverlap) { $bestOverlap = $ov; $best = $lt }
+                        }
+                    }
+                    if ($null -ne $best -and $bestOverlap -ge 0.35 -and $best.Length -gt $oldText.Length) {
+                        Write-Debug-Log ("SecondOcr 合并 top=" + [int]$c.top + " overlap=" + [math]::Round($bestOverlap, 2) + " old=" + $oldText + " new=" + $best)
+                        $c.text = $best
+                        $mergedCount++
+                    }
+                }
+                Write-Debug-Log ("SecondOcr 完成 merged=" + $mergedCount)
+            } else {
+                Write-Debug-Log ("SecondOcr 不可用：" + [string]$second.error)
+            }
+            Remove-Item $ocrShot -Force -ErrorAction SilentlyContinue
+        } catch {
+            Write-Debug-Log ("SecondOcr 异常，保留系统 OCR 结果：" + $_.Exception.Message)
+        }
+    }
     if (-not $chatConfirmed) {
         # 标题 OCR 不可靠时，用左侧列表预览做二次确认，避免读错人串聊。
         if (-not (Test-ChatByListPreview $snap $Contact)) {

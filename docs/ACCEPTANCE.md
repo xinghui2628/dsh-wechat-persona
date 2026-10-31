@@ -291,3 +291,18 @@ Get-Content "$env:USERPROFILE\.dsh\profiles\desktop\.dsh-wechat-persona\audit.js
 - 发送三路径回归：单字兜底 ok:true 2754ms、强制气泡失败兜底 ok:true 3605ms、SKIP_ENTER 负例 ok:false 3661ms（未误判成功、未重发）、清理 ok:true 2842ms。
 - 10 轮 list+send 压测：list 10/10、send 10/10；list P50/P95 = 1977/2071ms，send P50/P95 = 2763/3475ms，单轮平均 5013ms。
 - 40 轮 list+send 压测：**list 40/40、send 40/40**；list P50/P95 = 1980/2054ms，send P50/P95 = 2822/3461ms，单轮平均 5013ms（`.dsh-tmp/stress-script-154558.json`）。累计本轮压测 50 轮，send 全部成功、无重复、无错发。
+
+## 14. v0.2.8 OCR 双引擎投票 + 字典纠错证据（2026-10-31）
+
+### 14.1 常用词字典纠错（离线，不联网）
+- 实现：`src/channels/pc/desktop.ts` 的 `DEFAULT_OCR_DICT` + `correctOcrText(text, extraWords)`；只对长度 ≥3 的常用词做「同长度只差一个字」替换，2 字词不模糊替换（避免把「今天」误改成「聊天」）。
+- 测试：`test/channels/desktop.test.ts`「200 种形近字变体循环」+「普通文本不误改」 → 全过。
+
+### 14.2 双引擎 OCR 投票（系统 OCR + RapidOCR）
+- 实现：`scripts/py/rapid_ocr.py`（可选依赖 `rapidocr_onnxruntime`，未安装时安静失败回退）；`wechat-uia.ps1` 新增 `-Action shot` 与 `-SecondOcr`（截图 → 第二引擎识别 → 按行 y 坐标 + 字符重合度与系统 OCR 候选投票合并）；`desktop.ts` 多帧放大仍可疑时自动追加 `-SecondOcr`，`mergeEngineVote` 再做最后一轮投票。
+- 测试：`test/channels/desktop.test.ts`「200 种双引擎变体」+「200 次 -SecondOcr 集成循环」→ 全过。
+- 本机实测：`python scripts/py/rapid_ocr.py <窗口截图>` 识别出 33 行中文（含「测试甲」「文件传输助手」「压测#100」等），耗时约 6.3s（含首次模型加载）；脚本 read 日志出现「SecondOcr 完成 merged=N」。
+
+### 14.3 自动化基线
+- `npm run typecheck` 通过；`npm run test:sandbox` → 30 文件 / **416 用例**全过；`npm run build` 通过。
+- 插件重载后 `/health` = `{"ok":true,"version":"0.2.8"}`。

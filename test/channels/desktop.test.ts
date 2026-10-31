@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 
 import {
   DesktopChannel,
+  correctOcrText,
+  mergeEngineVote,
   parseIdleMs,
   type DesktopScriptName,
   type DesktopScriptResult,
@@ -552,5 +554,78 @@ describe('OCR 二次识别投票（可疑文本放大重读，选更可信的一
     expect(harness.messages[0].text).toBe('我想拉高你的幽默度')
     const readCalls = recorder.calls.filter((call) => call.script === 'wechat-uia' && call.args.includes('read'))
     expect(readCalls).toHaveLength(1)
+  })
+})
+
+describe('OCR 常用词字典纠错（离线，不联网）', () => {
+  it('200 种形近字变体都能纠正回常用词', () => {
+    const variants = ['吧', '把', '爸', '巴', '渔', '鱼', '予', '喻', '黑', '墨', '默', '漠', '莫', '末', '沫', '觅']
+    for (let i = 0; i < 200; i += 1) {
+      const ch = variants[i % variants.length]
+      const garbled = `我想拉高你的幽${ch}度，第${i}次测试`
+      // 可能出现两种变体：替换「默」或替换「度」；两种都应回到「幽默度」。
+      const garbled2 = `我想拉高你的幽默${variants[(i + 3) % variants.length]}，第${i}次测试`
+      expect(correctOcrText(garbled), `第 ${i} 次`).toBe(`我想拉高你的幽默度，第${i}次测试`)
+      expect(correctOcrText(garbled2), `第 ${i} 次(尾字)`).toBe(`我想拉高你的幽默度，第${i}次测试`)
+      expect(correctOcrText(`咱俩定个暗号，我说大${variants[(i + 5) % variants.length]}鱼`), `第 ${i} 次(人名)`)
+        .toBe('咱俩定个暗号，我说大肥鱼')
+    }
+  })
+
+  it('普通文本不会被误改', () => {
+    const samples = ['今天天气真好', '晚上吃点什么', '我去上班了', '哈哈哈笑死']
+    for (const sample of samples) expect(correctOcrText(sample)).toBe(sample)
+    // 额外词表（例如白名单联系人名）也能参与纠错
+    expect(correctOcrText('张三在吗', ['张三'])).toBe('张三在吗')
+  })
+})
+
+describe('OCR 双引擎投票（系统 OCR + RapidOCR 第二引擎）', () => {
+  it('200 种变体：第二引擎更完整时取第二引擎结果', () => {
+    const noise = ['讠', '刂', '亻', '扌', '氵', '丨', '丿']
+    for (let i = 0; i < 200; i += 1) {
+      const clean = `我想拉高你的幽默度，第${i}次测试`
+      const garbled = `我想拉高你的幽${noise[i % noise.length]}，第${i}次测试`
+      const merged = mergeEngineVote(garbled, clean)
+      expect(merged, `第 ${i} 次`).toBe(clean)
+      // 第二引擎给出无关文本时，不能覆盖原结果（宁可不投）。
+      expect(mergeEngineVote(clean, '完全不同的另一句话'), `第 ${i} 次(无关)`).toBe(clean)
+    }
+  })
+
+  it('200 次：多帧仍可疑时调用 -SecondOcr 并以第二引擎结果投递', async () => {
+    for (let i = 0; i < 200; i += 1) {
+      const clean = `我想拉高你的幽默度，第${i}次测试`
+      const garbled = `我想拉高你的幽讠，第${i}次测试`
+      const recorder = recordRunner((script, args) => {
+        if (script === 'user-activity') return USER_IDLE
+        if (script === 'wechat-uia' && args.includes('read')) {
+          const second = args.includes('-SecondOcr')
+          return {
+            code: 0,
+            stdout: JSON.stringify({
+              ok: true,
+              messages: [{ id: second ? `pc-second-${i}` : `pc-garble-${i}`, text: second ? clean : garbled, receivedAt: 1_700_000_000_000 + i }],
+            }),
+            stderr: '',
+          }
+        }
+        return {
+          code: 0,
+          stdout: JSON.stringify({
+            ok: true,
+            rows: [{ name: '张三', found: true, unread: true, preview: '在吗', top: 100, left: 160, height: 80, selected: true }],
+          }),
+          stderr: '',
+        }
+      })
+      const harness = makeDesktopHarness({ runScript: recorder.runner })
+      harness.channel.handler = (message) => harness.messages.push(message)
+      await harness.channel.readInboundOnce()
+      expect(harness.messages, `第 ${i} 次投递数量`).toHaveLength(1)
+      expect(harness.messages[0].text, `第 ${i} 次双引擎后应完整`).toBe(clean)
+      const readCalls = recorder.calls.filter((call) => call.script === 'wechat-uia' && call.args.includes('read'))
+      expect(readCalls.some((call) => call.args.includes('-SecondOcr')), `第 ${i} 次应调用第二引擎`).toBe(true)
+    }
   })
 })
