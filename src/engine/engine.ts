@@ -13,6 +13,7 @@ import type {
   EngineDeps,
   EngineStatus,
   InboundMessage,
+  LlmRequest,
   LlmResult,
   MemoryMessage,
   MemoryProfile,
@@ -485,9 +486,10 @@ export class PersonaEngine {
       search: searchForPrompt ? { intent: searchForPrompt.intent, result: searchForPrompt.result } : undefined,
     })
 
-    // 7) 调模型（失败重试 1 次）
+    // 7) 调模型（失败重试 1 次；若当前模型不支持所选「思考等级」，自动降级后重试）
     let result: LlmResult | null = null
     let lastError: unknown = null
+    let effort: LlmRequest['reasoningEffort'] = config.reply.reasoningEffort
     for (let attempt = 0; attempt < 2; attempt += 1) {
       try {
         result = await this.deps.llm.complete({
@@ -495,11 +497,18 @@ export class PersonaEngine {
           messages,
           temperature: config.reply.temperature,
           maxTokens: config.reply.maxTokens,
-          reasoningEffort: config.reply.reasoningEffort,
+          ...(effort ? { reasoningEffort: effort } : {}),
         })
         break
       } catch (error) {
         lastError = error
+        const detail = error instanceof Error ? error.message : String(error)
+        // DSH 当前默认模型不一定支持 low/medium/high（例如 deepseek-flash 不支持 medium），
+        // 被拒时去掉思考等级再试一次，避免用户选了「中/高」后完全不回消息。
+        if (effort && /reasoning effort/i.test(detail)) {
+          this.deps.logger.warn(`模型不支持思考等级「${effort}」，已自动降级重试`, detail.slice(0, 160))
+          effort = undefined
+        }
       }
     }
     if (!result) {
