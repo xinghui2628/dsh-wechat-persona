@@ -100,6 +100,11 @@ describe('parseIdleMs', () => {
 })
 
 describe('DesktopChannel', () => {
+  it('能力声明：桌面视觉通道只能发文本，引擎据此把表情概率降为 0', () => {
+    const harness = makeDesktopHarness({ runScript: () => UIA_OK })
+    expect(harness.channel.capabilities).toEqual({ stickers: false, images: false, voice: false })
+  })
+
   it('桌面通道禁用：start 只记日志并置 error，绝不执行脚本', async () => {
     const recorder = recordRunner(() => UIA_OK)
     const harness = makeDesktopHarness({ enabled: false, runScript: recorder.runner })

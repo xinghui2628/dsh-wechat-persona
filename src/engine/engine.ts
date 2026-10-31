@@ -574,8 +574,10 @@ export class PersonaEngine {
     // 10) 拟人化：随机正在输入 + 分条 + 表情包不重复
     const emotion = detectEmotion(reply)
     const recentStickerIds = await memory.lastStickerIds(message.contactId, message.contactName)
+    // 降级：配置里关掉表情，或通道本身发不出表情（如桌面视觉通道）→ 概率置 0。
+    const channelStickers = channel.capabilities?.stickers !== false
     const replyConfig: WechatPersonaConfig =
-      config.stickers.enabled === false
+      config.stickers.enabled === false || !channelStickers
         ? { ...config, reply: { ...config.reply, stickerProbability: 0 } }
         : config
     const plan = planHumanReply(reply, {
@@ -591,7 +593,7 @@ export class PersonaEngine {
     const planParts: OutboundPart[] = []
     for (const part of plan.parts as OutboundPart[]) {
       if (part.kind === 'sticker') {
-        if (stickerCount >= maxStickers) continue
+        if (!channelStickers || stickerCount >= maxStickers) continue
         stickerCount += 1
       }
       planParts.push(part)

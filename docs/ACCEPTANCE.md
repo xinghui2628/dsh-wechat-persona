@@ -257,3 +257,37 @@ Get-Content "$env:USERPROFILE\.dsh\profiles\desktop\.dsh-wechat-persona\audit.js
 > 注（2026-10-31）：为进行真实好友 30 条测试，日预算曾临时调高到 120000 tokens（当日已消耗 67856）；
 > 测试完成后请在设置页把日预算改回 50000。其余生产项（白名单 3 人、08:00–21:00、
 > userActivityIdleMs=1500、builtin-dafeiyu、桌面通道 enabled=true）保持生产值。
+
+## 13. v0.2.3 四项限制修复证据（2026-10-31）
+
+本轮按用户反馈处理四个已知限制，结论：**两个必须修（已修）、两个按设计保留并文档化**。
+
+### 13.1 读取聊天记录：左侧气泡过滤偏严 + 防串聊（必须修，已修）
+
+- 默认分栏比例 `WXUIA_PANE_LEFT_RATIO` 从 0.40 调到 **0.30**（微信 1200 宽窗口会话列表右边界约 315px≈0.26w，聊天区从约 0.30w 开始），原先左侧对方气泡可能被误裁。
+- 自己/对方消息判定改用**行中心点**（对方气泡文字从 0.40w 起、自己的绿气泡右缘约 0.90w），避免把左侧长消息误当自己消息。
+- **防串聊**：标题栏 OCR 变成「张，伟」这类形近字时，旧逻辑的「首字相同」兜底会把「张伟」的聊天当成「张磊」读取（实测串聊）。现在去掉首字兜底，并新增 `Test-ChatByListPreview`：用左侧会话列表里目标联系人的最新消息预览与当前聊天区候选消息交叉验证；两路都确认不了就拒绝读取，返回 `ok:false`「无法确认当前聊天是「X」……已跳过读取以避免读错人」。
+- 实测（真实微信 4.1.x）：`read 张磊` → ok 7 条（经列表预览验证，日志「列表预览交叉验证命中: 修问题」）；`read 李四` → ok 1 条；`read 文件传输助手` → ok 0 条；`read 张伟` → 拒绝（其列表行名字 OCR 成「王，」拿不到预览，安全第一）。
+
+### 13.2 表情包/图片/语音（必须修“假发送/反复报错”，已修）
+
+- 通道能力声明：`src/types.ts` 新增 `ChannelCapabilities { stickers?, images?, voice? }`，`Channel` 接口加 `capabilities?`；桌面通道声明 `{ stickers: false, images: false, voice: false }`（桌面视觉驱动只能发文本）。
+- 引擎降级：`src/engine/engine.ts` 在 channel 不支持表情时把 `stickerProbability` 强制置 0、`planParts` 跳过 sticker，**不再产生无谓的 send-fail 与错误计数**；图片/语音同样不经桌面通道发送。
+- 新增单测覆盖能力降级（`test/engine` 相关用例），`test:sandbox` 30 文件 **400 用例全过**。
+
+### 13.3 遮挡/被抢占时拒发（按设计保留，文档化）
+
+- 安全原则：宁可失败，绝不发错人/发错窗口。窗口被其他窗口完全遮挡、无法确认前台时，脚本返回 `ok:false` 并跳过发送；不自动重试。
+- 已在 docs/使用说明.md「10.4 已知限制」与 FAQ Q5 说明；默认截图改为 PrintWindow 优先（`WXUIA_CAPTURE=auto`），正常使用不会反复抢前台。
+
+### 13.4 OCR 形近字（按设计保留，已有三层兜底 + 文档化）
+
+- 三层兜底：整栏 OCR → 名字条 4x 最近邻二次 OCR → 列表预览交叉验证（读取）/气泡+输入框清空判定（发送）。
+- 文档给出实用缓解：**给 OCR 不稳的好友设简单微信备注名**（使用说明 10.4 与 FAQ Q14）；读取拒绝场景见 FAQ Q15。
+
+### 13.5 本轮测试记录
+
+- `npm run typecheck` 通过；`npm run test:sandbox` 30 文件 / 400 用例通过；`npm run build` 通过；脚本 `Parser::ParseFile` PARSE-OK（UTF-8 BOM 保留）。
+- 发送三路径回归：单字兜底 ok:true 2754ms、强制气泡失败兜底 ok:true 3605ms、SKIP_ENTER 负例 ok:false 3661ms（未误判成功、未重发）、清理 ok:true 2842ms。
+- 10 轮 list+send 压测：list 10/10、send 10/10；list P50/P95 = 1977/2071ms，send P50/P95 = 2763/3475ms，单轮平均 5013ms。
+- 40 轮 list+send 压测：**list 40/40、send 40/40**；list P50/P95 = 1980/2054ms，send P50/P95 = 2822/3461ms，单轮平均 5013ms（`.dsh-tmp/stress-script-154558.json`）。累计本轮压测 50 轮，send 全部成功、无重复、无错发。

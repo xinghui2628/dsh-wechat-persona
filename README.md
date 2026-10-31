@@ -2,7 +2,7 @@
 
 把**你自己注册的微信小号**做成一个有人格、会发图、能联网查资料、省 token、低封号风险的 AI 聊天分身。
 
-> 📖 **新手先看 [docs/使用说明.md](docs/使用说明.md)**：安装/更新/卸载、扫码登录、被踢重登、白名单、在线时段、防封建议、桌面通道前置、FAQ 都在里面；版本更新记录见 [CHANGELOG.md](CHANGELOG.md)。当前版本 **0.2.2**。
+> 📖 **新手先看 [docs/使用说明.md](docs/使用说明.md)**：安装/更新/卸载、扫码登录、被踢重登、白名单、在线时段、防封建议、桌面通道前置、FAQ 都在里面；版本更新记录见 [CHANGELOG.md](CHANGELOG.md)。当前版本 **0.2.3**。
 >
 > 🛠 **环境自检**：`powershell -ExecutionPolicy Bypass -File scripts/pwsh/selfcheck.ps1 -Port <DSH端口>`（检查 Windows/微信窗口/OCR/构建产物/插件 API）。
 > 📚 进阶文档：[架构](docs/ARCHITECTURE.md) · [测试计划](docs/TEST-PLAN.md) · [提示词模板](docs/PROMPTS.md) · [验收标准](docs/ACCEPTANCE.md) · [开发规则](AGENTS.md)。
@@ -111,7 +111,7 @@ dsh-wechat-persona/
 │   ├── TEST-PLAN.md         # 分层测试与 12 个必查场景
 │   ├── PROMPTS.md           # 给 AI/贡献者的提示词模板
 │   ├── CHANNELS.md          # 四通道配置与风险
-│   ├── ACCEPTANCE.md        # 验收对账（含 0.2.2 证据）
+│   ├── ACCEPTANCE.md        # 验收对账（含 0.2.3 证据）
 │   └── PLAN.md              # 历史实现计划（部分项未实现，最新进展见 CHANGELOG）
 ├── CHANGELOG.md            # 更新记录（Keep a Changelog 中文）
 ├── LICENSE                 # MIT
@@ -134,7 +134,7 @@ npm run test:sandbox     # 受限沙箱环境用这个命令；普通环境也�
 > 为什么用 `--ignore-scripts`：本仓库无需要执行的安装脚本；在受限沙箱里带脚本安装可能因 spawn 受限而失败。
 > 测试命令区别：`npm run test:sandbox` 会加载 `test/core/sandbox-preload.mjs` 兼容层，**在受限沙箱里可正常运行**；直接 `npm test` 在受限沙箱中会因 esbuild/vitest 的进程限制（EPERM）失败，这属于预期，不是代码问题。
 
-当前版本 **0.2.2**（2026-10-31：提示词新增「像真人聊天」规则，回复更自然；0.2.1：设置界面、人格库/人格市场、桌面脚本视觉驱动重写与稳定性修复），从 0.1.0 升级请先看 [CHANGELOG.md](CHANGELOG.md) 与[配置迁移](#配置迁移)一节。
+当前版本 **0.2.3**（2026-10-31：聊天记录读取的不串聊校验、表情能力降级、提示词「像真人聊天」规则；0.2.1：设置界面、人格库/人格市场、桌面脚本视觉驱动重写与稳定性修复），从 0.1.0 升级请先看 [CHANGELOG.md](CHANGELOG.md) 与[配置迁移](#配置迁移)一节。
 
 ### 2. 安装到 DSH 桌面版 profile
 
@@ -353,7 +353,7 @@ npm run build
 
 | 项目 | 结果 |
 | --- | --- |
-| 单元 + 集成验收测试 | **30 个测试文件 / 399 个用例全部通过**（受限沙箱用 `npm run test:sandbox`；含 Host API 83、人格库 26、人格市场 22、引擎验收 26、客户端 25 等） |
+| 单元 + 集成验收测试 | **30 个测试文件 / 400 个用例全部通过**（受限沙箱用 `npm run test:sandbox`；含 Host API 83、人格库 26、人格市场 22、引擎验收 26、客户端 25 等） |
 | 类型检查 | `npm run typecheck` → 0 错误 |
 | 构建 | `npm run build` → `dist/`（78 个文件）；`node -e "import('./dist/index.js')"` → 命名导出 `Config/apply/inject/name/provide` |
 | 离线接口验收 | `npm run verify:api` → **24/24 通过**：用假宿主 ctx + 真实 `dist` 代码 + 真实 HTTP 端口，覆盖鉴权 403、`/health`、`/status`、`/config` 读写（走 `configEditor.edit`）、`/personas` 4 个人格 + 切换、`/market` 回退内置、`/stickers` 18 张、`/logs`、`/help`（说明书 13649 字）、`/test/inbound`、`/test/send`、`/pause`、`/resume`、404 统一错误体 |
@@ -361,7 +361,7 @@ npm run build
 | 工具注入 | 6 个 `wechat_persona_*` 工具（status/pause/resume/send_test/clear_memory/clear_audit） |
 | 设置界面 | 设置页「微信分身」+ Plugins 卡片两个入口，10 个标签页；保存经 `ctx.configEditor.edit()` 写回 profile 的 `cordis.patch.yml`（重启不丢）；Host API 端点由 `src/server/api.ts` 提供并有 83 个用例覆盖 |
 | 人格库 / 人格市场 | 内置 4 个人格（small/dafeiyu/senior/geek）；v2 人格包安装/切换/导入/导出/卸载有 26 + 22 个用例覆盖；远程索引失败回退内置 |
-| 桌面通道脚本 | PowerShell 5.1 语法解析 **0 错误**、UTF-8 BOM 正常；`INPUT` 结构体实测 40 字节（旧版 32 字节导致 `SendInput` 失败）；用自建**模拟微信窗口**跑通 5 个端到端用例（首次无基线读取 → 基线去重 → 仅回报新消息 → 发送后 OCR 校验 → 错误联系人明确失败） |
+| 桌面通道脚本 | PowerShell 5.1 语法解析 **0 错误**、UTF-8 BOM 正常；`INPUT` 结构体实测 40 字节（旧版 32 字节导致 `SendInput` 失败）；**已在真实微信 4.1.x 上端到端验证**：列表识别（4x 最近邻 + 绿底行锚点 + 名字条二次 OCR）、发送判定（气泡校验 + 输入框清空兜底，绝不重发）、读取防串聊（标题 OCR 不稳时用列表预览交叉验证）、不抢前台（PrintWindow 优先）；脚本层 100 轮 list+send 压测 list/send 均 100/100 |
 | 配置迁移 | `migrateConfig()` 补齐工作日/周末时段与 0.2.0 新增字段，幂等；旧 `personaDir` 仅提示不删除 |
 
 ### v0.1.0 阶段已完成（历史记录）
@@ -376,7 +376,7 @@ npm run build
 > `deepseek-search-api`，插件直接复用这两项宿主能力；mock 通道默认空转，因此“装上即生效”但
 > **不会碰真实微信**——要真正上线必须显式切换 `activeChannel` 并填 `whitelist`。
 >
-> 桌面通道（desktop）**没有在真实微信窗口上验证**：开发环境无可自动化操作的真实微信窗口，最终用模拟窗口验证脚本本身。首次启用前请按 [docs/CHANNELS.md](docs/CHANNELS.md) 的「真实环境验证清单」逐项确认。
+> 桌面通道（desktop）**已在真实微信 4.1.x（Windows 11 + 微信 PC）+ Windows OCR 上做过端到端验证**（配置 clamp 窗口 1200x830）。仍要提醒：OCR 依赖字体/主题/缩放，**生僻字昵称可能识别不稳**（见「已知限制/FAQ」中的备注名小技巧）；首次启用请在旁边盯着，先只发测试消息，确认无误再开自动回复。
 
 ## 验收对账
 
@@ -474,7 +474,7 @@ npm run build         # tsc -> dist/
 
 ## 版本与更新记录
 
-- 当前版本：**0.2.2**（2026-10-31）
+- 当前版本：**0.2.3**（2026-10-31）
 - 完整更新记录：[CHANGELOG.md](CHANGELOG.md)（含 0.2.0 新增/变更/修复与 0.1.0 MVP 基线）
 - 面向使用者的完整手册：[docs/使用说明.md](docs/使用说明.md)
 - 通道配置与风险：[docs/CHANNELS.md](docs/CHANNELS.md) · 验收对账：[docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)

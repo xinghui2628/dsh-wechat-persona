@@ -40,6 +40,19 @@ export interface SendResult {
   error?: string
 }
 
+/**
+ * 通道能力声明（可选）。引擎据此做降级：通道发不出表情/图片/语音时，
+ * 不再把对应内容放进发送计划，避免「无谓发送→失败→错误计数」。
+ */
+export interface ChannelCapabilities {
+  /** 能否发送表情包（桌面通道 false：UIA 表情面板未实现）。 */
+  stickers?: boolean
+  /** 能否发送图片。 */
+  images?: boolean
+  /** 能否发送语音。 */
+  voice?: boolean
+}
+
 export type ChannelState = 'stopped' | 'starting' | 'running' | 'degraded' | 'error'
 
 export interface ChannelStatus {
@@ -79,6 +92,8 @@ export interface Channel {
   /** 发送一段内容；失败返回 {ok:false}，不抛异常。 */
   send(contactId: string, part: OutboundPart, signal?: AbortSignal): Promise<SendResult>
   status(): ChannelStatus
+  /** 可选：通道能力声明。缺省视为支持表情（保持旧通道行为不变）。 */
+  readonly capabilities?: ChannelCapabilities
   /** 可选：主动扫描当前界面/通知里的风控文案（不落盘原文）。 */
   scanRisk?(): Promise<RiskSignal[]>
 }

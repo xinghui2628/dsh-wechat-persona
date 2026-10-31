@@ -55,6 +55,9 @@ export function parseIdleMs(stdout: string): number | null {
 
 export class DesktopChannel {
   id: any = 'desktop';
+  // 桌面视觉驱动目前只能发文本：表情/图片/语音没有 UIA 实现。
+  // 声明后引擎会自动把表情概率降为 0，避免「选了表情→发送被拒→错误计数」。
+  capabilities: any = { stickers: false, images: false, voice: false };
 
   constructor({ config, deps, runScript, pollIntervalMs }: any = {}) {
     this.config = config;

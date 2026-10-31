@@ -139,7 +139,7 @@ $script:Force = Test-TruthyEnv ([Environment]::GetEnvironmentVariable('WXUIA_FOR
 $script:NoBaseline = Test-TruthyEnv ([Environment]::GetEnvironmentVariable('WXUIA_NOBASELINE'))
 $script:IdleThresholdMs = Get-Env-Int 'WXUIA_IDLE_MS' 1500 0 3600000
 $script:SendWaitMs = Get-Env-Int 'WXUIA_SEND_WAIT_MS' 900 500 1200
-$script:PaneLeftRatio = if ($PaneLeftRatio -gt 0 -and $PaneLeftRatio -lt 1) { $PaneLeftRatio } else { Get-Env-Ratio 'WXUIA_PANE_LEFT_RATIO' 0.40 }
+$script:PaneLeftRatio = if ($PaneLeftRatio -gt 0 -and $PaneLeftRatio -lt 1) { $PaneLeftRatio } else { Get-Env-Ratio 'WXUIA_PANE_LEFT_RATIO' 0.30 }
 # 微信是 Qt/GPU 渲染窗口，PrintWindow 偶尔抓到旧帧，但默认屏幕截图会在微信被遮挡时抢前台
 # （用户可见窗口/搜索框每 2 秒抖动一次）。默认 auto：先 PrintWindow（不抢前台，轮询场景内容稳定），
 # 抓不到内容再回退屏幕截图（此时才短暂切前台，由 finally 恢复）。
@@ -692,7 +692,6 @@ function Get-InboundCandidates($Snapshot) {
     $paneRight = $w * 0.995
     $paneTop = $h * 0.10
     $paneBottom = $h * 0.80
-    $paneCenter = ($paneLeft + $paneRight) / 2.0
     $raw = @()
     foreach ($ln in $lines) {
         $x = [double]$ln.left
@@ -702,8 +701,10 @@ function Get-InboundCandidates($Snapshot) {
         if (([double]$ln.right - $x) -lt 6) { continue }
         $text = Get-CleanText ([string]$ln.text)
         if (Test-SystemLine $text) { continue }
+        # 自己的消息右对齐：气泡中心点明显偏右；对方气泡中心点在中线左侧。
+        # 实测（1200 宽窗口）：对方长消息行中心 ≤0.60w，自己气泡行中心 ≥0.78w，中线取 0.65w 隔离。
         $centerX = ($x + [double]$ln.right) / 2.0
-        if ($centerX -gt $paneCenter) { continue }  # 右侧 = 自己发的，跳过
+        if ($centerX -gt ($paneLeft + $paneRight) / 2.0) { continue }  # 右侧 = 自己发的，跳过
         $raw += @{ text = $text; left = $x; right = [double]$ln.right; top = $y; bottom = [double]$ln.bottom }
     }
     if ($raw.Count -eq 0) { return @() }
@@ -727,7 +728,13 @@ function Test-IsTargetChatLoose($Snapshot, [string]$ContactName) {
         $t = Normalize-Text ([string]$ln.text)
         if (-not $t) { continue }
         if (Test-NameLike $t $ContactName) { return $true }
-        if ($t.Length -ge 2 -and $t.Length -le 4 -and $t[0] -eq $n[0]) { return $true }
+        # OCR 形近字容错：长度相同且只错 1 个字（如「张玮」vs「张伟」）也算命中。
+        # 不再用「首字相同」兜底——曾把「张，伟」误认成「张磊」，导致读到了别人的聊天。
+        if ($t.Length -eq $n.Length -and $t.Length -ge 2) {
+            $diff = 0
+            for ($ci = 0; $ci -lt $t.Length; $ci++) { if ($t[$ci] -ne $n[$ci]) { $diff++ } }
+            if ($diff -le 1) { return $true }
+        }
     }
     return $false
 }
@@ -748,6 +755,35 @@ function Test-IsTargetChat($Snapshot, [string]$ContactName) {
         Write-Debug-Log ("TITLE? x=" + $ln.left + " y=" + $ln.top + " t=" + $t + " like=" + $like)
         if ($like) { return $true }
     }
+    return $false
+}
+
+# 用左侧列表里该联系人的最新消息预览，交叉验证「当前打开的聊天」是不是他/她的：
+# 列表预览通常就是聊天窗口里最近一条消息（两边 OCR 都可能出错，用字符覆盖匹配）。
+# 标题栏 OCR 把「张磊」认成「张，伟」这类情况，标题判定会失败，此函数负责兜底。
+
+function Test-ChatByListPreview($Snapshot, [string]$ContactName) {
+    try {
+        $rows = @(Get-ListRows $script:TargetHwnd @($ContactName))
+        $row = $rows | Where-Object { $_.name -eq $ContactName } | Select-Object -First 1
+        if (-not $row) { return $false }
+        $pvRaw = Normalize-Text ([string]$row.preview)
+        if ($pvRaw.Length -lt 2) { return $false }
+        $head = $pvRaw.Substring(0, [math]::Min(10, $pvRaw.Length))
+        $cands = @(Get-InboundCandidates $Snapshot)
+        foreach ($c in $cands) {
+            $ct = Normalize-Text ([string]$c.text)
+            if ($ct.Length -lt 2) { continue }
+            if ($ct.Contains($head)) {
+                Write-Debug-Log ("列表预览交叉验证命中: " + $head)
+                return $true
+            }
+            if (Test-NameLike $head $ct) {
+                Write-Debug-Log ("列表预览交叉验证(形近字)命中: " + $head + " ~ " + $ct)
+                return $true
+            }
+        }
+    } catch { Write-Debug-Log ("列表预览交叉验证异常: " + $_.Exception.Message) }
     return $false
 }
 
@@ -940,12 +976,20 @@ function Enter-Chat([IntPtr]$Hwnd) {
             Write-Debug-Log ("Ctrl+F 直达会话: " + $Contact)
             return @{ geo = $snapF.geo; lines = @($snapF.lines); exact = $true; via = 'ctrl-f' }
         }
+        if (Test-ChatByListPreview $snapF $Contact) {
+            Write-Debug-Log ("Ctrl+F 直达会话(列表预览验证): " + $Contact)
+            return @{ geo = $snapF.geo; lines = @($snapF.lines); exact = $true; via = 'ctrl-f-preview' }
+        }
         [WXDriver]::PressEnter()
         Start-Sleep -Milliseconds 850
         $snapF2 = Get-WindowSnapshot $Hwnd 'ctrl-f2'
         if (Test-IsTargetChatLoose $snapF2 $Contact) {
             Write-Debug-Log ("Ctrl+F 直达会话(二次回车): " + $Contact)
             return @{ geo = $snapF2.geo; lines = @($snapF2.lines); exact = $true; via = 'ctrl-f2' }
+        }
+        if (Test-ChatByListPreview $snapF2 $Contact) {
+            Write-Debug-Log ("Ctrl+F 直达会话(二次回车+列表预览验证): " + $Contact)
+            return @{ geo = $snapF2.geo; lines = @($snapF2.lines); exact = $true; via = 'ctrl-f2-preview' }
         }
     } catch {
         Write-Debug-Log ('Ctrl+F 路径异常: ' + $_)
@@ -1661,9 +1705,14 @@ if ($hwnd -ne [IntPtr]::Zero) { Ensure-UsableWindow $hwnd }
     }
 
     # ── read ────────────────────────────────────────────────────────────
-    if (-not $chatConfirmed) { Write-Debug-Log ("读取时标题未确认 contact=" + $Contact + " via=" + $snap.via + "，继续读取聊天区") }
-
     $candidates = @(Get-InboundCandidates $snap)
+    if (-not $chatConfirmed) {
+        # 标题 OCR 不可靠时，用左侧列表预览做二次确认，避免读错人串聊。
+        if (-not (Test-ChatByListPreview $snap $Contact)) {
+            Fail-With "无法确认当前聊天是「$Contact」（标题与列表预览均未匹配），已跳过读取以避免读错人"
+        }
+        Write-Debug-Log ("读取用列表预览二次确认通过 contact=" + $Contact)
+    }
     Write-Debug-Log ("候选消息 " + $candidates.Count)
     foreach ($c in $candidates) { Write-Debug-Log ("  CAND top=" + [int]$c.top + " text=" + $c.text) }
 
