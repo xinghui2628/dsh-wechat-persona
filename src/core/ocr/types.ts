@@ -99,6 +99,38 @@ export interface OcrEngine {
 /** 气泡归属：左侧=对方，右侧=自己，无法判断时 unknown（宁可不回也不猜）。 */
 export type BubbleSide = 'left' | 'right' | 'unknown'
 
+/**
+ * 气泡归属分类（v3.0.0 Phase C）：由几何边界判断一行文本属于谁的消息。
+ * - inbound：靠聊天面板左边界，可进入回复流程；
+ * - outbound：靠右边界（自己），一律不回复；
+ * - uncertain：贴边不足/同时贴两边/中心越过中线等无法判断的情况，一律不投递。
+ */
+export type BubbleOwnership = 'inbound' | 'outbound' | 'uncertain'
+
+/** 聊天面板的几何边界（相对截图帧的像素坐标，对应 PS1 Get-InboundCandidates 的窗格比例）。 */
+export interface BubblePane {
+  left: number
+  right: number
+  top: number
+  bottom: number
+}
+
+/** 参与气泡归属判断的一行文本（OCR 行，或按行合并后的候选行）。 */
+export interface BubbleLineInput {
+  text: string
+  box: OcrBox
+}
+
+/** 单行气泡归属分类结果（可解释，便于诊断与单测）。 */
+export interface BubbleClassification {
+  /** 原始输入行（同一对象引用，便于上层继续使用） */
+  line: BubbleLineInput
+  side: BubbleSide
+  ownership: BubbleOwnership
+  /** 判定原因（英文稳定标识，写日志与断言用） */
+  reason: string
+}
+
 /** 从一帧 OCR 结果中抽出的消息候选（尚未提交状态）。 */
 export interface MessageCandidate {
   /** 该候选所属帧 */

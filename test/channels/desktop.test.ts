@@ -10,7 +10,7 @@ import {
   type DesktopScriptRunner,
 } from '../../src/channels/pc/desktop.ts'
 import type { InboundMessage, SendResult } from '../../src/types.ts'
-import { makeConfig, makeDeps, waitFor, type TestDeps } from './helpers.ts'
+import { makeConfig, makeDeps, waitFor, MemoryFileStore, type TestDeps } from './helpers.ts'
 
 interface ScriptCall {
   script: DesktopScriptName
@@ -60,8 +60,9 @@ function makeDesktopHarness(options: {
   runScript: DesktopScriptRunner
   whitelist?: boolean
   pollIntervalMs?: number
+  store?: MemoryFileStore
 }): DesktopHarness {
-  const deps = makeDeps()
+  const deps = makeDeps(options.store)
   const config = makeConfig((cfg) => {
     cfg.enabled = options.pluginEnabled ?? true
     cfg.activeChannel = 'desktop'
@@ -663,5 +664,157 @@ describe('OCR 双引擎投票（系统 OCR + RapidOCR 第二引擎）', () => {
       const readCalls = recorder.calls.filter((call) => call.script === 'wechat-uia' && call.args.includes('read'))
       expect(readCalls.some((call) => call.args.includes('-SecondOcr')), `第 ${i} 次应调用第二引擎`).toBe(true)
     }
+  })
+})
+
+describe('气泡归属 + captureId + ack 水位线（v3.0.0 Phase C，OCR-M1/H2 回归）', () => {
+  const PANE = { left: 360, right: 1194, top: 80, bottom: 720 }
+
+  function listRow(options: { unread?: boolean; preview?: string } = {}): DesktopScriptResult {
+    return {
+      code: 0,
+      stdout: JSON.stringify({
+        ok: true,
+        rows: [{
+          name: '张三',
+          found: true,
+          unread: options.unread ?? true,
+          preview: options.preview ?? '',
+          top: 100,
+          left: 160,
+          height: 80,
+        }],
+      }),
+      stderr: '',
+    }
+  }
+
+  function readPayload(messages: unknown[], extra: Record<string, unknown> = {}): DesktopScriptResult {
+    return { code: 0, stdout: JSON.stringify({ ok: true, messages, ...extra }), stderr: '' }
+  }
+
+  it('长气泡越线判 uncertain：拒投、计数、不用列表预览补投', async () => {
+    const recorder = recordRunner((script, args) => {
+      if (script === 'user-activity') return USER_IDLE
+      if (args.includes('read')) {
+        return readPayload(
+          [{ id: 'pc-long', text: '这是一条很长很长的对方消息'.repeat(3), captureId: 'cap-1', box: { x: 378, y: 200, width: 802, height: 28 } }],
+          { captureId: 'cap-1', pane: PANE },
+        )
+      }
+      return listRow({ preview: '在吗' })
+    })
+    const harness = makeDesktopHarness({ runScript: recorder.runner })
+    harness.channel.handler = (message) => harness.messages.push(message)
+    harness.channel.stopped = false
+    await harness.channel.readInboundOnce()
+    expect(harness.messages).toEqual([])
+    expect(harness.channel.uncertainCount).toBe(1)
+    expect(harness.channel.ackByContact.get('张三')).toBe('cap-1')
+  })
+
+  it('左侧对方消息正常投递，并记录本次 captureId 作为下次 ack 水位线', async () => {
+    const recorder = recordRunner((script, args) => {
+      if (script === 'user-activity') return USER_IDLE
+      if (args.includes('read')) {
+        return readPayload(
+          [{ id: 'pc-1', text: '在吗', captureId: 'cap-1', box: { x: 380, y: 200, width: 60, height: 28 } }],
+          { captureId: 'cap-1', pane: PANE },
+        )
+      }
+      return listRow()
+    })
+    const harness = makeDesktopHarness({ runScript: recorder.runner })
+    harness.channel.handler = (message) => harness.messages.push(message)
+    harness.channel.stopped = false
+    await harness.channel.readInboundOnce()
+    expect(harness.messages).toHaveLength(1)
+    expect(harness.messages[0]).toMatchObject({ id: 'pc-1', contactId: '张三', text: '在吗' })
+    expect(harness.channel.ackByContact.get('张三')).toBe('cap-1')
+    expect(harness.channel.uncertainCount).toBe(0)
+    const status = harness.channel.status() as { ocr?: { captureId?: string; lines?: number; lastReadAt?: number } }
+    expect(status.ocr?.captureId).toBe('cap-1')
+    expect(status.ocr?.lines).toBe(1)
+    expect(typeof status.ocr?.lastReadAt).toBe('number')
+  })
+
+  it('第二次读取带 -Ack 上次 captureId；同一行重放时 id 稳定、不重复投递', async () => {
+    const recorder = recordRunner((script, args) => {
+      if (script === 'user-activity') return USER_IDLE
+      if (args.includes('read')) {
+        return readPayload(
+          [{ id: 'pc-replay', text: '在吗', captureId: 'cap-2', box: { x: 380, y: 200, width: 60, height: 28 } }],
+          { captureId: 'cap-2', pane: PANE },
+        )
+      }
+      return listRow()
+    })
+    const harness = makeDesktopHarness({ runScript: recorder.runner })
+    harness.channel.handler = (message) => harness.messages.push(message)
+    harness.channel.stopped = false
+    await harness.channel.readInboundOnce()
+    expect(harness.messages).toHaveLength(1)
+    await harness.channel.readInboundOnce()
+    expect(harness.messages).toHaveLength(1)
+    const readCalls = recorder.calls.filter((call) => call.script === 'wechat-uia' && call.args.includes('read'))
+    expect(readCalls).toHaveLength(2)
+    expect(readCalls[1].args).toContain('-Ack')
+    expect(readCalls[1].args).toContain('cap-2')
+    // 脚本已不再被要求截断（全部新行都要输出）
+    for (const call of readCalls) expect(call.args).not.toContain('-MaxMessages')
+  })
+
+  it('一次读到 12 条新消息全部投递，不截断', async () => {
+    const messages = Array.from({ length: 12 }, (_, i) => ({ id: `pc-all-${i}`, text: `第 ${i} 条`, captureId: 'cap-1' }))
+    const recorder = recordRunner((script, args) => {
+      if (script === 'user-activity') return USER_IDLE
+      if (args.includes('read')) return readPayload(messages, { captureId: 'cap-1', pane: PANE })
+      return listRow()
+    })
+    const harness = makeDesktopHarness({ runScript: recorder.runner })
+    harness.channel.handler = (message) => harness.messages.push(message)
+    harness.channel.stopped = false
+    await harness.channel.readInboundOnce()
+    expect(harness.messages).toHaveLength(12)
+    expect(harness.messages.map((message) => message.id)).toEqual(messages.map((item) => item.id))
+  })
+
+  it('ack 水位线持久化到 dataDir：插件重启（新通道实例）后仍带 -Ack，避免重放重复投递', async () => {
+    const store = new MemoryFileStore()
+    const firstRunner = recordRunner((script, args) => {
+      if (script === 'user-activity') return USER_IDLE
+      if (args.includes('read')) {
+        return readPayload(
+          [{ id: 'pc-1', text: '在吗', captureId: 'cap-1', box: { x: 380, y: 200, width: 60, height: 28 } }],
+          { captureId: 'cap-1', pane: PANE },
+        )
+      }
+      return listRow()
+    })
+    const first = makeDesktopHarness({ runScript: firstRunner.runner, store })
+    first.channel.handler = (message) => first.messages.push(message)
+    first.channel.stopped = false
+    await first.channel.readInboundOnce()
+    expect(first.messages).toHaveLength(1)
+    await waitFor(() => store.text('desktop-ack.json') !== null, { label: 'ack 落盘' })
+    expect(JSON.parse(store.text('desktop-ack.json') || '{}')).toMatchObject({ 张三: 'cap-1' })
+
+    // 模拟插件重启：同一个 dataDir（store），全新通道实例。
+    const secondReadArgs: string[][] = []
+    const secondRunner = recordRunner((script, args) => {
+      if (script === 'user-activity') return USER_IDLE
+      if (args.includes('read')) {
+        secondReadArgs.push(args)
+        return readPayload([], { captureId: 'cap-2', pane: PANE })
+      }
+      return listRow()
+    })
+    const second = makeDesktopHarness({ runScript: secondRunner.runner, store })
+    second.channel.handler = (message) => second.messages.push(message)
+    second.channel.stopped = false
+    await second.channel.readInboundOnce()
+    expect(secondReadArgs[0]).toContain('-Ack')
+    expect(secondReadArgs[0]).toContain('cap-1')
+    expect(second.messages).toEqual([])
   })
 })

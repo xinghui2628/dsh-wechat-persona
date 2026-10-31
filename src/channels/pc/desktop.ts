@@ -33,6 +33,9 @@ import {
 } from '../../core/ocr/correction.ts';
 import { textOverlapRatio } from '../../core/ocr/normalize.ts';
 import { mergeEngineVote } from '../../core/ocr/vote.ts';
+import { planInboundDispatch } from '../../core/ocr/pipeline.ts';
+import type { OcrDispatchPlan, OcrMessageInput } from '../../core/ocr/pipeline.ts';
+import type { BubblePane, BubbleSide, OcrBox } from '../../core/ocr/types.ts';
 import type {
   ChannelCapabilities,
   ChannelId,
@@ -58,6 +61,8 @@ const MAX_CONSECUTIVE_FAILURES = 6;
 // 每个联系人保留最近几条已发送文本：用于识别「把自己的消息回读成新消息」的自回声。
 const MAX_SENT_HISTORY = 5;
 const SENT_STATE_PATH = join(tmpdir(), 'dsh-wechat-persona-sent.json');
+// v3.0.0：ack 水位线落在 dataDir 里（跨进程重启仍能读回，避免重启后重放已处理帧）。
+const ACK_STATE_FILE = 'desktop-ack.json';
 
 export type DesktopScriptName = 'wechat-uia' | 'user-activity';
 
@@ -99,10 +104,15 @@ interface DesktopListRow {
   selected?: boolean;
 }
 
-/** wechat-uia read/send 返回的 messages[] 条目。 */
-interface DesktopScriptMessage {
-  id?: string;
+/** wechat-uia read/send 返回的 messages[] 条目（v3.0.0 起带 captureId/side/box，供气泡归属与 ack 使用）。 */
+interface DesktopScriptMessage extends OcrMessageInput {}
+
+/** wechat-uia read 返回的候选行（诊断用：side 由脚本几何判定给出）。 */
+interface DesktopScriptLine {
   text?: string;
+  side?: BubbleSide;
+  captureId?: string;
+  box?: OcrBox;
 }
 
 /** wechat-uia 脚本的单行 JSON 输出（字段按需可选）。 */
@@ -111,8 +121,36 @@ interface DesktopScriptPayload {
   error?: string;
   rows?: DesktopListRow[];
   messages?: DesktopScriptMessage[];
+  /** v3.0.0：本次读取的帧号（同一帧所有行共享；未确认的行下次重放时 id 不变）。 */
+  captureId?: string;
+  /** v3.0.0：脚本回显的 ack 水位线（调用方上次确认的 captureId）。 */
+  ack?: string;
+  /** v3.0.0：聊天面板几何边界（用于气泡归属判定）。 */
+  pane?: BubblePane;
+  /** v3.0.0：本次读取的候选行（含 side；诊断用）。 */
+  lines?: DesktopScriptLine[];
+  /** v3.0.0：本次读取实际使用的 OCR 引擎（如 ['winrt'] / ['winrt','rapidocr']）。 */
+  engines?: string[];
   /** v3.0.0：发送结果三态（脚本回车后无法确认气泡时给 unknown，引擎据此不自动重发）。 */
   delivery?: SendDelivery;
+}
+
+/** v3.0.0 Phase F：最近一次 OCR 读取诊断（供只读诊断接口；不含聊天内容）。 */
+export interface DesktopOcrDiagnostics {
+  /** 最近一次 read 脚本返回的 captureId。 */
+  captureId?: string;
+  /** 实际使用的引擎，如 ['winrt'] / ['winrt','rapidocr']。 */
+  engines?: string[];
+  /** 最近一次识别行数。 */
+  lines?: number;
+  /** 因归属不确定被拒投的候选数（最近一次读取）。 */
+  uncertainCount?: number;
+  /** 最近一次读取耗时（ms）。 */
+  durationMs?: number;
+  /** 最后读取时间戳（ms）。 */
+  lastReadAt?: number;
+  /** 最后一次 OCR/读取错误（脱敏，不含正文）。 */
+  lastError?: string;
 }
 
 /** 解析 user-activity.ps1 的 stdout（纯数字 / {"idleMs":N} / idle=N）；解析不出返回 null。 */
@@ -168,6 +206,18 @@ export class DesktopChannel {
   inFlight = new Set<string>();
   // 自己刚发出的文本（按联系人）：防止把「自己的回复」误判成对方的新消息。
   lastSentText = new Map<string, string[]>();
+  // v3.0.0：每个联系人最近一次成功投递的帧号（下次 read 传 -Ack 作为水位线，未确认行重放）。
+  ackByContact = new Map<string, string>();
+  // v3.0.0：因气泡归属不确定而被拒绝投递的累计条数（ChannelStatus 契约不含该字段，诊断用）。
+  uncertainCount = 0;
+  // v3.0.0：ack 水位线是否已从 dataDir 读回（懒加载，避免构造函数做异步 IO）。
+  private ackLoaded = false;
+  // v3.0.0：ack 落盘串行链（多次 commit 不并发写同一个文件；失败不影响主流程）。
+  private ackSaveChain: Promise<void> = Promise.resolve();
+  // v3.0.0 Phase F：最近一次 OCR 读取诊断（status() 透出给只读诊断接口；不含聊天内容）。
+  ocrDiagnostics: DesktopOcrDiagnostics = {};
+  // 本次 readInboundOnce 的开始时间，用于诊断耗时。
+  private ocrStartedAt = 0;
 
   constructor(options: DesktopChannelOptions = {}) {
     const { config, deps, runScript, pollIntervalMs } = options;
@@ -197,6 +247,10 @@ export class DesktopChannel {
     this.inFlight = new Set();
     // 自己刚发出的文本（按联系人）：防止把「自己的回复」误判成对方的新消息。
     this.lastSentText = new Map();
+    this.ackByContact = new Map();
+    this.uncertainCount = 0;
+    this.ocrDiagnostics = {};
+    this.ocrStartedAt = 0;
     this.loadSentState();
   }
 
@@ -218,6 +272,34 @@ export class DesktopChannel {
       for (const [name, texts] of this.lastSentText) obj[name] = texts;
       writeFileSync(SENT_STATE_PATH, JSON.stringify(obj), 'utf8');
     } catch { /* 写临时文件失败不影响主流程 */ }
+  }
+
+  /**
+   * v3.0.0：懒加载上次的 ack 水位线。
+   * 插件重启后 inFlight 是空的、脚本里 pending 仍会在下一帧重放；带上持久化水位线
+   * 才能让脚本只重放「未确认」的行，避免重启后把已处理过的消息再投一遍。
+   */
+  private async loadAckState(): Promise<void> {
+    if (this.ackLoaded) return;
+    this.ackLoaded = true;
+    try {
+      const data = await this.store.readJson<Record<string, unknown>>(ACK_STATE_FILE);
+      if (!data || typeof data !== 'object') return;
+      for (const [name, value] of Object.entries(data)) {
+        if (typeof value === 'string' && value.length > 0 && !this.ackByContact.has(name)) {
+          this.ackByContact.set(name, value);
+        }
+      }
+    } catch { /* 首次运行或文件损坏：当作没有水位线（脚本会重放 pending，inFlight 兜底去重） */ }
+  }
+
+  /** v3.0.0：串行落盘 ack 水位线；写失败只记 debug，不影响读取主流程。 */
+  private persistAckState(): void {
+    const snapshot: Record<string, string> = {};
+    for (const [name, ack] of this.ackByContact) snapshot[name] = ack;
+    this.ackSaveChain = this.ackSaveChain
+      .then(() => this.store.writeJson(ACK_STATE_FILE, snapshot))
+      .catch(() => { this.logger.debug?.('[desktop] ack 水位线落盘失败（不影响本轮读取）'); });
   }
 
   normalizeText(text: string): string {
@@ -432,7 +514,7 @@ export class DesktopChannel {
     this.logger.info?.('[desktop] 已停止');
   }
 
-  status(): ChannelStatus {
+  status(): ChannelStatus & { ocr?: DesktopOcrDiagnostics } {
     return {
       id: this.id,
       state: this.state,
@@ -441,6 +523,8 @@ export class DesktopChannel {
       since: this.since,
       lastInboundAt: this.lastInboundAt,
       lastSendAt: this.lastSendAt,
+      // 只读诊断：最近一次 OCR 读取的帧号/引擎/行数/耗时，不含聊天正文。
+      ocr: { ...this.ocrDiagnostics },
     };
   }
 
@@ -472,7 +556,59 @@ export class DesktopChannel {
     }
   }
 
+  /** 读取某联系人时应带上的 ack 水位线参数（v3.0.0：脚本只丢弃已确认的行，未确认行重放）。 */
+  private ackArgs(name: string): string[] {
+    const ack = this.ackByContact.get(name);
+    return ack ? ['-Ack', ack] : [];
+  }
+
+  /**
+   * 把一次 read 的脚本输出转成投递计划（v3.0.0 Phase C）：
+   * - 透传 captureId / pane / side / box，交给 core/ocr/pipeline.ts 做气泡归属过滤；
+   * - uncertain（几何无法判断）与 outbound（自己）一律拒投并计数，绝不猜；
+   * - 旧脚本输出（无 pane/box/side）按 legacy 兼容接受，升级过程不丢消息。
+   */
+  private planRead(name: string, data: DesktopScriptPayload): OcrDispatchPlan {
+    const plan = planInboundDispatch({
+      captureId: data.captureId,
+      ack: this.ackByContact.get(name) || '',
+      pane: data.pane,
+      messages: Array.isArray(data.messages) ? data.messages : [],
+    });
+    this.uncertainCount += plan.uncertainCount;
+    const lineCount = Array.isArray(data.lines)
+      ? data.lines.length
+      : Array.isArray(data.messages) ? data.messages.length : undefined;
+    this.ocrDiagnostics = {
+      ...this.ocrDiagnostics,
+      captureId: plan.captureId || this.ocrDiagnostics.captureId,
+      engines: Array.isArray(data.engines) && data.engines.length > 0
+        ? data.engines.map((engine) => String(engine))
+        : this.ocrDiagnostics.engines,
+      lines: typeof lineCount === 'number' ? lineCount : this.ocrDiagnostics.lines,
+      uncertainCount: plan.uncertainCount,
+      lastReadAt: Date.now(),
+      durationMs: this.ocrStartedAt > 0 ? Date.now() - this.ocrStartedAt : this.ocrDiagnostics.durationMs,
+    };
+    if (plan.rejected.length > 0) {
+      for (const rejected of plan.rejected) {
+        this.logger.debug?.(`[desktop] 拒绝投递(${rejected.reason}) ${name}: ${rejected.text.slice(0, 30)}`);
+      }
+    }
+    return plan;
+  }
+
+  /** 记录本次读取的帧号，作为下次读取的 ack 水位线（只传已成功处理的帧），并持久化。 */
+  private commitAck(name: string, plan: OcrDispatchPlan | null): void {
+    if (!plan?.nextAck) return;
+    if (this.ackByContact.get(name) === plan.nextAck) return;
+    this.ackByContact.set(name, plan.nextAck);
+    this.persistAckState();
+  }
+
   async readInboundOnce(): Promise<void> {
+    await this.loadAckState();
+    this.ocrStartedAt = Date.now();
     const contacts = this.contactNames();
     if (!contacts.length) return;
     const cfg = this.config.channels.desktop;
@@ -549,27 +685,36 @@ export class DesktopChannel {
         '-Action', 'read',
         '-WindowTitle', cfg.windowTitle || '微信',
         '-Contact', item.name,
-        '-MaxMessages', '10',
       ];
+      // v3.0.0：不再传 -MaxMessages（脚本已不截断），改为回传上次确认的 captureId 水位线。
+      args.push(...this.ackArgs(item.name));
       if (item.selected || item.name === current) {
         // 会话已经打开时只读窗口，不触发 Ctrl+F 搜索。
         args.push('-NoSearch', '-CurrentContact', item.name);
       }
       const read = await this.runScript('wechat-uia', args);
       const data = this.parseJson(read);
-      const messages: DesktopScriptMessage[] =
-        data && data.ok === true && Array.isArray(data.messages) ? data.messages : [];
+      const plan = data && data.ok === true ? this.planRead(item.name, data) : null;
       let verified: { text: string; id?: string } | null = null;
-      for (const message of messages) {
-        const text = String(message?.text || '').trim();
+      for (const message of plan?.accepted ?? []) {
+        const text = message.text.trim();
         if (!text) continue;
         if (this.isOwnText(item.name, text)) continue;
-        verified = { text, id: message?.id };
+        verified = { text, id: message.id };
       }
       if (!verified) {
+        if (plan && plan.uncertainCount > 0) {
+          // 读到的新行几何归属不确定（长气泡越线等）：按约定拒投并计数，也不用列表预览补投，
+          // 避免「无法判断归属却仍然回复」。ack 掉本轮帧，避免同一帧被反复重放。
+          this.commitAck(item.name, plan);
+          this.logger.debug?.(`[desktop] 气泡归属不确定，放弃预览补全：${item.name}`);
+          continue;
+        }
         if (data && data.ok === false && data.error) {
           this.logger.debug?.(`[desktop] 预览校验读取失败，退回预览：${item.name} ${String(data.error).slice(0, 60)}`);
+          this.ocrDiagnostics = { ...this.ocrDiagnostics, lastError: String(data.error).slice(0, 120) };
         }
+        this.commitAck(item.name, plan);
         previewFallbacks.push(item);
         continue;
       }
@@ -577,6 +722,7 @@ export class DesktopChannel {
       const fullText = await this.recheckGarbledText(item.name, args, verified.text);
       const useFull = fullText.length >= preview.length || fullText.includes(preview) || preview.includes(fullText);
       this.emitMessage(item.name, useFull ? fullText : preview, verified.id);
+      this.commitAck(item.name, plan);
     }
     for (const item of previewFallbacks) this.emitPreview(item.name, correctOcrText(item.preview, this.contactNames()));
 
@@ -586,8 +732,9 @@ export class DesktopChannel {
         '-Action', 'read',
         '-WindowTitle', cfg.windowTitle || '微信',
         '-Contact', name,
-        '-MaxMessages', '10',
       ];
+      // v3.0.0：回传上次确认的 captureId 水位线，让脚本重放未确认的行（id 稳定，靠 inFlight 去重）。
+      args.push(...this.ackArgs(name));
       if (noSearchNames.has(name)) {
         // 只读当前已经打开的会话：脚本在标题与 CurrentContact 都对不上时直接返回 ok:false，不做 Ctrl+F。
         args.push('-NoSearch', '-CurrentContact', name);
@@ -596,10 +743,16 @@ export class DesktopChannel {
       const data = this.parseJson(read);
       if (!data || data.ok !== true || !Array.isArray(data.messages)) {
         this.logger.warn?.(`[desktop] read ${name} 失败 code=${read.code} ${String(read.stderr || '').slice(0, 160)}`);
+        this.ocrDiagnostics = {
+          ...this.ocrDiagnostics,
+          lastError: `read 失败 code=${read.code}`,
+          lastReadAt: Date.now(),
+        };
         continue;
       }
-      for (const message of data.messages) {
-        const text = String(message?.text || '').trim();
+      const plan = this.planRead(name, data);
+      for (const message of plan.accepted) {
+        const text = message.text.trim();
         if (!text) continue;
         // 双保险：窗口读取偶尔会把机器人自己的绿气泡 OCR 成「对方消息」
         // （右侧过滤失败/窗口布局异常时），命中最近发送过的文本就直接丢弃，绝不回给自己。
@@ -608,8 +761,9 @@ export class DesktopChannel {
           continue;
         }
         const finalText = await this.recheckGarbledText(name, args, text);
-        this.emitMessage(name, finalText, message?.id);
+        this.emitMessage(name, finalText, message.id);
       }
+      this.commitAck(name, plan);
     }
   }
 

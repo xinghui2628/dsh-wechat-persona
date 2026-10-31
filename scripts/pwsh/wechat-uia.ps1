@@ -11,8 +11,15 @@
 # 参数/输出契约与 src/channels/pc/desktop.ts 保持一致（stdout 只输出单行 JSON；退出码 0 表示脚本正常执行，成败看 ok）：
 #   -Action send -WindowTitle 微信 -Contact 好友A -TextBase64 <b64>
 #       => {"ok":true}  或  {"ok":false,"error":"..."}
-#   -Action read -WindowTitle 微信 -Contact 好友A -MaxMessages 20
-#       => {"ok":true,"messages":[{"id":"pc-xxxx-1","text":"...","receivedAt":1700000000}]}
+#   -Action read -WindowTitle 微信 -Contact 好友A [-Ack cap-12] [-SecondOcr]
+#       => {"ok":true,"captureId":"cap-13","engines":["winrt"],"pane":{...},
+#           "lines":[{"text":"...","side":"left","captureId":"cap-13","box":{...}}],
+#           "messages":[{"id":"pc-xxxx-7","text":"...","captureId":"cap-13","seq":13,
+#                        "side":"left","box":{...},"receivedAt":1700000000}]}
+#       同帧语义：一次 read 只截图一帧，系统 OCR 与（可选的）RapidOCR 都识别同一张 PNG，
+#       captureId 标识该帧；messages = 本次新行 + 上次未确认的 pending 重放行（id 稳定，调用方按 id 去重）。
+#       调用方下次读取把「已成功投递的最后一帧 captureId」用 -Ack 传回，脚本据此丢弃 ≤ 水位的 pending 行；
+#       输出不截断（旧版 -MaxMessages 截断已移除）。
 #
 # 环境变量（都可不设；desktop.ts 不会传，供人工排障/校准用）：
 #   WXUIA_FORCE=1                跳过脚本内置的空闲/时段闸门（调试用；插件层仍有自己的闸门）
@@ -42,6 +49,7 @@ param(
     [string]$Contacts = '',
     [string]$CurrentContact = '',
     [string]$TextBase64 = '',
+    # 兼容保留：旧版 read 用它截断输出；v3.0.0 起 read 输出全部消息，该参数只被接受、不再影响 read。
     [int]$MaxMessages = 20,
     [int]$RowTop = 0,
     [int]$RowLeft = 0,
@@ -52,8 +60,11 @@ param(
     [switch]$NoSearch,
     # 可选：read 时覆盖本次截图放大倍数（0=默认；4=更高倍最近邻放大，用于二次识别投票）。
     [int]$Upscale = 0,
-    # 可选：read 时调用第二 OCR 引擎（RapidOCR）对同一截图再识别一次，和系统 OCR 结果合并投票。
+    # 可选：read 时调用第二 OCR 引擎（RapidOCR）对同一帧截图再识别一次，和系统 OCR 结果合并投票。
     [switch]$SecondOcr,
+    # 可选：上一次读取已成功投递的 captureId（水位线）。脚本据此丢弃已确认的 pending 行；
+    # 未确认的行仍会重放（消息 id 稳定，调用方靠 inFlight 去重）。
+    [string]$Ack = '',
     # 可选：shot 动作的截图输出路径（默认写到临时目录）。
     [string]$OutPath = ''
 )
@@ -167,6 +178,9 @@ $script:FocusStolen = $false
 $script:TargetHwnd = [IntPtr]::Zero
 # OCR 前把窗口截图放大，能明显改善微信小字号气泡的识别率；点击坐标会按比例缩回去。
 $script:Upscale = Get-Env-Int 'WXUIA_UPSCALE' 2 1 4
+
+# v3.0.0 Phase C：read 时按需保留最近一次快照 PNG，供第二引擎复用同一帧（用完由 finally 删除）。
+$script:LastSnapshotImage = ''
 
 # 联系人名/标题的宽松匹配：OCR 常把“件”认成“亻牛”这类形近字，整串相等时容易失败。
 function Test-NameLike([string]$Text, [string]$Needle) {
@@ -558,8 +572,17 @@ function Get-OcrLines([string]$Path, [double]$Scale = 1.0) {
 
 # 一次“截图 + OCR”，返回窗口几何（含 right/bottom，修复旧脚本读取不存在的 right 键导致
 # `-gt $null` 恒为 True、把所有行都跳过、read 永远空数组的 bug）与 OCR 行。
-function Get-WindowSnapshot([IntPtr]$Hwnd, [string]$Tag) {
+function Get-WindowSnapshot([IntPtr]$Hwnd, [string]$Tag, [switch]$KeepImage) {
     $png = Join-Path $env:TEMP ("wxuia-{0}-{1}.png" -f $Tag, [Guid]::NewGuid().ToString('N'))
+    $keep = $false
+    if ($KeepImage) {
+        # 只保留最近一次需要复用的快照：后续 KeepImage 调用会自动删掉上一张，避免临时文件堆积。
+        if ($script:LastSnapshotImage -and $script:LastSnapshotImage -ne $png) {
+            Remove-Item -LiteralPath $script:LastSnapshotImage -Force -ErrorAction SilentlyContinue
+        }
+        $script:LastSnapshotImage = $png
+        $keep = $true
+    }
     try {
         $geo = Get-WindowShot $Hwnd $png
         if ($script:ShotDir) {
@@ -570,13 +593,15 @@ function Get-WindowSnapshot([IntPtr]$Hwnd, [string]$Tag) {
         }
         $lines = @(Get-OcrLines $png ([double]$geo.scale))
     } finally {
-        Remove-Item -LiteralPath $png -Force -ErrorAction SilentlyContinue
+        if (-not $keep) { Remove-Item -LiteralPath $png -Force -ErrorAction SilentlyContinue }
     }
     Write-Debug-Log ("SHOT " + $Tag + " geo=" + ($geo | ConvertTo-Json -Compress) + " lines=" + $lines.Count)
     foreach ($l in $lines) {
         Write-Debug-Log ("  LINE x=" + [int]$l.left + " y=" + [int]$l.top + " w=" + [int]($l.right - $l.left) + " t=" + $l.text)
     }
-    return @{ geo = $geo; lines = $lines }
+    $result = @{ geo = $geo; lines = $lines }
+    if ($keep) { $result.imagePath = $png }
+    return $result
 }
 
 function Get-RegionSnapshot([IntPtr]$Hwnd, [string]$Tag, [double]$rx0, [double]$ry0, [double]$rx1, [double]$ry1, [switch]$Ink) {
@@ -717,35 +742,83 @@ function Get-TextOverlap([string]$A, [string]$B) {
     return (2.0 * $common) / ($a.Length + $b.Length)
 }
 
-# 从聊天面板提取“对方发来的消息”候选（右侧自己发的气泡按中心点过滤掉）。
+# 聊天面板几何边界（与 src/core/ocr/bubbles.ts 的 pane 语义一致）：
+# 上方 10% 是标题栏/工具栏、下方 15% 是输入框，左右按窗口比例收边。
+function Get-BubblePane($Geo) {
+    $w = [double]$Geo.width
+    $h = [double]$Geo.height
+    $left = $w * $script:PaneLeftRatio
+    $right = $w * 0.995
+    $top = $h * 0.10
+    $bottom = $h * 0.85
+    return @{
+        left   = $left
+        right  = $right
+        top    = $top
+        bottom = $bottom
+        width  = [math]::Max(1.0, $right - $left)
+        height = [math]::Max(1.0, $bottom - $top)
+    }
+}
 
+# 按行框左右边缘判定气泡归属：贴左 = 对方（inbound）、贴右 = 自己（outbound）、
+# 两侧都贴（长气泡越线）或两侧都不贴 = 无法判断（uncertain，交给 TS 侧拒投，绝不猜测）。
+function Get-BubbleSide($Line, $Pane) {
+    $x = [double]$Line.left
+    $y = [double]$Line.top
+    $r = [double]$Line.right
+    $b = [double]$Line.bottom
+    $pw = [double]$Pane.width
+    $ph = [double]$Pane.height
+    $tolL = [math]::Max(6.0, $pw * 0.10)
+    $tolR = [math]::Max(6.0, $pw * 0.10)
+    $tolT = [math]::Max(6.0, $ph * 0.02)
+    if ($b -le [double]$Pane.top -or $y -ge [double]$Pane.bottom) { return 'unknown' }
+    if ($r -le [double]$Pane.left -or $x -ge [double]$Pane.right) { return 'unknown' }
+    # 贴顶部边缘的注释类行（日期/标题）不算气泡
+    if ($y -lt ([double]$Pane.top - $tolT) -and $r -le ([double]$Pane.left + $tolL)) { return 'unknown' }
+    $nearLeft = (($x - [double]$Pane.left) -le $tolL)
+    $nearRight = (([double]$Pane.right - $r) -le $tolR)
+    $centerX = ($x + $r) / 2.0
+    $midX = [double]$Pane.left + $pw * 0.5
+    if ($nearLeft -and $nearRight) { return 'unknown' }
+    if ($nearLeft) { if ($centerX -le $midX) { return 'left' } return 'unknown' }
+    if ($nearRight) { if ($centerX -ge $midX) { return 'right' } return 'unknown' }
+    return 'unknown'
+}
+
+# 从聊天面板提取候选行：先按几何边界排除标题/输入框区域，再按气泡贴边判断归属；
+# 只保留「对方（左）」和「不确定」的行（明确右侧自己的行直接跳过），
+# uncertain 行连同 box/pane 一起输出，交给 TS 侧按同一几何规则复核后拒投（OCR-M1）。
 function Get-InboundCandidates($Snapshot) {
     $lines = @($Snapshot.lines)
-    $w = [double]$Snapshot.geo.width
-    $h = [double]$Snapshot.geo.height
-    $paneLeft = $w * $script:PaneLeftRatio
-    $paneRight = $w * 0.995
-    $paneTop = $h * 0.10
-    $paneBottom = $h * 0.80
+    $pane = Get-BubblePane $Snapshot.geo
     $raw = @()
     foreach ($ln in $lines) {
         $x = [double]$ln.left
         $y = [double]$ln.top
-        if ($x -lt $paneLeft -or $x -gt $paneRight) { continue }
-        if ($y -lt $paneTop -or $y -gt $paneBottom) { continue }
-        if (([double]$ln.right - $x) -lt 6) { continue }
+        $r = [double]$ln.right
+        $b = [double]$ln.bottom
+        if (($r - $x) -lt 6) { continue }
+        if ($y -lt ([double]$pane.top - 6.0) -or $y -gt ([double]$pane.bottom + 2.0)) { continue }
+        if ($x -lt ([double]$pane.left - 12.0) -or $x -gt ([double]$pane.right + 2.0)) { continue }
         $text = Get-CleanText ([string]$ln.text)
         if (Test-SystemLine $text) { continue }
-        # 自己的消息右对齐：气泡中心点明显偏右；对方气泡中心点在中线左侧。
-        # 实测（1200 宽窗口）：对方长消息行中心 ≤0.60w，自己气泡行中心 ≥0.78w，中线取 0.65w 隔离。
-        $centerX = ($x + [double]$ln.right) / 2.0
-        if ($centerX -gt ($paneLeft + $paneRight) / 2.0) { continue }  # 右侧 = 自己发的，跳过
-        $raw += @{ text = $text; left = $x; right = [double]$ln.right; top = $y; bottom = [double]$ln.bottom }
+        $side = Get-BubbleSide $ln $pane
+        if ($side -eq 'right') { continue }  # 明确是自己在右侧发的，跳过
+        $raw += @{ text = $text; left = $x; right = $r; top = $y; bottom = $b }
     }
     if ($raw.Count -eq 0) { return @() }
     $raw = @($raw | Sort-Object { $_.top })
     $merged = @(Merge-OcrLines $raw)
-    return $merged
+    # 合并跨行气泡后按整体行框重判一次归属（长气泡的左右边缘只有合并后才准确）。
+    $out = @()
+    foreach ($m in $merged) {
+        $side = Get-BubbleSide $m $pane
+        if ($side -eq 'right') { continue }
+        $out += @{ text = [string]$m.text; left = [double]$m.left; right = [double]$m.right; top = [double]$m.top; bottom = [double]$m.bottom; side = $side }
+    }
+    return $out
 }
 
 # ── 聊天窗口定位 ─────────────────────────────────────────────────────────
@@ -979,8 +1052,8 @@ function Ensure-Foreground([IntPtr]$Hwnd) {
 # 进入与 $Contact 的聊天窗口，返回 @{ geo; lines; exact; via }。
 # exact=true 表示右侧标题栏 OCR 确认就是目标联系人；via 记录进入方式便于排障。
 
-function Enter-Chat([IntPtr]$Hwnd) {
-    $snap = Get-WindowSnapshot $Hwnd 'enter0'
+function Enter-Chat([IntPtr]$Hwnd, [switch]$KeepImage) {
+    $snap = Get-WindowSnapshot $Hwnd 'enter0' -KeepImage:$KeepImage
     if (Test-IsTargetChat $snap $Contact) {
         Write-Debug-Log ("已在目标聊天: " + $Contact)
         return @{ geo = $snap.geo; lines = @($snap.lines); exact = $true; via = 'already' }
@@ -1006,7 +1079,7 @@ function Enter-Chat([IntPtr]$Hwnd) {
         Start-Sleep -Milliseconds 750
         [WXDriver]::PressEnter()
         Start-Sleep -Milliseconds 950
-        $snapF = Get-WindowSnapshot $Hwnd 'ctrl-f'
+        $snapF = Get-WindowSnapshot $Hwnd 'ctrl-f' -KeepImage:$KeepImage
         if (Test-IsTargetChatLoose $snapF $Contact) {
             Write-Debug-Log ("Ctrl+F 直达会话: " + $Contact)
             return @{ geo = $snapF.geo; lines = @($snapF.lines); exact = $true; via = 'ctrl-f' }
@@ -1017,7 +1090,7 @@ function Enter-Chat([IntPtr]$Hwnd) {
         }
         [WXDriver]::PressEnter()
         Start-Sleep -Milliseconds 850
-        $snapF2 = Get-WindowSnapshot $Hwnd 'ctrl-f2'
+        $snapF2 = Get-WindowSnapshot $Hwnd 'ctrl-f2' -KeepImage:$KeepImage
         if (Test-IsTargetChatLoose $snapF2 $Contact) {
             Write-Debug-Log ("Ctrl+F 直达会话(二次回车): " + $Contact)
             return @{ geo = $snapF2.geo; lines = @($snapF2.lines); exact = $true; via = 'ctrl-f2' }
@@ -1048,7 +1121,7 @@ function Enter-Chat([IntPtr]$Hwnd) {
             Write-Debug-Log ("点击会话列表联系人 " + $lx + "," + $ly + " text=" + $item.text)
             [WXDriver]::Click($lx, $ly)
             Start-Sleep -Milliseconds 700
-            $snapList = Get-WindowSnapshot $Hwnd 'listdirect'
+            $snapList = Get-WindowSnapshot $Hwnd 'listdirect' -KeepImage:$KeepImage
             if (Test-IsTargetChat $snapList $Contact) {
                 return @{ geo = $snapList.geo; lines = @($snapList.lines); exact = $true; via = 'list-direct' }
             }
@@ -1073,7 +1146,7 @@ function Enter-Chat([IntPtr]$Hwnd) {
     Start-Sleep -Milliseconds 120
     [WXDriver]::TypeText($Contact)
     Start-Sleep -Milliseconds 700
-    $snap2 = Get-WindowSnapshot $Hwnd 'search'
+    $snap2 = Get-WindowSnapshot $Hwnd 'search' -KeepImage:$KeepImage
     $hit = Find-SearchHit $snap2 $Contact
     if ($hit) {
         $cx = [int]($snap2.geo.left + ([double]$hit.left + [double]$hit.right) / 2.0)
@@ -1081,7 +1154,7 @@ function Enter-Chat([IntPtr]$Hwnd) {
         Write-Debug-Log ("点击搜索结果 " + $cx + "," + $cy)
         [WXDriver]::Click($cx, $cy)
         Start-Sleep -Milliseconds 700
-        $snap3 = Get-WindowSnapshot $Hwnd 'chat'
+        $snap3 = Get-WindowSnapshot $Hwnd 'chat' -KeepImage:$KeepImage
         # 搜索结果行是 OCR 直接匹配到联系人名才点的，标题栏的形近字（如「琦/奇」）不再二次否决。
         return @{ geo = $snap3.geo; lines = @($snap3.lines); exact = $true; via = 'search' }
     }
@@ -1089,7 +1162,7 @@ function Enter-Chat([IntPtr]$Hwnd) {
     Write-Debug-Log '搜索结果未识别，尝试回车选中第一项'
     [WXDriver]::PressEnter()
     Start-Sleep -Milliseconds 700
-    $snap4 = Get-WindowSnapshot $Hwnd 'enter'
+    $snap4 = Get-WindowSnapshot $Hwnd 'enter' -KeepImage:$KeepImage
     if (Test-IsTargetChat $snap4 $Contact) {
         return @{ geo = $snap4.geo; lines = @($snap4.lines); exact = $true; via = 'enter' }
     }
@@ -1097,7 +1170,7 @@ function Enter-Chat([IntPtr]$Hwnd) {
     Write-Debug-Log '回车未确认目标聊天，回退点击会话列表首项'
     [WXDriver]::PressEsc()
     Start-Sleep -Milliseconds 350
-    $snap5 = Get-WindowSnapshot $Hwnd 'list'
+    $snap5 = Get-WindowSnapshot $Hwnd 'list' -KeepImage:$KeepImage
     $w = [double]$snap5.geo.width
     $h = [double]$snap5.geo.height
     $items = @(@($snap5.lines) | Where-Object {
@@ -1112,7 +1185,7 @@ function Enter-Chat([IntPtr]$Hwnd) {
         Write-Debug-Log ("点击会话列表首项 " + $ix + "," + $iy + " text=" + $it.text)
         [WXDriver]::Click($ix, $iy)
         Start-Sleep -Milliseconds 700
-        $snap6 = Get-WindowSnapshot $Hwnd 'chat2'
+        $snap6 = Get-WindowSnapshot $Hwnd 'chat2' -KeepImage:$KeepImage
         return @{ geo = $snap6.geo; lines = @($snap6.lines); exact = (Test-IsTargetChat $snap6 $Contact); via = 'list-first' }
     }
     return @{ geo = $snap5.geo; lines = @($snap5.lines); exact = $false; via = 'none' }
@@ -1132,13 +1205,29 @@ function Read-State {
 }
 
 function Save-State($Object) {
+    # 原子写（OCR-M6）：先写同目录 temp，再 File.Replace 覆盖目标；任何一步失败都不会留下半个 state。
+    # 调用方（read）在输出前落盘 pending，崩溃后下次重放未确认行。
+    $dir = Split-Path $script:StatePath -Parent
+    if ($dir -and -not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+    $json = $Object | ConvertTo-Json -Depth 8 -Compress
+    $utf8 = New-Object System.Text.UTF8Encoding($false)
+    $tmp = $script:StatePath + '.tmp-' + [Guid]::NewGuid().ToString('N')
     try {
-        $dir = Split-Path $script:StatePath -Parent
-        if ($dir -and -not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
-        $json = $Object | ConvertTo-Json -Depth 8 -Compress
-        [System.IO.File]::WriteAllText($script:StatePath, $json, (New-Object System.Text.UTF8Encoding($false)))
+        [System.IO.File]::WriteAllText($tmp, $json, $utf8)
+        if (Test-Path -LiteralPath $script:StatePath) {
+            try {
+                [System.IO.File]::Replace($tmp, $script:StatePath, $null)
+            } catch {
+                # 某些文件系统（部分同步盘/网络盘）不支持 Replace：退化为整文件覆盖后删 temp。
+                [System.IO.File]::Copy($tmp, $script:StatePath, $true)
+                Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
+            }
+        } else {
+            [System.IO.File]::Move($tmp, $script:StatePath)
+        }
     } catch {
         Write-Debug-Log ("保存基线失败: " + $_.Exception.Message)
+        Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
     }
 }
 
@@ -1761,7 +1850,8 @@ if ($hwnd -ne [IntPtr]::Zero) { Ensure-UsableWindow $hwnd }
     if ($Action -eq 'read' -and $NoSearch) {
         # 只认“当前已经打开的会话”：标题 OCR 命中、或插件通过 list 的绿底选中行传回的 CurrentContact 与目标一致；
         # 两者都不成立时直接放弃读取，绝不 Ctrl+F 搜索（避免抢前台和搜索框闪烁）。
-        $openSnap = Get-WindowSnapshot $hwnd 'read-nosearch'
+        # -KeepImage：read 时保留这一帧 PNG，供第二引擎识别同一张图（同帧，禁止二次截图）。
+        $openSnap = Get-WindowSnapshot $hwnd 'read-nosearch' -KeepImage
         $openHit = [bool](Test-IsTargetChat $openSnap $Contact) -or [bool](Test-IsTargetChatLoose $openSnap $Contact)
         if (-not $openHit -and -not [string]::IsNullOrWhiteSpace($CurrentContact)) {
             if ((Normalize-Text $CurrentContact) -eq (Normalize-Text $Contact)) {
@@ -1777,7 +1867,8 @@ if ($hwnd -ne [IntPtr]::Zero) { Ensure-UsableWindow $hwnd }
         $snap = @{ geo = $openSnap.geo; lines = $openSnap.lines; exact = $true; via = 'nosearch-open' }
         Write-Debug-Log ("进入聊天 via=nosearch-open contact=" + $Contact)
     } else {
-        $snap = Enter-Chat $hwnd
+        # read 时保留 Enter-Chat 最后一帧截图，第二引擎直接识别同一 PNG。
+        $snap = Enter-Chat $hwnd -KeepImage:($Action -eq 'read')
         Write-Debug-Log ("进入聊天 via=" + $snap.via + " exact=" + $snap.exact + " contact=" + $Contact)
     }
 
@@ -1838,57 +1929,62 @@ if ($hwnd -ne [IntPtr]::Zero) { Ensure-UsableWindow $hwnd }
 
     # ── read ────────────────────────────────────────────────────────────
     $candidates = @(Get-InboundCandidates $snap)
+    # 同一帧：read 已用 -KeepImage 保留本次快照 PNG，第二引擎直接识别同一个文件，绝不二次截图（OCR-H3）。
+    $readImage = [string]$script:LastSnapshotImage
+    $enginesUsed = @('winrt')
 
-    # 双引擎投票：第二引擎（RapidOCR）独立识别同一截图；只在「重叠度高且更完整」时替换候选文本，
+    # 双引擎投票：第二引擎（RapidOCR）独立识别同一帧；只在「重叠度高且更完整」时替换候选文本，
     # 这样两套模型同时认错的概率远低于单引擎，且 python/依赖缺失时静默回退系统 OCR。
     if ($Action -eq 'read' -and $SecondOcr) {
-        try {
-            $ocrShot = Join-Path $env:TEMP ("wxuia-ocr-" + (Get-Date -Format 'yyyyMMddHHmmssfff') + ".png")
-            $ocrGeo = Get-WindowShot $hwnd $ocrShot
-            $ocrScale = 1.0
-            try { $ocrScale = [double]$ocrGeo.scale } catch { }
-            if ($ocrScale -le 0) { $ocrScale = 1.0 }
-            $pyScript = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\py\rapid_ocr.py'))
-            $rawJson = (& python -X utf8 $pyScript $ocrShot 2>$null | Out-String)
-            $second = $rawJson | ConvertFrom-Json
-            if ($second -and $second.ok -and @($second.lines).Count -gt 0) {
-                $mergedCount = 0
-                foreach ($c in $candidates) {
-                    $oldText = [string]$c.text
-                    $cTop = [double]$c.top
-                    $best = $null
-                    $bestOverlap = 0.0
-                    # 第一轮：只认同一条消息（行 y 坐标接近）的第二引擎结果，避免把别的消息张冠李戴。
-                    foreach ($ln in @($second.lines)) {
-                        $lt = [string]$ln.text
-                        if ([string]::IsNullOrWhiteSpace($lt)) { continue }
-                        $lnTop = [double]$ln.y / $ocrScale
-                        if ([math]::Abs($lnTop - $cTop) -gt 26.0) { continue }
-                        $ov = Get-TextOverlap $oldText $lt
-                        if ($ov -gt $bestOverlap) { $bestOverlap = $ov; $best = $lt }
-                    }
-                    # 第二轮兜底：万一行坐标因滚动/缩放对不上，改用全局高重合度匹配（更严格）。
-                    if ($null -eq $best -or $bestOverlap -lt 0.35) {
+        if ([string]::IsNullOrWhiteSpace($readImage) -or -not (Test-Path -LiteralPath $readImage)) {
+            Write-Debug-Log 'SecondOcr 跳过：没有可复用的同帧截图'
+        } else {
+            try {
+                $ocrScale = 1.0
+                try { $ocrScale = [double]$snap.geo.scale } catch { }
+                if ($ocrScale -le 0) { $ocrScale = 1.0 }
+                $pyScript = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\py\rapid_ocr.py'))
+                $rawJson = (& python -X utf8 $pyScript $readImage 2>$null | Out-String)
+                $second = $rawJson | ConvertFrom-Json
+                if ($second -and $second.ok -and @($second.lines).Count -gt 0) {
+                    $enginesUsed = @('winrt', 'rapidocr')
+                    $mergedCount = 0
+                    foreach ($c in $candidates) {
+                        $oldText = [string]$c.text
+                        $cTop = [double]$c.top
+                        $best = $null
+                        $bestOverlap = 0.0
+                        # 第一轮：只认同一条消息（行 y 坐标接近）的第二引擎结果，避免把别的消息张冠李戴。
                         foreach ($ln in @($second.lines)) {
                             $lt = [string]$ln.text
                             if ([string]::IsNullOrWhiteSpace($lt)) { continue }
+                            $lnTop = [double]$ln.y / $ocrScale
+                            if ([math]::Abs($lnTop - $cTop) -gt 26.0) { continue }
                             $ov = Get-TextOverlap $oldText $lt
                             if ($ov -gt $bestOverlap) { $bestOverlap = $ov; $best = $lt }
                         }
+                        # 第二轮兜底：万一行坐标因滚动/缩放对不上，改用全局高重合度匹配（更严格）。
+                        if ($null -eq $best -or $bestOverlap -lt 0.35) {
+                            foreach ($ln in @($second.lines)) {
+                                $lt = [string]$ln.text
+                                if ([string]::IsNullOrWhiteSpace($lt)) { continue }
+                                $ov = Get-TextOverlap $oldText $lt
+                                if ($ov -gt $bestOverlap) { $bestOverlap = $ov; $best = $lt }
+                            }
+                        }
+                        if ($null -ne $best -and $bestOverlap -ge 0.35 -and $best.Length -gt $oldText.Length) {
+                            Write-Debug-Log ("SecondOcr 合并 top=" + [int]$c.top + " overlap=" + [math]::Round($bestOverlap, 2) + " old=" + $oldText + " new=" + $best)
+                            $c.text = $best
+                            $mergedCount++
+                        }
                     }
-                    if ($null -ne $best -and $bestOverlap -ge 0.35 -and $best.Length -gt $oldText.Length) {
-                        Write-Debug-Log ("SecondOcr 合并 top=" + [int]$c.top + " overlap=" + [math]::Round($bestOverlap, 2) + " old=" + $oldText + " new=" + $best)
-                        $c.text = $best
-                        $mergedCount++
-                    }
+                    Write-Debug-Log ("SecondOcr 完成 merged=" + $mergedCount)
+                } else {
+                    Write-Debug-Log ("SecondOcr 不可用：" + [string]$second.error)
                 }
-                Write-Debug-Log ("SecondOcr 完成 merged=" + $mergedCount)
-            } else {
-                Write-Debug-Log ("SecondOcr 不可用：" + [string]$second.error)
+            } catch {
+                Write-Debug-Log ("SecondOcr 异常，保留系统 OCR 结果：" + $_.Exception.Message)
             }
-            Remove-Item $ocrShot -Force -ErrorAction SilentlyContinue
-        } catch {
-            Write-Debug-Log ("SecondOcr 异常，保留系统 OCR 结果：" + $_.Exception.Message)
         }
     }
     if (-not $chatConfirmed) {
@@ -1902,94 +1998,179 @@ if ($hwnd -ne [IntPtr]::Zero) { Ensure-UsableWindow $hwnd }
     foreach ($c in $candidates) { Write-Debug-Log ("  CAND top=" + [int]$c.top + " text=" + $c.text) }
 
     $texts = @($candidates | ForEach-Object { [string]$_.text })
+    $paneOut = @{}
+    try { $paneOut = Get-BubblePane $snap.geo } catch { $paneOut = @{} }
+
+    # ── 基线 / pending 队列 / ack 水位线（v3.0.0 Phase C）─────────────────
+    # 关键点：先保存后输出（OCR-H1）；未确认行留在 pending 下次重放且 id 稳定（OCR-H2）；
+    # state 一律原子写（temp + rename，OCR-M6）。
+    $state = Read-State
+    $stateEntry = $null
+    try {
+        if ($state -and ($state.PSObject.Properties.Name -contains $Contact)) { $stateEntry = $state.$Contact }
+    } catch { $stateEntry = $null }
+
+    $prevTexts = @()
+    $pendingLines = @()
+    $captureSeq = 0
+    $messageSeq = 0
+    $lastAckCaptureId = ''
+    if ($null -ne $stateEntry) {
+        $names = @($stateEntry.PSObject.Properties.Name)
+        if ($names -contains 'texts') { $prevTexts = @($stateEntry.texts | ForEach-Object { [string]$_ }) }
+        if ($names -contains 'pending') { $pendingLines = @($stateEntry.pending | Where-Object { $null -ne $_ }) }
+        if ($names -contains 'captureSeq') { $captureSeq = [int]$stateEntry.captureSeq }
+        if ($names -contains 'messageSeq') { $messageSeq = [int]$stateEntry.messageSeq }
+        if ($names -contains 'lastAckCaptureId') { $lastAckCaptureId = [string]$stateEntry.lastAckCaptureId }
+    }
+
+    # 本次帧号：同一帧的所有行/消息共享同一 captureId，跨帧绝不复用（OCR-DESIGN §4）。
+    $captureSeq = $captureSeq + 1
+    $captureId = 'cap-' + $captureSeq
+
+    # ack 水位线：调用方上次成功投递的帧号；只丢弃「不晚于水位线」的 pending 行。
+    $ackSeq = -1
+    if (-not [string]::IsNullOrWhiteSpace($Ack)) {
+        $ackMatch = [regex]::Match($Ack.Trim(), '^cap-(\d+)')
+        if ($ackMatch.Success) {
+            $ackSeq = [int]$ackMatch.Groups[1].Value
+            $lastAckCaptureId = $Ack.Trim()
+        }
+    }
+    if ($ackSeq -ge 0) {
+        $pendingLines = @($pendingLines | Where-Object { [int]$_.seq -gt $ackSeq })
+    }
+
+    $boxOf = {
+        param($c)
+        return @{ x = [int]$c.left; y = [int]$c.top; width = [int]($c.right - [double]$c.left); height = [int]($c.bottom - [double]$c.top) }
+    }
 
     if ($script:NoBaseline) {
+        # 调试模式：不建立基线/去重，把本次读到的全部行按消息输出（不截断）。
         $out = @()
-        foreach ($t in ($texts | Select-Object -Last $MaxMessages)) {
-            $out += @{ id = ('pc-' + (Get-Hash $t) + '-n'); text = $t; receivedAt = (Now-Id) }
+        $seq = 0
+        foreach ($c in $candidates) {
+            $seq++
+            $out += @{
+                id         = ('pc-' + (Get-Hash ([string]$c.text)) + '-n' + $seq)
+                text       = [string]$c.text
+                captureId  = $captureId
+                seq        = $captureSeq
+                side       = [string]$c.side
+                box        = (& $boxOf $c)
+                receivedAt = (Now-Id)
+            }
         }
-        Write-Result @{ ok = $true; messages = @($out) }
+        Write-Result @{ ok = $true; captureId = $captureId; engines = @($enginesUsed); pane = $paneOut; messages = @($out) }
         exit 0
     }
-
-    $state = Read-State
-    $hasPrev = $false
-    $prev = @()
-    try {
-        if ($state.PSObject.Properties.Name -contains $Contact) {
-            $entry = $state.$Contact
-            if ($null -ne $entry -and $entry.PSObject.Properties.Name -contains 'texts') {
-                $prev = @($entry.texts | ForEach-Object { [string]$_ })
-                $hasPrev = $true
-            }
-            # 旧版基线存的是裸 hash 数组，格式不兼容：当作没有基线，重新建立。
-        }
-    } catch { $hasPrev = $false; $prev = @() }
 
     $newTexts = @()
-    $resetBaseline = $false
-    if (-not $hasPrev) {
+    $newCandidates = @()
+    $mergedBaseline = @($prevTexts)
+    if ($prevTexts.Count -eq 0) {
         # 首次运行：把当前可见消息记为基线，不回复历史消息。
         if ($texts.Count -gt 0) {
-            Save-Baseline $Contact $texts
+            $mergedBaseline = @($texts | Select-Object -Last 200)
             Write-Debug-Log ("首次基线已建立，消息数=" + $texts.Count)
         }
-        Write-Result @{ ok = $true; messages = @() }
-        exit 0
-    }
-
-    $n = $texts.Count
-    $m = $prev.Count
-    if ($n -gt 0 -and $m -gt 0) {
-        # 用“上一次可见窗口”对齐：当前窗口开头 k 条 == 基线末尾 k 条，则第 k 条之后是新消息。
-        $k = [math]::Min($n, $m)
+    } else {
+        $n = $texts.Count
+        $m = $prevTexts.Count
         $matched = $false
-        while ($k -gt 0) {
-            $ok = $true
-            for ($i = 0; $i -lt $k; $i++) {
-                if ([string]$prev[$m - $k + $i] -ne [string]$texts[$i]) { $ok = $false; break }
+        $k = 0
+        if ($n -gt 0 -and $m -gt 0) {
+            # 用“上一次可见窗口”对齐：当前窗口开头 k 条 == 基线末尾 k 条，则第 k 条之后是新消息。
+            $k = [math]::Min($n, $m)
+            while ($k -gt 0) {
+                $ok = $true
+                for ($i = 0; $i -lt $k; $i++) {
+                    if ([string]$prevTexts[$m - $k + $i] -ne [string]$texts[$i]) { $ok = $false; break }
+                }
+                if ($ok) { $matched = $true; break }
+                $k--
             }
-            if ($ok) { $matched = $true; break }
-            $k--
         }
         if ($matched) {
-            if ($k -lt $n) { $newTexts = @($texts[$k..($n - 1)]) }
-        } else {
+            if ($k -lt $n) {
+                $newTexts = @($texts[$k..($n - 1)])
+                $newCandidates = @($candidates[$k..($n - 1)])
+            }
+            $combined = @(@($prevTexts) + @($newTexts))
+            $mergedBaseline = @($combined | Select-Object -Last 200)
+        } elseif ($n -gt 0) {
             # 完全对不上基线：多半是聊天窗口滚动/缩放变化/OCR 抖动。宁可不回复，也不把旧消息当新消息。
-            $resetBaseline = $true
-            Write-Debug-Log '当前窗口与基线完全无法对齐，已重置基线（不输出消息）'
-        }
-        if (-not $resetBaseline) {
-            $mergedBaseline = @($prev) + @($newTexts)
-            $mergedBaseline = @($mergedBaseline | Select-Object -Last 200)
-            Save-Baseline $Contact $mergedBaseline
-        } else {
-            Save-Baseline $Contact $texts
+            Write-Debug-Log '当前窗口与基线完全无法对齐，已重置基线（不输出新消息）'
+            $mergedBaseline = @($texts | Select-Object -Last 200)
         }
     }
 
-    if ($newTexts.Count -eq 0) {
-        Write-Result @{ ok = $true; messages = @() }
-        exit 0
+    # 新行进入 pending：id = 文本哈希 + 持久化递增序号，保证「同文本两条」id 不同，
+    # 且同一行跨帧重放时 id 不变（TS 侧 inFlight 据此去重）。
+    $pendingNew = @()
+    for ($i = 0; $i -lt $newTexts.Count; $i++) {
+        $messageSeq++
+        $c = $newCandidates[$i]
+        $pendingNew += @{
+            id          = ('pc-' + (Get-Hash ([string]$newTexts[$i])) + '-' + $messageSeq)
+            text        = [string]$newTexts[$i]
+            captureId   = $captureId
+            seq         = $captureSeq
+            firstSeenAt = (Now-Id)
+            side        = [string]$c.side
+            box         = (& $boxOf $c)
+        }
     }
+    $combinedPending = @(@($pendingLines) + @($pendingNew))
+    $allPending = @($combinedPending | Select-Object -Last 200)
 
+    # 先保存（原子写）再输出：即使输出后调用方崩溃，未确认行也在 pending 里，下次重放不丢消息。
+    $entry = [pscustomobject]@{
+        texts            = @($mergedBaseline)
+        pending          = @($allPending)
+        captureSeq       = $captureSeq
+        messageSeq       = $messageSeq
+        lastAckCaptureId = $lastAckCaptureId
+        updatedAt        = (Now-Id)
+    }
+    $state | Add-Member -NotePropertyName $Contact -NotePropertyValue $entry -Force
+    Save-State $state
+
+    $linesOut = @()
+    foreach ($c in $candidates) {
+        $linesOut += @{
+            text      = [string]$c.text
+            side      = [string]$c.side
+            captureId = $captureId
+            box       = (& $boxOf $c)
+        }
+    }
     $out = @()
-    $seen = @{}
-    foreach ($t in $newTexts) {
-        $h = Get-Hash $t
-        if (-not $seen.ContainsKey($h)) { $seen[$h] = 0 }
-        $seen[$h] = $seen[$h] + 1
-        $out += @{ id = ('pc-' + $h + '-' + $seen[$h]); text = $t; receivedAt = (Now-Id) }
+    foreach ($p in $allPending) {
+        $out += @{
+            id         = [string]$p.id
+            text       = [string]$p.text
+            captureId  = [string]$p.captureId
+            seq        = [int]$p.seq
+            side       = [string]$p.side
+            box        = $p.box
+            receivedAt = [string]$p.firstSeenAt
+        }
     }
-    $out = @($out | Select-Object -Last $MaxMessages)
-    Write-Debug-Log ("输出新消息 " + $out.Count)
-    Write-Result @{ ok = $true; messages = @($out) }
+    Write-Debug-Log ("输出待确认消息 " + $out.Count + "（含重放），本次新消息 " + $pendingNew.Count + "，帧 " + $captureId)
+    Write-Result @{ ok = $true; captureId = $captureId; engines = @($enginesUsed); pane = $paneOut; lines = @($linesOut); messages = @($out) }
     exit 0
 } catch {
     Write-Debug-Log ("脚本异常: " + $_.Exception.Message)
     if ($script:DebugPath) { Write-Debug-Log ("堆栈: " + $_.ScriptStackTrace) }
     Fail-With ("脚本异常: " + $_.Exception.Message)
 } finally {
+    # 清理 read 保留的同帧截图（第二引擎用完/异常时都不留临时文件）。
+    if ($script:LastSnapshotImage) {
+        Remove-Item -LiteralPath $script:LastSnapshotImage -Force -ErrorAction SilentlyContinue
+        $script:LastSnapshotImage = ''
+    }
     # 恢复：topmost → 最小化状态 → 前台窗口 → 鼠标位置。
 if ($script:WasTopmost) { try { [WXDriver]::SetWindowPos($hwnd, [WXDriver]::HWND_NOTOPMOST, 0, 0, 0, 0, [WXDriver]::SWP_NOMOVE -bor [WXDriver]::SWP_NOSIZE -bor [WXDriver]::SWP_NOACTIVATE) | Out-Null } catch {} }
     try {
