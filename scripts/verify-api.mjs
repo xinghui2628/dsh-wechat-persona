@@ -188,11 +188,21 @@ check('GET /stickers → 200 且有内置表情包', stickers.status === 200 && 
 const help = await call('GET', '/help')
 check('GET /help → 200 且返回使用说明书', help.status === 200 && help.json?.ok === true && typeof help.json?.usage === 'string' && help.json.usage.length > 1000, `usage ${help.json?.usage?.length ?? 0} chars`)
 
+// 先发一条测试消息（此时距上次发送已足够久，应当成功），
+// 再立刻发第二条：默认 rateLimit.minReplyIntervalSec=30，必须被拒绝且 delivery=not-sent。
+// 这同时验证了「/test/send 不绕过频控」这条安全约束（任务书 10.2）。
+const testSend = await call('POST', '/test/send', { contactId: '测试好友', text: '设置页测试消息' })
+check('POST /test/send → 200 且通道发送成功', testSend.status === 200 && testSend.json?.ok === true && testSend.json?.result?.ok === true, JSON.stringify(testSend.json))
+
+const rateLimited = await call('POST', '/test/send', { contactId: '测试好友', text: '设置页测试消息 2' })
+check(
+  'POST /test/send 在最小回复间隔内被拒绝（not-sent，不绕过频控）',
+  rateLimited.status === 200 && rateLimited.json?.result?.ok === false && rateLimited.json?.result?.delivery === 'not-sent',
+  JSON.stringify(rateLimited.json),
+)
+
 const testInbound = await call('POST', '/test/inbound', { text: '在吗', contactId: '测试好友' })
 check('POST /test/inbound → 202', testInbound.status === 202 && testInbound.json?.accepted === true, JSON.stringify(testInbound.json))
-
-const testSend = await call('POST', '/test/send', { contactId: '测试好友', text: '设置页测试消息' })
-check('POST /test/send → 200 且通道发送成功', testSend.status === 200 && testSend.json?.result?.ok === true, JSON.stringify(testSend.json?.result))
 
 const pause = await call('POST', '/pause', { reason: 'verify' })
 check('POST /pause → 200', pause.status === 200 && pause.json?.paused === true)

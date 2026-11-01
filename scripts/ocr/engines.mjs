@@ -121,6 +121,26 @@ export const VARIANTS_ALL = [
     coordOffsetY: 0,
     ops: [{ op: 'adaptive_threshold' }],
   },
+  // 组合变体（task-20 误差归因的修复假设验证用）：
+  // 「先裁掉标题/输入栏（去掉 chrome 干扰与无内容区域），再放大」，对比单用裁剪 / 单用放大。
+  {
+    id: 'crop_pane_upscale2x',
+    label: '组合：裁剪窗格 + 2x 放大（LANCZOS）',
+    scale: 2,
+    coordScale: 2,
+    coordOffsetX: 0,
+    coordOffsetY: 36,
+    ops: [{ op: 'crop', top: 36, bottom: 56 }, { op: 'resize', factor: 2, resample: 'LANCZOS' }],
+  },
+  {
+    id: 'crop_pane_upscale3x',
+    label: '组合：裁剪窗格 + 3x 放大（LANCZOS）',
+    scale: 3,
+    coordScale: 3,
+    coordOffsetX: 0,
+    coordOffsetY: 36,
+    ops: [{ op: 'crop', top: 36, bottom: 56 }, { op: 'resize', factor: 3, resample: 'LANCZOS' }],
+  },
 ];
 
 /** gray_contrast（旧默认变体）也可被 --variants 显式引用。 */

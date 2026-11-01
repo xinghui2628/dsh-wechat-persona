@@ -30,7 +30,10 @@
     "README.md",
     "CHANGELOG.md",
     "docs",
-    "scripts"
+    "scripts",
+    "!**/*.bak-*",
+    "!**/__pycache__",
+    "!**/*.pyc"
   ],
   "dsh": {
     "bundle": {
