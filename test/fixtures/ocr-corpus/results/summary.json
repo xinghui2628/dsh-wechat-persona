@@ -1,8 +1,8 @@
 {
- "generatedAt": "2026-10-31T15:33:21.692Z",
+ "generatedAt": "2026-11-01T02:04:17.547Z",
  "bench": "ocr-benchmark",
  "version": "v3.0.0",
- "command": "node scripts/ocr/bench.mjs --engine=all --pipeline=all --split=all",
+ "command": "node scripts/ocr/bench.mjs --engine=all --pipeline=all",
  "env": {
   "platform": "win32",
   "node": "v26.13.0",
@@ -15,8 +15,8 @@
  "corpus": {
   "manifest": "test\\fixtures\\ocr-corpus\\manifest.json",
   "seed": 20261031,
-  "scenarioCount": 20,
-  "imageCount": 40,
+  "scenarioCount": 30,
+  "imageCount": 60,
   "scenarios": [
    "clear",
    "small_font",
@@ -37,7 +37,17 @@
    "short_msgs",
    "stretched",
    "noisy",
-   "ai_disclaimer"
+   "ai_disclaimer",
+   "rare_chars",
+   "homophone",
+   "network_slang",
+   "similar_nickname",
+   "long_nickname",
+   "truncated_bubble",
+   "empty_error",
+   "engine_conflict",
+   "scrolled",
+   "contact_switch"
   ],
   "split": "all",
   "splitScenarios": {
@@ -51,7 +61,12 @@
     "emoji",
     "occluded",
     "short_msgs",
-    "noisy"
+    "noisy",
+    "rare_chars",
+    "network_slang",
+    "long_nickname",
+    "empty_error",
+    "scrolled"
    ],
    "eval": [
     "small_font",
@@ -63,208 +78,181 @@
     "dark_mode",
     "multi_message",
     "stretched",
-    "ai_disclaimer"
+    "ai_disclaimer",
+    "homophone",
+    "similar_nickname",
+    "truncated_bubble",
+    "engine_conflict",
+    "contact_switch"
    ]
   }
  },
  "variants": [
   {
    "id": "orig",
-   "label": "原图"
+   "label": "A 原始原图"
   },
   {
    "id": "upscale2x",
-   "label": "2x 放大（LANCZOS）"
+   "label": "F 2x 放大（LANCZOS）"
   },
   {
    "id": "gray_contrast",
-   "label": "灰度+对比度增强（1.6x）"
+   "label": "灰度+对比度增强（旧默认，1.6x）"
   }
  ],
  "runs": [
   {
    "engine": "winrt",
    "variant": "orig",
-   "file": "2026-10-31_15-28-57-all-winrt-orig.json",
+   "file": "2026-11-01_02-01-45-all-winrt-orig.json",
    "totals": {
-    "images": 40,
-    "okImages": 40,
+    "images": 60,
+    "okImages": 60,
     "failedImages": 0,
-    "cer": 0.31216361679224974,
-    "sentenceAcc": 0.3181818181818182,
-    "linePrecision": 0.7373737373737373,
-    "lineRecall": 0.7525773195876289,
-    "lineF1": 0.7448979591836734,
-    "missRate": 0.24742268041237114,
-    "falseRate": 0.2222222222222222,
+    "cer": 0.35306262904335856,
+    "sentenceAcc": 0.2777777777777778,
+    "linePrecision": 0.7635135135135135,
+    "lineRecall": 0.738562091503268,
+    "lineF1": 0.7508305647840531,
+    "missRate": 0.26143790849673204,
+    "falseRate": 0.20945945945945946,
     "dupRate": 0,
-    "splitRate": 0.04040404040404041,
-    "p50Ms": 25,
-    "p95Ms": 35,
-    "gtLines": 97,
-    "ocrLines": 99,
-    "tp": 73,
-    "fp": 22,
+    "splitRate": 0.02702702702702703,
+    "p50Ms": 27,
+    "p95Ms": 38,
+    "cpuP50Ms": 62,
+    "cpuP95Ms": 156,
+    "rssP95MB": 104,
+    "rssMaxMB": 105,
+    "emptyGtImages": 2,
+    "emptyGtOk": 2,
+    "gtLines": 153,
+    "ocrLines": 148,
+    "tp": 113,
+    "fp": 31,
     "dup": 0,
     "frag": 4,
-    "fn": 24
+    "fn": 40
    }
   },
   {
    "engine": "winrt",
    "variant": "upscale2x",
-   "file": "2026-10-31_15-28-57-all-winrt-upscale2x.json",
+   "file": "2026-11-01_02-01-45-all-winrt-upscale2x.json",
    "totals": {
-    "images": 40,
-    "okImages": 40,
+    "images": 60,
+    "okImages": 60,
     "failedImages": 0,
-    "cer": 0.2163616792249731,
-    "sentenceAcc": 0.4659090909090909,
-    "linePrecision": 0.8404255319148937,
-    "lineRecall": 0.8144329896907216,
-    "lineF1": 0.8272251308900525,
-    "missRate": 0.18556701030927836,
-    "falseRate": 0.1276595744680851,
+    "cer": 0.22436338609772882,
+    "sentenceAcc": 0.5069444444444444,
+    "linePrecision": 0.8581081081081081,
+    "lineRecall": 0.8300653594771242,
+    "lineF1": 0.8438538205980067,
+    "missRate": 0.16993464052287582,
+    "falseRate": 0.11486486486486487,
     "dupRate": 0,
-    "splitRate": 0.031914893617021274,
-    "p50Ms": 36,
-    "p95Ms": 49,
-    "gtLines": 97,
-    "ocrLines": 94,
-    "tp": 79,
-    "fp": 12,
+    "splitRate": 0.02702702702702703,
+    "p50Ms": 35,
+    "p95Ms": 57,
+    "cpuP50Ms": 31,
+    "cpuP95Ms": 78,
+    "rssP95MB": 120,
+    "rssMaxMB": 131,
+    "emptyGtImages": 2,
+    "emptyGtOk": 2,
+    "gtLines": 153,
+    "ocrLines": 148,
+    "tp": 127,
+    "fp": 17,
     "dup": 0,
-    "frag": 3,
-    "fn": 18
+    "frag": 4,
+    "fn": 26
    }
   },
   {
    "engine": "winrt",
    "variant": "gray_contrast",
-   "file": "2026-10-31_15-28-57-all-winrt-gray_contrast.json",
+   "file": "2026-11-01_02-01-45-all-winrt-gray_contrast.json",
    "totals": {
-    "images": 40,
-    "okImages": 40,
+    "images": 60,
+    "okImages": 60,
     "failedImages": 0,
-    "cer": 0.310010764262648,
-    "sentenceAcc": 0.25,
-    "linePrecision": 0.7608695652173914,
-    "lineRecall": 0.7216494845360825,
-    "lineF1": 0.7407407407407408,
-    "missRate": 0.27835051546391754,
-    "falseRate": 0.22826086956521738,
+    "cer": 0.3537508602890571,
+    "sentenceAcc": 0.2013888888888889,
+    "linePrecision": 0.7737226277372263,
+    "lineRecall": 0.6928104575163399,
+    "lineF1": 0.7310344827586208,
+    "missRate": 0.30718954248366015,
+    "falseRate": 0.2116788321167883,
     "dupRate": 0,
-    "splitRate": 0.010869565217391304,
-    "p50Ms": 25,
-    "p95Ms": 38,
-    "gtLines": 97,
-    "ocrLines": 92,
-    "tp": 70,
-    "fp": 21,
+    "splitRate": 0.014598540145985401,
+    "p50Ms": 26,
+    "p95Ms": 35,
+    "cpuP50Ms": 31,
+    "cpuP95Ms": 109,
+    "rssP95MB": 104,
+    "rssMaxMB": 104,
+    "emptyGtImages": 2,
+    "emptyGtOk": 2,
+    "gtLines": 153,
+    "ocrLines": 137,
+    "tp": 106,
+    "fp": 29,
     "dup": 0,
-    "frag": 1,
-    "fn": 27
+    "frag": 2,
+    "fn": 47
    }
   },
   {
    "engine": "rapid",
    "variant": "orig",
-   "file": "2026-10-31_15-28-57-all-rapid-orig.json",
+   "file": "2026-11-01_02-01-45-all-rapid-orig.json",
    "totals": {
-    "images": 40,
-    "okImages": 40,
+    "images": 60,
+    "okImages": 60,
     "failedImages": 0,
-    "cer": 0.06566200215285253,
-    "sentenceAcc": 0.8295454545454546,
-    "linePrecision": 0.9574468085106383,
-    "lineRecall": 0.9278350515463918,
-    "lineF1": 0.9424083769633509,
-    "missRate": 0.07216494845360824,
-    "falseRate": 0.010638297872340425,
+    "cer": 0.08947006194081211,
+    "sentenceAcc": 0.7986111111111112,
+    "linePrecision": 0.9726027397260274,
+    "lineRecall": 0.9281045751633987,
+    "lineF1": 0.9498327759197325,
+    "missRate": 0.0718954248366013,
+    "falseRate": 0.00684931506849315,
     "dupRate": 0,
-    "splitRate": 0.031914893617021274,
-    "p50Ms": 1459,
-    "p95Ms": 2066,
-    "gtLines": 97,
-    "ocrLines": 94,
-    "tp": 90,
+    "splitRate": 0.02054794520547945,
+    "p50Ms": 1444,
+    "p95Ms": 1843,
+    "cpuP50Ms": 0,
+    "cpuP95Ms": 0,
+    "rssP95MB": 0,
+    "rssMaxMB": 0,
+    "emptyGtImages": 2,
+    "emptyGtOk": 2,
+    "gtLines": 153,
+    "ocrLines": 146,
+    "tp": 142,
     "fp": 1,
     "dup": 0,
     "frag": 3,
-    "fn": 7
-   }
-  },
-  {
-   "engine": "rapid",
-   "variant": "upscale2x",
-   "file": "2026-10-31_15-28-57-all-rapid-upscale2x.json",
-   "totals": {
-    "images": 40,
-    "okImages": 40,
-    "failedImages": 0,
-    "cer": 0.07642626480086114,
-    "sentenceAcc": 0.7727272727272727,
-    "linePrecision": 0.9285714285714286,
-    "lineRecall": 0.9381443298969072,
-    "lineF1": 0.9333333333333333,
-    "missRate": 0.061855670103092786,
-    "falseRate": 0.02040816326530612,
-    "dupRate": 0,
-    "splitRate": 0.05102040816326531,
-    "p50Ms": 2008,
-    "p95Ms": 2622,
-    "gtLines": 97,
-    "ocrLines": 98,
-    "tp": 91,
-    "fp": 2,
-    "dup": 0,
-    "frag": 5,
-    "fn": 6
-   }
-  },
-  {
-   "engine": "rapid",
-   "variant": "gray_contrast",
-   "file": "2026-10-31_15-28-57-all-rapid-gray_contrast.json",
-   "totals": {
-    "images": 40,
-    "okImages": 40,
-    "failedImages": 0,
-    "cer": 0.07427341227125941,
-    "sentenceAcc": 0.8068181818181818,
-    "linePrecision": 0.9680851063829787,
-    "lineRecall": 0.9381443298969072,
-    "lineF1": 0.9528795811518325,
-    "missRate": 0.061855670103092786,
-    "falseRate": 0.010638297872340425,
-    "dupRate": 0,
-    "splitRate": 0.02127659574468085,
-    "p50Ms": 1773,
-    "p95Ms": 2334,
-    "gtLines": 97,
-    "ocrLines": 94,
-    "tp": 91,
-    "fp": 1,
-    "dup": 0,
-    "frag": 2,
-    "fn": 6
+    "fn": 11
    }
   },
   {
    "engine": "baseline-v0.2.8",
    "variant": "orig",
-   "file": "2026-10-31_15-28-57-all-baseline-v028-orig.json",
+   "file": "2026-11-01_02-01-45-all-baseline-v028-orig.json",
    "totals": {
-    "images": 40,
-    "okImages": 40,
+    "images": 60,
+    "okImages": 60,
     "failedImages": 0,
-    "messages": 88,
-    "cerRaw": 0.28417653390742736,
-    "cerPost": 0.28094725511302476,
-    "sentenceAccRaw": 0.3181818181818182,
-    "sentenceAccPost": 0.32954545454545453,
-    "changedMessages": 3,
-    "improvedMessages": 2,
+    "messages": 144,
+    "cerRaw": 0.31383344803854096,
+    "cerPost": 0.3069511355815554,
+    "sentenceAccRaw": 0.2777777777777778,
+    "sentenceAccPost": 0.2916666666666667,
+    "changedMessages": 6,
+    "improvedMessages": 5,
     "worsenedMessages": 0,
     "byScenario": {
      "clear": {
@@ -446,6 +434,96 @@
       "changed": 0,
       "improved": 0,
       "worsened": 0
+     },
+     "rare_chars": {
+      "cerRaw": 0.3,
+      "cerPost": 0.3,
+      "sentenceAccRaw": 0,
+      "sentenceAccPost": 0,
+      "changed": 0,
+      "improved": 0,
+      "worsened": 0
+     },
+     "homophone": {
+      "cerRaw": 0.09523809523809523,
+      "cerPost": 0.09523809523809523,
+      "sentenceAccRaw": 0.5,
+      "sentenceAccPost": 0.5,
+      "changed": 0,
+      "improved": 0,
+      "worsened": 0
+     },
+     "network_slang": {
+      "cerRaw": 0.16666666666666666,
+      "cerPost": 0.1111111111111111,
+      "sentenceAccRaw": 0.5,
+      "sentenceAccPost": 0.5,
+      "changed": 1,
+      "improved": 1,
+      "worsened": 0
+     },
+     "similar_nickname": {
+      "cerRaw": 0.15384615384615385,
+      "cerPost": 0,
+      "sentenceAccRaw": 0.75,
+      "sentenceAccPost": 1,
+      "changed": 1,
+      "improved": 1,
+      "worsened": 0
+     },
+     "long_nickname": {
+      "cerRaw": 0.14285714285714285,
+      "cerPost": 0.14285714285714285,
+      "sentenceAccRaw": 0.5,
+      "sentenceAccPost": 0.5,
+      "changed": 0,
+      "improved": 0,
+      "worsened": 0
+     },
+     "truncated_bubble": {
+      "cerRaw": 0.1724137931034483,
+      "cerPost": 0.1206896551724138,
+      "sentenceAccRaw": 0.25,
+      "sentenceAccPost": 0.25,
+      "changed": 1,
+      "improved": 1,
+      "worsened": 0
+     },
+     "empty_error": {
+      "cerRaw": 0,
+      "cerPost": 0,
+      "sentenceAccRaw": 0,
+      "sentenceAccPost": 0,
+      "changed": 0,
+      "improved": 0,
+      "worsened": 0
+     },
+     "engine_conflict": {
+      "cerRaw": 1,
+      "cerPost": 1,
+      "sentenceAccRaw": 0,
+      "sentenceAccPost": 0,
+      "changed": 0,
+      "improved": 0,
+      "worsened": 0
+     },
+     "scrolled": {
+      "cerRaw": 0.485,
+      "cerPost": 0.485,
+      "sentenceAccRaw": 0.08333333333333333,
+      "sentenceAccPost": 0.08333333333333333,
+      "changed": 0,
+      "improved": 0,
+      "worsened": 0
+     },
+     "contact_switch": {
+      "cerRaw": 0.17777777777777778,
+      "cerPost": 0.17777777777777778,
+      "sentenceAccRaw": 0,
+      "sentenceAccPost": 0,
+      "changed": 0,
+      "improved": 0,
+      "worsened": 0
      }
     }
    }
@@ -453,15 +531,15 @@
   {
    "engine": "v3-pipeline",
    "variant": "novote",
-   "file": "2026-10-31_15-28-57-all-v3-novote.json",
+   "file": "2026-11-01_02-01-45-all-v3-novote.json",
    "totals": {
-    "images": 40,
-    "okImages": 40,
+    "images": 60,
+    "okImages": 60,
     "failedImages": 0,
-    "messages": 88,
-    "cer": 0.1883745963401507,
-    "sentenceAcc": 0.4772727272727273,
-    "garbledMessages": 14,
+    "messages": 144,
+    "cer": 0.20302821748107364,
+    "sentenceAcc": 0.5138888888888888,
+    "garbledMessages": 20,
     "scriptReplacedMessages": 0,
     "desktopVotedMessages": 0,
     "correctedMessages": 1,
@@ -666,49 +744,150 @@
       "desktopVotedMessages": 0,
       "correctedMessages": 0,
       "protectedSkipped": 0
+     },
+     "rare_chars": {
+      "messages": 4,
+      "cer": 0.14,
+      "sentenceAcc": 0.5,
+      "garbledMessages": 0,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "homophone": {
+      "messages": 4,
+      "cer": 0.047619047619047616,
+      "sentenceAcc": 0.75,
+      "garbledMessages": 0,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "network_slang": {
+      "messages": 4,
+      "cer": 0.3055555555555556,
+      "sentenceAcc": 0,
+      "garbledMessages": 3,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "similar_nickname": {
+      "messages": 4,
+      "cer": 0,
+      "sentenceAcc": 1,
+      "garbledMessages": 0,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "long_nickname": {
+      "messages": 4,
+      "cer": 0,
+      "sentenceAcc": 1,
+      "garbledMessages": 0,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "truncated_bubble": {
+      "messages": 4,
+      "cer": 0.1206896551724138,
+      "sentenceAcc": 0.25,
+      "garbledMessages": 1,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "empty_error": {
+      "messages": 0,
+      "cer": 0,
+      "sentenceAcc": 0,
+      "garbledMessages": 0,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "engine_conflict": {
+      "messages": 4,
+      "cer": 0.8222222222222222,
+      "sentenceAcc": 0,
+      "garbledMessages": 1,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "scrolled": {
+      "messages": 24,
+      "cer": 0.24,
+      "sentenceAcc": 0.7083333333333334,
+      "garbledMessages": 0,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "contact_switch": {
+      "messages": 4,
+      "cer": 0.17777777777777778,
+      "sentenceAcc": 0.25,
+      "garbledMessages": 1,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
      }
     }
    },
    "attribution": {
-    "messages": 88,
-    "classified": 69,
-    "correct": 69,
+    "messages": 144,
+    "classified": 110,
+    "correct": 110,
     "wrong": 0,
-    "uncertain": 19,
+    "uncertain": 34,
     "sideAccuracy": 1,
-    "coverage": 0.7840909090909091,
+    "coverage": 0.7638888888888888,
     "uncertainReasons": {
-     "no-margin-contact": 11,
-     "empty": 8
+     "no-margin-contact": 18,
+     "empty": 14,
+     "spans-both-margins": 2
     },
     "inbound": {
-     "predicted": 35,
-     "tp": 35,
+     "predicted": 55,
+     "tp": 55,
      "fp": 0,
      "precision": 1,
-     "recall": 0.7777777777777778
+     "recall": 0.7534246575342466
     },
     "outbound": {
-     "predicted": 34,
-     "tp": 34,
+     "predicted": 55,
+     "tp": 55,
      "fp": 0,
      "precision": 1,
-     "recall": 0.7906976744186046
+     "recall": 0.7746478873239436
     }
    }
   },
   {
    "engine": "v3-pipeline",
    "variant": "vote-garbled",
-   "file": "2026-10-31_15-28-57-all-v3-vote-garbled.json",
+   "file": "2026-11-01_02-01-45-all-v3-vote-garbled.json",
    "totals": {
-    "images": 40,
-    "okImages": 40,
+    "images": 60,
+    "okImages": 60,
     "failedImages": 0,
-    "messages": 88,
-    "cer": 0.1883745963401507,
-    "sentenceAcc": 0.4772727272727273,
-    "garbledMessages": 14,
+    "messages": 144,
+    "cer": 0.20302821748107364,
+    "sentenceAcc": 0.5138888888888888,
+    "garbledMessages": 20,
     "scriptReplacedMessages": 0,
     "desktopVotedMessages": 0,
     "correctedMessages": 1,
@@ -913,51 +1092,152 @@
       "desktopVotedMessages": 0,
       "correctedMessages": 0,
       "protectedSkipped": 0
+     },
+     "rare_chars": {
+      "messages": 4,
+      "cer": 0.14,
+      "sentenceAcc": 0.5,
+      "garbledMessages": 0,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "homophone": {
+      "messages": 4,
+      "cer": 0.047619047619047616,
+      "sentenceAcc": 0.75,
+      "garbledMessages": 0,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "network_slang": {
+      "messages": 4,
+      "cer": 0.3055555555555556,
+      "sentenceAcc": 0,
+      "garbledMessages": 3,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "similar_nickname": {
+      "messages": 4,
+      "cer": 0,
+      "sentenceAcc": 1,
+      "garbledMessages": 0,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "long_nickname": {
+      "messages": 4,
+      "cer": 0,
+      "sentenceAcc": 1,
+      "garbledMessages": 0,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "truncated_bubble": {
+      "messages": 4,
+      "cer": 0.1206896551724138,
+      "sentenceAcc": 0.25,
+      "garbledMessages": 1,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "empty_error": {
+      "messages": 0,
+      "cer": 0,
+      "sentenceAcc": 0,
+      "garbledMessages": 0,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "engine_conflict": {
+      "messages": 4,
+      "cer": 0.8222222222222222,
+      "sentenceAcc": 0,
+      "garbledMessages": 1,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "scrolled": {
+      "messages": 24,
+      "cer": 0.24,
+      "sentenceAcc": 0.7083333333333334,
+      "garbledMessages": 0,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "contact_switch": {
+      "messages": 4,
+      "cer": 0.17777777777777778,
+      "sentenceAcc": 0.25,
+      "garbledMessages": 1,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
      }
     }
    },
    "attribution": {
-    "messages": 88,
-    "classified": 69,
-    "correct": 69,
+    "messages": 144,
+    "classified": 110,
+    "correct": 110,
     "wrong": 0,
-    "uncertain": 19,
+    "uncertain": 34,
     "sideAccuracy": 1,
-    "coverage": 0.7840909090909091,
+    "coverage": 0.7638888888888888,
     "uncertainReasons": {
-     "no-margin-contact": 11,
-     "empty": 8
+     "no-margin-contact": 18,
+     "empty": 14,
+     "spans-both-margins": 2
     },
     "inbound": {
-     "predicted": 35,
-     "tp": 35,
+     "predicted": 55,
+     "tp": 55,
      "fp": 0,
      "precision": 1,
-     "recall": 0.7777777777777778
+     "recall": 0.7534246575342466
     },
     "outbound": {
-     "predicted": 34,
-     "tp": 34,
+     "predicted": 55,
+     "tp": 55,
      "fp": 0,
      "precision": 1,
-     "recall": 0.7906976744186046
+     "recall": 0.7746478873239436
     }
    }
   },
   {
    "engine": "v3-pipeline",
    "variant": "vote-all",
-   "file": "2026-10-31_15-28-57-all-v3-vote-all.json",
+   "file": "2026-11-01_02-01-45-all-v3-vote-all.json",
    "totals": {
-    "images": 40,
-    "okImages": 40,
+    "images": 60,
+    "okImages": 60,
     "failedImages": 0,
-    "messages": 88,
-    "cer": 0.14854682454251883,
-    "sentenceAcc": 0.625,
-    "garbledMessages": 14,
-    "scriptReplacedMessages": 13,
-    "desktopVotedMessages": 8,
+    "messages": 144,
+    "cer": 0.1686166551961459,
+    "sentenceAcc": 0.6319444444444444,
+    "garbledMessages": 20,
+    "scriptReplacedMessages": 19,
+    "desktopVotedMessages": 14,
     "correctedMessages": 1,
     "protectedSkipped": 0,
     "byScenario": {
@@ -1160,65 +1440,164 @@
       "desktopVotedMessages": 0,
       "correctedMessages": 0,
       "protectedSkipped": 0
+     },
+     "rare_chars": {
+      "messages": 4,
+      "cer": 0.14,
+      "sentenceAcc": 0.5,
+      "garbledMessages": 0,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "homophone": {
+      "messages": 4,
+      "cer": 0.047619047619047616,
+      "sentenceAcc": 0.75,
+      "garbledMessages": 0,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "network_slang": {
+      "messages": 4,
+      "cer": 0.25,
+      "sentenceAcc": 0.25,
+      "garbledMessages": 3,
+      "scriptReplacedMessages": 1,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "similar_nickname": {
+      "messages": 4,
+      "cer": 0,
+      "sentenceAcc": 1,
+      "garbledMessages": 0,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "long_nickname": {
+      "messages": 4,
+      "cer": 0,
+      "sentenceAcc": 1,
+      "garbledMessages": 0,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "truncated_bubble": {
+      "messages": 4,
+      "cer": 0.08620689655172414,
+      "sentenceAcc": 0.25,
+      "garbledMessages": 1,
+      "scriptReplacedMessages": 1,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "empty_error": {
+      "messages": 0,
+      "cer": 0,
+      "sentenceAcc": 0,
+      "garbledMessages": 0,
+      "scriptReplacedMessages": 0,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "engine_conflict": {
+      "messages": 4,
+      "cer": 0.7777777777777778,
+      "sentenceAcc": 0,
+      "garbledMessages": 1,
+      "scriptReplacedMessages": 1,
+      "desktopVotedMessages": 2,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "scrolled": {
+      "messages": 24,
+      "cer": 0.215,
+      "sentenceAcc": 0.7916666666666666,
+      "garbledMessages": 0,
+      "scriptReplacedMessages": 2,
+      "desktopVotedMessages": 4,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
+     },
+     "contact_switch": {
+      "messages": 4,
+      "cer": 0.13333333333333333,
+      "sentenceAcc": 0.5,
+      "garbledMessages": 1,
+      "scriptReplacedMessages": 1,
+      "desktopVotedMessages": 0,
+      "correctedMessages": 0,
+      "protectedSkipped": 0
      }
     }
    },
    "attribution": {
-    "messages": 88,
-    "classified": 69,
-    "correct": 69,
+    "messages": 144,
+    "classified": 110,
+    "correct": 110,
     "wrong": 0,
-    "uncertain": 19,
+    "uncertain": 34,
     "sideAccuracy": 1,
-    "coverage": 0.7840909090909091,
+    "coverage": 0.7638888888888888,
     "uncertainReasons": {
-     "no-margin-contact": 11,
-     "empty": 8
+     "no-margin-contact": 18,
+     "empty": 14,
+     "spans-both-margins": 2
     },
     "inbound": {
-     "predicted": 35,
-     "tp": 35,
+     "predicted": 55,
+     "tp": 55,
      "fp": 0,
      "precision": 1,
-     "recall": 0.7777777777777778
+     "recall": 0.7534246575342466
     },
     "outbound": {
-     "predicted": 34,
-     "tp": 34,
+     "predicted": 55,
+     "tp": 55,
      "fp": 0,
      "precision": 1,
-     "recall": 0.7906976744186046
+     "recall": 0.7746478873239436
     }
    }
   }
  ],
  "files": [
-  "2026-10-31_15-28-57-all-winrt-orig.json",
-  "2026-10-31_15-28-57-all-winrt-upscale2x.json",
-  "2026-10-31_15-28-57-all-winrt-gray_contrast.json",
-  "2026-10-31_15-28-57-all-rapid-orig.json",
-  "2026-10-31_15-28-57-all-rapid-upscale2x.json",
-  "2026-10-31_15-28-57-all-rapid-gray_contrast.json",
-  "2026-10-31_15-28-57-all-baseline-v028-orig.json",
-  "2026-10-31_15-28-57-all-v3-novote.json",
-  "2026-10-31_15-28-57-all-v3-vote-garbled.json",
-  "2026-10-31_15-28-57-all-v3-vote-all.json"
+  "2026-11-01_02-01-45-all-winrt-orig.json",
+  "2026-11-01_02-01-45-all-winrt-upscale2x.json",
+  "2026-11-01_02-01-45-all-winrt-gray_contrast.json",
+  "2026-11-01_02-01-45-all-rapid-orig.json",
+  "2026-11-01_02-01-45-all-baseline-v028-orig.json",
+  "2026-11-01_02-01-45-all-v3-novote.json",
+  "2026-11-01_02-01-45-all-v3-vote-garbled.json",
+  "2026-11-01_02-01-45-all-v3-vote-all.json"
  ],
  "baseline": {
   "engine": "baseline-v0.2.8",
   "variant": "orig",
-  "file": "2026-10-31_15-28-57-all-baseline-v028-orig.json",
+  "file": "2026-11-01_02-01-45-all-baseline-v028-orig.json",
   "totals": {
-   "images": 40,
-   "okImages": 40,
+   "images": 60,
+   "okImages": 60,
    "failedImages": 0,
-   "messages": 88,
-   "cerRaw": 0.28417653390742736,
-   "cerPost": 0.28094725511302476,
-   "sentenceAccRaw": 0.3181818181818182,
-   "sentenceAccPost": 0.32954545454545453,
-   "changedMessages": 3,
-   "improvedMessages": 2,
+   "messages": 144,
+   "cerRaw": 0.31383344803854096,
+   "cerPost": 0.3069511355815554,
+   "sentenceAccRaw": 0.2777777777777778,
+   "sentenceAccPost": 0.2916666666666667,
+   "changedMessages": 6,
+   "improvedMessages": 5,
    "worsenedMessages": 0,
    "byScenario": {
     "clear": {
@@ -1400,10 +1779,101 @@
      "changed": 0,
      "improved": 0,
      "worsened": 0
+    },
+    "rare_chars": {
+     "cerRaw": 0.3,
+     "cerPost": 0.3,
+     "sentenceAccRaw": 0,
+     "sentenceAccPost": 0,
+     "changed": 0,
+     "improved": 0,
+     "worsened": 0
+    },
+    "homophone": {
+     "cerRaw": 0.09523809523809523,
+     "cerPost": 0.09523809523809523,
+     "sentenceAccRaw": 0.5,
+     "sentenceAccPost": 0.5,
+     "changed": 0,
+     "improved": 0,
+     "worsened": 0
+    },
+    "network_slang": {
+     "cerRaw": 0.16666666666666666,
+     "cerPost": 0.1111111111111111,
+     "sentenceAccRaw": 0.5,
+     "sentenceAccPost": 0.5,
+     "changed": 1,
+     "improved": 1,
+     "worsened": 0
+    },
+    "similar_nickname": {
+     "cerRaw": 0.15384615384615385,
+     "cerPost": 0,
+     "sentenceAccRaw": 0.75,
+     "sentenceAccPost": 1,
+     "changed": 1,
+     "improved": 1,
+     "worsened": 0
+    },
+    "long_nickname": {
+     "cerRaw": 0.14285714285714285,
+     "cerPost": 0.14285714285714285,
+     "sentenceAccRaw": 0.5,
+     "sentenceAccPost": 0.5,
+     "changed": 0,
+     "improved": 0,
+     "worsened": 0
+    },
+    "truncated_bubble": {
+     "cerRaw": 0.1724137931034483,
+     "cerPost": 0.1206896551724138,
+     "sentenceAccRaw": 0.25,
+     "sentenceAccPost": 0.25,
+     "changed": 1,
+     "improved": 1,
+     "worsened": 0
+    },
+    "empty_error": {
+     "cerRaw": 0,
+     "cerPost": 0,
+     "sentenceAccRaw": 0,
+     "sentenceAccPost": 0,
+     "changed": 0,
+     "improved": 0,
+     "worsened": 0
+    },
+    "engine_conflict": {
+     "cerRaw": 1,
+     "cerPost": 1,
+     "sentenceAccRaw": 0,
+     "sentenceAccPost": 0,
+     "changed": 0,
+     "improved": 0,
+     "worsened": 0
+    },
+    "scrolled": {
+     "cerRaw": 0.485,
+     "cerPost": 0.485,
+     "sentenceAccRaw": 0.08333333333333333,
+     "sentenceAccPost": 0.08333333333333333,
+     "changed": 0,
+     "improved": 0,
+     "worsened": 0
+    },
+    "contact_switch": {
+     "cerRaw": 0.17777777777777778,
+     "cerPost": 0.17777777777777778,
+     "sentenceAccRaw": 0,
+     "sentenceAccPost": 0,
+     "changed": 0,
+     "improved": 0,
+     "worsened": 0
     }
    }
   }
  },
+ "abSixGroups": null,
  "v3Pipeline": {
   "implementedIn": "scripts/ocr/v3-pipeline.mjs",
   "configs": [

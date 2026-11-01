@@ -33,11 +33,122 @@ const PYTHON = process.env.OCR_BENCH_PYTHON || process.env.PYTHON || 'python';
 
 // ── 预处理变体定义 ────────────────────────────────────────────────────────
 // coordScale：该变体图相对原图的坐标缩放倍数（bench 把 OCR bbox 除以它换回原图坐标）。
-export const VARIANTS = [
-  { id: 'orig', label: '原图', scale: 1, coordScale: 1 },
-  { id: 'upscale2x', label: '2x 放大（LANCZOS）', scale: 2, coordScale: 2 },
-  { id: 'gray_contrast', label: '灰度+对比度增强（1.6x）', scale: 1, coordScale: 1 },
+// coordOffsetX/Y：裁剪类变体的坐标偏移（裁剪掉的上/左像素在图坐标中加回来）。
+// ops：Pillow 预处理步骤（engines.mjs 内联 python 解释执行，见 PREPARE_CODE）。
+// 默认 3 个变体（向后兼容）：引用 VARIANTS_ALL 中的完整定义（含 ops），
+// 定义见文件下方 `VARIANTS` 派生（避免两处定义漂移导致预处理被跳过）。
+
+// 任务书 4.4 预处理 A–H：11 个变体（F/G 各含多种缩放/重采样，H 为自适应阈值近似）。
+// A orig、B crop_pane、C gray、D equalize（CLAHE 的 Pillow 近似）、E median3、
+// F2 upscale2x(2x)、F3 upscale3x(3x)、G nearest/bilinear/bicubic(2x)、H adaptive_threshold。
+export const VARIANTS_ALL = [
+  { id: 'orig', label: 'A 原始原图', coordScale: 1, coordOffsetX: 0, coordOffsetY: 0, ops: [] },
+  {
+    id: 'crop_pane',
+    label: 'B 精确裁剪聊天窗格（去标题/输入栏）',
+    coordScale: 1,
+    coordOffsetX: 0,
+    coordOffsetY: 36,
+    ops: [{ op: 'crop', top: 36, bottom: 56 }],
+  },
+  { id: 'gray', label: 'C 灰度', coordScale: 1, coordOffsetX: 0, coordOffsetY: 0, ops: [{ op: 'grayscale' }] },
+  {
+    id: 'equalize_clahe',
+    label: 'D 对比度增强（equalize，CLAHE 近似）',
+    coordScale: 1,
+    coordOffsetX: 0,
+    coordOffsetY: 0,
+    ops: [{ op: 'grayscale' }, { op: 'equalize' }, { op: 'contrast', factor: 1.6 }],
+  },
+  {
+    id: 'median3',
+    label: 'E 中值去噪 3x3',
+    coordScale: 1,
+    coordOffsetX: 0,
+    coordOffsetY: 0,
+    ops: [{ op: 'median', size: 3 }],
+  },
+  {
+    id: 'upscale2x',
+    label: 'F 2x 放大（LANCZOS）',
+    scale: 2,
+    coordScale: 2,
+    coordOffsetX: 0,
+    coordOffsetY: 0,
+    ops: [{ op: 'resize', factor: 2, resample: 'LANCZOS' }],
+  },
+  {
+    id: 'upscale3x',
+    label: 'F 3x 放大（LANCZOS）',
+    scale: 3,
+    coordScale: 3,
+    coordOffsetX: 0,
+    coordOffsetY: 0,
+    ops: [{ op: 'resize', factor: 3, resample: 'LANCZOS' }],
+  },
+  {
+    id: 'scale2x_nearest',
+    label: 'G 2x 放大（NEAREST）',
+    scale: 2,
+    coordScale: 2,
+    coordOffsetX: 0,
+    coordOffsetY: 0,
+    ops: [{ op: 'resize', factor: 2, resample: 'NEAREST' }],
+  },
+  {
+    id: 'scale2x_bilinear',
+    label: 'G 2x 放大（BILINEAR）',
+    scale: 2,
+    coordScale: 2,
+    coordOffsetX: 0,
+    coordOffsetY: 0,
+    ops: [{ op: 'resize', factor: 2, resample: 'BILINEAR' }],
+  },
+  {
+    id: 'scale2x_bicubic',
+    label: 'G 2x 放大（BICUBIC）',
+    scale: 2,
+    coordScale: 2,
+    coordOffsetX: 0,
+    coordOffsetY: 0,
+    ops: [{ op: 'resize', factor: 2, resample: 'BICUBIC' }],
+  },
+  {
+    id: 'adaptive_threshold',
+    label: 'H 自适应阈值二值化（Pillow 近似）',
+    coordScale: 1,
+    coordOffsetX: 0,
+    coordOffsetY: 0,
+    ops: [{ op: 'adaptive_threshold' }],
+  },
 ];
+
+/** gray_contrast（旧默认变体）也可被 --variants 显式引用。 */
+VARIANTS_ALL.push({ id: 'gray_contrast', label: '灰度+对比度增强（旧默认，1.6x）', coordScale: 1, coordOffsetX: 0, coordOffsetY: 0, ops: [{ op: 'grayscale' }, { op: 'autocontrast' }, { op: 'contrast', factor: 1.6 }] });
+
+// 默认 3 个变体（原 bench 默认集合）从 VARIANTS_ALL 派生，保证 ops 与 A–H 定义一致。
+export const VARIANTS = VARIANTS_ALL.filter((v) => ['orig', 'upscale2x', 'gray_contrast'].includes(v.id));
+
+/** 按 id 取变体定义（默认 3 变体 + A–H 全部）。 */
+export function variantById(id) {
+  return VARIANTS.find((v) => v.id === id) || VARIANTS_ALL.find((v) => v.id === id) || null;
+}
+
+/** 解析 --variants= 过滤；空/未给时返回默认 3 变体。 */
+export function selectVariants(ids) {
+  if (!ids || ids.length === 0) return VARIANTS;
+  const out = [];
+  const unknown = [];
+  for (const id of ids) {
+    const found = variantById(id);
+    if (found) out.push(found);
+    else unknown.push(id);
+  }
+  if (unknown.length) {
+    throw new Error(`未知预处理变体: ${unknown.join(', ')}；可用: ${[...VARIANTS, ...VARIANTS_ALL].map((v) => v.id).join(', ')}`);
+  }
+  return out;
+}
 
 // ── 通用工具 ──────────────────────────────────────────────────────────────
 
@@ -216,6 +327,8 @@ export async function runWinrt(imagePath) {
     wallMs,
     width: Number(payload.width) || 0,
     height: Number(payload.height) || 0,
+    cpuMs: Number(payload.cpuMs) || 0,
+    rssMB: Number(payload.rssMB) || 0,
     lines,
   };
 }
@@ -339,26 +452,61 @@ export async function runRapidocr(imagePath) {
 
 const PREPARE_CODE = String.raw`
 import json, os, sys
-from PIL import Image, ImageEnhance, ImageOps
+from PIL import Image, ImageEnhance, ImageOps, ImageFilter
+import numpy as np
+
+RESAMPLE = {
+    "LANCZOS": Image.LANCZOS,
+    "BILINEAR": Image.BILINEAR,
+    "BICUBIC": Image.BICUBIC,
+    "NEAREST": Image.NEAREST,
+}
+
+def apply_op(im, op):
+    name = op.get("op")
+    if name == "crop":
+        w, h = im.size
+        top = int(op.get("top", 0))
+        bottom = int(op.get("bottom", 0))
+        return im.crop((0, top, w, h - bottom))
+    if name == "resize":
+        factor = float(op.get("factor", 2))
+        resample = RESAMPLE[op.get("resample", "LANCZOS")]
+        return im.resize((max(1, int(round(im.width * factor))), max(1, int(round(im.height * factor)))), resample)
+    if name == "grayscale":
+        return ImageOps.grayscale(im).convert("RGB")
+    if name == "equalize":
+        return ImageOps.equalize(ImageOps.grayscale(im)).convert("RGB")
+    if name == "autocontrast":
+        return ImageOps.autocontrast(ImageOps.grayscale(im)).convert("RGB")
+    if name == "contrast":
+        return ImageEnhance.Contrast(im).enhance(float(op.get("factor", 1.6)))
+    if name == "median":
+        return im.filter(ImageFilter.MedianFilter(int(op.get("size", 3))))
+    if name == "adaptive_threshold":
+        # 局部均值阈值近似：gray > 高斯背景 - C 判白，否则黑（Pillow+numpy 实现）
+        gray = np.asarray(ImageOps.grayscale(im), dtype=np.int16)
+        bg = np.asarray(ImageOps.grayscale(im).filter(ImageFilter.GaussianBlur(15)), dtype=np.int16)
+        out = np.where(gray > bg - 10, 255, 0).astype(np.uint8)
+        return Image.fromarray(out).convert("RGB")
+    raise ValueError("unknown op: " + str(name))
+
 tasks = json.load(open(sys.argv[1], encoding="utf-8"))
 done = 0
+fail = []
 for t in tasks:
-    im = Image.open(t["src"])
-    variant = t["variant"]
-    if variant == "upscale2x":
-        im = im.resize((im.width * 2, im.height * 2), Image.LANCZOS)
-    elif variant == "gray_contrast":
-        im = ImageOps.autocontrast(ImageOps.grayscale(im))
-        im = ImageEnhance.Contrast(im).enhance(1.6)
-        im = im.convert("RGB")
-    else:
-        continue
-    parent = os.path.dirname(t["dst"])
-    if parent:
-        os.makedirs(parent, exist_ok=True)
-    im.save(t["dst"])
-    done += 1
-json.dump({"done": done}, open(sys.argv[2], "w", encoding="utf-8"))
+    try:
+        im = Image.open(t["src"]).convert("RGB")
+        for op in (t.get("ops") or []):
+            im = apply_op(im, op)
+        parent = os.path.dirname(t["dst"])
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        im.save(t["dst"])
+        done += 1
+    except Exception as exc:  # 单个变体失败不影响整体
+        fail.append({"dst": t.get("dst"), "error": str(exc)})
+json.dump({"done": done, "fail": fail}, open(sys.argv[2], "w", encoding="utf-8"))
 `;
 
 /**
@@ -373,13 +521,19 @@ export async function prepareVariants(tasks) {
   const outFile = join(dir, 'out.json');
   const wallStart = Date.now();
   try {
-    const payload = tasks.map((t) => ({ variant: t.variant, src: resolve(REPO_ROOT, t.src), dst: resolve(REPO_ROOT, t.dst) }));
+    const payload = tasks.map((t) => {
+      const def = variantById(t.variant);
+      return { variant: t.variant, ops: def?.ops || [], src: resolve(REPO_ROOT, t.src), dst: resolve(REPO_ROOT, t.dst) };
+    });
     writeFileSync(inFile, JSON.stringify(payload), 'utf8');
     const ret = runPythonInline(PREPARE_CODE, [inFile, outFile], 300000);
     if (!existsSync(outFile)) {
       throw new Error(`预处理进程失败（exit=${ret.status}）${ret.stderr ? '：' + ret.stderr.trim().slice(-500) : ''}`);
     }
     const parsed = JSON.parse(readFileSync(outFile, 'utf8'));
+    if (Array.isArray(parsed.fail) && parsed.fail.length > 0) {
+      throw new Error(`预处理失败 ${parsed.fail.length} 张：${JSON.stringify(parsed.fail.slice(0, 3))}`);
+    }
     return { count: Number(parsed.done) || 0, wallMs: Date.now() - wallStart };
   } finally {
     try {

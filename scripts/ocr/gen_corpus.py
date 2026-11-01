@@ -228,6 +228,18 @@ def render_chat(opts: dict, rng: random.Random):
 
     img = Image.new("RGB", (BASE_W, BASE_H), theme["app_bg"])
     draw = ImageDraw.Draw(img)
+    max_text_w = int(opts.get("max_text_w", MAX_TEXT_W))
+    allow_overflow = bool(opts.get("allow_overflow"))
+
+    # 空/错误截图（12.1）：没有聊天内容，只有一条系统提示；用来测「不该产出任何消息」
+    if opts.get("blank"):
+        blank_text = opts.get("blank_text", "截图失败：未获取到聊天窗口")
+        bf = get_font(15)
+        bw = bf.getlength(blank_text)
+        draw.text(((BASE_W - bw) / 2, (BASE_H - bf.getmetrics()[0]) / 2), blank_text, font=bf, fill=theme["ts_fg"], anchor="la")
+        return img, [], [
+            {"kind": "screen_text", "text": blank_text, "region": [0, int(BASE_H / 2) - 6, BASE_W, 44]},
+        ]
 
     # 标题栏
     draw.rectangle((0, 0, BASE_W, TITLE_H), fill=theme["title_bg"])
@@ -282,9 +294,14 @@ def render_chat(opts: dict, rng: random.Random):
         if sender == "ts":
             layout.append({"kind": "ts", "text": text, "h": ts_line_h})
             continue
-        lines = wrap_text(font, emoji_font, text, MAX_TEXT_W)
+        if sender == "system":
+            # 居中系统提示（如「你已添加了A…」），属于窗口 chrome，不进 expectedMessages
+            sys_lines = wrap_text(font, emoji_font, text, max_text_w)
+            layout.append({"kind": "system", "text": text, "lines": sys_lines, "h": line_h * len(sys_lines) + 4})
+            continue
+        lines = wrap_text(font, emoji_font, text, max_text_w)
         text_w = max(measure_text(font, emoji_font, ln) for ln in lines) if lines else 0.0
-        text_w = min(text_w, MAX_TEXT_W)
+        text_w = min(text_w, max_text_w)
         layout.append(
             {
                 "kind": "msg",
@@ -297,9 +314,13 @@ def render_chat(opts: dict, rng: random.Random):
         )
 
     block_h = ts_line_h + MSG_GAP + sum(
-        (item["h"] if item["kind"] == "ts" else item["bh"]) + MSG_GAP for item in layout
+        (item["h"] if item["kind"] in ("ts", "system") else item["bh"]) + MSG_GAP for item in layout
     )
-    y = max(TITLE_H + 8, BASE_H - INPUT_H - 10 - (block_h - MSG_GAP))
+    if allow_overflow:
+        # 窗口滚动中：内容比可见区高，顶部消息会滚到标题栏后面（chrome 最后重绘盖住）
+        y = BASE_H - INPUT_H - 10 - (block_h - MSG_GAP)
+    else:
+        y = max(TITLE_H + 8, BASE_H - INPUT_H - 10 - (block_h - MSG_GAP))
 
     # 顶部默认时间戳
     default_ts = opts.get("timestamp", "10月31日 22:31")
@@ -315,6 +336,14 @@ def render_chat(opts: dict, rng: random.Random):
             w = ts_font.getlength(item["text"])
             draw.text(((BASE_W - w) / 2, y), item["text"], font=ts_font, fill=theme["ts_fg"], anchor="la")
             context.append({"kind": "timestamp", "text": item["text"], "region": [0, y, BASE_W, ts_line_h + 4]})
+            y += item["h"] + MSG_GAP
+            continue
+
+        if item["kind"] == "system":
+            for idx, ln in enumerate(item["lines"]):
+                w = measure_text(font, emoji_font, ln)
+                draw.text(((BASE_W - w) / 2, y + idx * line_h), ln, font=font, fill=theme["ts_fg"], anchor="la")
+            context.append({"kind": "system", "text": item["text"], "region": [0, y, BASE_W, item["h"] + 2]})
             y += item["h"] + MSG_GAP
             continue
 
@@ -368,8 +397,25 @@ def render_chat(opts: dict, rng: random.Random):
         )
         y = by + bh + MSG_GAP
 
-    if block_h > BASE_H - INPUT_H - TITLE_H - 20:
+    if block_h > BASE_H - INPUT_H - TITLE_H - 20 and not allow_overflow:
         raise SystemExit(f"消息太多超出窗口高度：{opts.get('captureId')} block_h={block_h}")
+
+    if allow_overflow:
+        # 标题栏与输入栏固定不动，消息从下方滚动到它们后面：最后再画一遍 chrome
+        draw.rectangle((0, 0, BASE_W, TITLE_H), fill=theme["title_bg"])
+        draw.line((0, TITLE_H, BASE_W, TITLE_H), fill=theme["chat_bg"], width=1)
+        tw = title_font.getlength(title)
+        draw.text(((BASE_W - tw) / 2, 12), title, font=title_font, fill=theme["title_fg"], anchor="la")
+        for k in range(3):
+            cx = BASE_W - 68 + k * 20
+            draw.line((cx, 17, cx + 11, 17), fill=theme["ts_fg"], width=1)
+            draw.line((cx, 20, cx + 11, 20), fill=theme["ts_fg"], width=1)
+        draw.line((18, 18, 24, 12), fill=theme["ts_fg"], width=1)
+        draw.line((18, 18, 24, 24), fill=theme["ts_fg"], width=1)
+        draw.rectangle((0, BASE_H - INPUT_H, BASE_W, BASE_H), fill=theme["input_bg"])
+        draw.line((0, BASE_H - INPUT_H, BASE_W, BASE_H - INPUT_H), fill=theme["input_border"], width=1)
+        draw.rounded_rectangle(input_box, radius=6, fill=theme["app_bg"], outline=theme["input_border"], width=1)
+        draw.text((MARGIN + 12, BASE_H - INPUT_H + 20), placeholder, font=ph_font, fill=theme["input_fg"], anchor="la")
 
     return img, messages, context
 
@@ -636,7 +682,170 @@ SCENARIOS: list[dict] = [
             ),
         ],
     },
+    # ── 12.1 覆盖补齐（追加在末尾，保持旧场景序号与随机种子不变）──
+    {
+        "id": "rare_chars",
+        "label": "生僻字/多音字（魑魅魍魉/饕餮耄耋）",
+        "opts": {"theme": "light", "font_size": 15},
+        "variants": [
+            messages([("left", "银行行长说重要的事要重复三遍"), ("right", "魑魅魍魉饕餮耄耋这些字真难写")]),
+            messages([("left", "觊觎已久的东西终于到手了"), ("right", "氤氲的空气里满是蹉跎")]),
+        ],
+    },
+    {
+        "id": "homophone",
+        "label": "形近字（己已巳/未末/戌戍/辨辩辫）",
+        "opts": {"theme": "light", "font_size": 15},
+        "variants": [
+            messages([("left", "己所不欲，勿施于人"), ("right", "已经、自己、巳时要分清")]),
+            messages([("left", "未来和末日只差一横"), ("right", "辨认辩论辫子三个字难倒我了")]),
+        ],
+    },
+    {
+        "id": "network_slang",
+        "label": "网络口语（yyds/绝绝子/破防/栓Q）",
+        "opts": {"theme": "light", "font_size": 15},
+        "variants": [
+            messages([("left", "yyds，这波操作绝绝子"), ("right", "破防了，栓Q")]),
+            messages([("left", "今天有点 emo，想躺平"), ("right", "666，干饭去")]),
+        ],
+    },
+    {
+        "id": "similar_nickname",
+        "label": "相似昵称（小A / 小A2）",
+        "opts": {"theme": "light", "font_size": 15},
+        "titles": ["小A", "小A2"],
+        "variants": [
+            messages([("left", "在吗"), ("right", "在的")]),
+            messages([("left", "晚上有空吗"), ("right", "八点之后")]),
+        ],
+    },
+    {
+        "id": "long_nickname",
+        "label": "长昵称（8-9 字）",
+        "opts": {"theme": "light", "font_size": 15},
+        "titles": ["大肥鱼助手一号", "表情包工程组组长"],
+        "variants": [
+            messages([("left", "这个昵称有点长"), ("right", "长昵称容易被截断")]),
+            messages([("left", "昵称太长会占满标题栏"), ("right", "是的，可能还会被省略")]),
+        ],
+    },
+    {
+        "id": "truncated_bubble",
+        "label": "气泡截断（超长文本超出窗口右缘）",
+        "opts": {"theme": "light", "font_size": 15, "max_text_w": 2000},
+        "variants": [
+            messages([("left", "这是一条被窗口右边缘截断的超长消息，后半部分内容根本看不全"), ("right", "收到")]),
+            messages([("left", "超长气泡在截图里只显示左边一段，右边直接被裁掉了"), ("right", "明白了")]),
+        ],
+    },
+    {
+        "id": "empty_error",
+        "label": "错误或空截图（无聊天内容，只有提示）",
+        "opts": {"theme": "light", "blank": True},
+        "variant_opts": [
+            {"blank_text": "截图失败：未获取到聊天窗口"},
+            {"blank_text": "窗口不在前台，已跳过本次识别"},
+        ],
+        "variants": [messages([]), messages([])],
+    },
+    {
+        "id": "engine_conflict",
+        "label": "双引擎易冲突（小字号+低对比+形近字）",
+        "opts": {"theme": "light", "font_size": 11, "low_contrast": True, "blur_radius": 0.5},
+        "variants": [
+            messages([("left", "己已巳戌戍这几个字容易认错"), ("right", "银行行长重要的事说三遍")]),
+            messages([("left", "未末曰日看起来很接近"), ("right", "辩辨辫在低清截图里会混")]),
+        ],
+    },
+    {
+        "id": "scrolled",
+        "label": "窗口滚动中（顶部消息被标题栏盖住）",
+        "opts": {"theme": "light", "font_size": 13, "allow_overflow": True},
+        "variants": [
+            messages([
+                ("right", "再往上还有一条完全看不见"),
+                ("left", "这条被标题栏挡住一半"),
+                ("left", "上面这条消息只露出一半"),
+                ("right", "聊天记录正在往上滚动"),
+                ("left", "滚动中截图很容易切掉内容"),
+                ("right", "所以要记录滚动位置"),
+                ("left", "收到，继续往下看"),
+                ("right", "今天聊得有点久"),
+                ("left", "先去忙一会儿"),
+                ("right", "晚点继续聊"),
+                ("left", "好的一会见"),
+                ("right", "这条在最下面最完整"),
+            ]),
+            messages([
+                ("right", "最上面这条只剩一点点"),
+                ("left", "滚动截图顶部会被标题栏盖住"),
+                ("right", "这条只能看到下半截"),
+                ("left", "这是中间的聊天内容"),
+                ("right", "中间第二条消息"),
+                ("left", "中间第三条消息"),
+                ("right", "中间第四条消息"),
+                ("left", "中间第五条消息"),
+                ("right", "中间第六条消息"),
+                ("left", "倒数第二条"),
+                ("right", "倒数第一条"),
+                ("left", "最后一条消息完整显示"),
+            ]),
+        ],
+    },
+    {
+        "id": "contact_switch",
+        "label": "切换联系人（系统提示+新会话消息）",
+        "opts": {"theme": "light", "font_size": 15},
+        "variants": [
+            messages([
+                ("system", "你已添加了A，现在可以开始聊天了"),
+                ("left", "刚换了个聊天窗口"),
+                ("right", "截图里混了上一个会话的内容"),
+            ]),
+            messages([
+                ("system", "以下是新消息"),
+                ("left", "切换联系人之后的截图"),
+                ("right", "注意别把上一条对话当成新消息"),
+            ]),
+        ],
+    },
 ]
+
+SCENARIO_INDEX: dict[str, int] = {s["id"]: i for i, s in enumerate(SCENARIOS)}
+
+# 12.1 场景覆盖清单：任务书要求的 21 类场景 → 生成器场景映射，写入 manifest 供审计
+COVERAGE_ITEMS: list[dict] = [
+    {"id": "near-chars", "label": "形近字", "scenarios": ["homophone", "engine_conflict"]},
+    {"id": "polyphone-rare", "label": "多音字及生僻字", "scenarios": ["rare_chars"]},
+    {"id": "bilingual", "label": "中英文混合", "scenarios": ["bilingual"]},
+    {"id": "numbers-punct", "label": "数字和标点", "scenarios": ["numbers"]},
+    {"id": "slang", "label": "网络口语", "scenarios": ["network_slang"]},
+    {"id": "emoji", "label": "Emoji", "scenarios": ["emoji"]},
+    {"id": "multi-line", "label": "多行消息", "scenarios": ["long_bubble", "multi_message"]},
+    {"id": "long-msg", "label": "长消息", "scenarios": ["long_bubble", "ai_disclaimer"]},
+    {"id": "dup-in-thread", "label": "同一消息重复出现", "scenarios": ["repeat_two", "multi_message"]},
+    {"id": "consecutive-dup", "label": "连续两条相同消息", "scenarios": ["repeat_two"]},
+    {"id": "similar-nickname", "label": "相似昵称", "scenarios": ["similar_nickname"]},
+    {"id": "long-nickname", "label": "长昵称", "scenarios": ["long_nickname"]},
+    {"id": "dark-theme", "label": "深色主题", "scenarios": ["dark_mode"]},
+    {"id": "light-theme", "label": "浅色主题", "scenarios": ["clear", "scale_100"]},
+    {"id": "dpi", "label": "不同 DPI/缩放", "scenarios": ["scale_100", "scale_125", "scale_150", "scale_175", "stretched"]},
+    {"id": "truncated-bubble", "label": "消息气泡截断", "scenarios": ["truncated_bubble"]},
+    {"id": "occluded", "label": "窗口遮挡", "scenarios": ["occluded"]},
+    {"id": "empty-error", "label": "错误或空截图", "scenarios": ["empty_error"]},
+    {"id": "engine-conflict", "label": "两个引擎识别冲突", "scenarios": ["engine_conflict"]},
+    {"id": "scrolled", "label": "窗口滚动", "scenarios": ["scrolled"]},
+    {"id": "contact-switch", "label": "用户主动切换联系人", "scenarios": ["contact_switch"]},
+]
+
+
+def _scenario_coverage() -> dict[str, list[str]]:
+    out: dict[str, list[str]] = {}
+    for item in COVERAGE_ITEMS:
+        for sid in item["scenarios"]:
+            out.setdefault(sid, []).append(item["id"])
+    return out
 
 
 def _scale_boxes(messages: list[dict], context: list[dict], sx: float, sy: float):
@@ -663,9 +872,14 @@ def build_capture(scenario: dict, variant_index: int, variant: list, out_dir: Pa
     capture_id = f"{sid}-{variant_index:02d}"
     rng = random.Random(f"{SEED}:{capture_id}")
     opts = dict(scenario["opts"])
+    if scenario.get("variant_opts"):
+        opts.update(scenario["variant_opts"][variant_index % len(scenario["variant_opts"])])
     opts["messages"] = variant
     opts["captureId"] = capture_id
-    opts["title"] = ["A", "B", "C"][(variant_index + sum(map(ord, sid))) % 3]
+    if scenario.get("titles"):
+        opts["title"] = scenario["titles"][variant_index % len(scenario["titles"])]
+    else:
+        opts["title"] = ["A", "B", "C"][(variant_index + sum(map(ord, sid))) % 3]
     opts["timestamp"] = rng.choice(["10月31日 22:31", "10月31日 22:28", "今天 21:57"])
 
     base, messages, context = render_chat(opts, rng)
@@ -707,6 +921,7 @@ def build_capture(scenario: dict, variant_index: int, variant: list, out_dir: Pa
         "captureId": capture_id,
         "scenario": sid,
         "scenarioLabel": scenario["label"],
+        "scenarioIndex": SCENARIO_INDEX.get(sid, -1),
         "variant": variant_index,
         "scalePct": int(round(sx * 100)),
         "scaleX": round(final_w / BASE_W, 4),
@@ -747,16 +962,38 @@ def main(argv: list[str]) -> int:
             print(f"生成 {entry['captureId']}.png  {entry['width']}x{entry['height']}  "
                   f"{entry['scenarioLabel']}")
 
+    scenario_coverage = _scenario_coverage()
+    scenario_ids = {s["id"] for s in scenarios}
+    coverage_out = []
+    for item in COVERAGE_ITEMS:
+        present = [sid for sid in item["scenarios"] if sid in scenario_ids]
+        if present:
+            coverage_out.append({"id": item["id"], "label": item["label"], "scenarios": present})
+    if not only:
+        uncovered = [item["id"] for item in COVERAGE_ITEMS if not any(sid in scenario_ids for sid in item["scenarios"])]
+        if uncovered:
+            raise SystemExit(f"12.1 场景覆盖不完整：{uncovered}")
+
     manifest = {
-        "version": 1,
+        "version": 2,
         "seed": SEED,
         "generator": "scripts/ocr/gen_corpus.py",
         "font": "msyh.ttc（微软雅黑）",
         "baseSize": [BASE_W, BASE_H],
         "scenarioCount": len({e["scenario"] for e in entries}),
         "imageCount": len(entries),
-        "privacy": "全部内容虚构：好友名仅 A/B/C；正文为测试文案；手机号/单号/金额均为占位假数据",
-        "scenarios": [{"id": s["id"], "label": s["label"]} for s in scenarios],
+        "coverageCount": len(coverage_out),
+        "privacy": "全部内容虚构：好友名仅 A/B/C，正文为测试文案；手机号/单号/金额均为占位假数据",
+        "scenarios": [
+            {
+                "id": s["id"],
+                "index": SCENARIO_INDEX[s["id"]],
+                "label": s["label"],
+                "coverage": scenario_coverage.get(s["id"], []),
+            }
+            for s in scenarios
+        ],
+        "coverage": coverage_out,
         "images": entries,
     }
     manifest_path = out_dir / "manifest.json"

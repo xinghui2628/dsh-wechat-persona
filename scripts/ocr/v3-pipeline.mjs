@@ -342,6 +342,43 @@ export function matchSecondEngineLine({ winText, winTop, rapidLines, topToleranc
   return best;
 }
 
+// ── 行级对齐（12.3 D 组「仅新对齐」离线等价）──────────────────────────────
+
+/**
+ * 把 WinRT 行对齐到同一帧的 RapidOCR 行：
+ * 要求纵向距离 ≤ yTolerance 且文本重合度 ≥ minOverlap（近似 src/core/ocr 的对齐思路）。
+ * 返回对齐上的 WinRT 行；未对齐上的行视为「不可信」被丢弃（这正是 D 组要测的取舍）。
+ * @param {Array<{text:string, box:{x:number,y:number,w:number,h:number}}>} winLines
+ * @param {Array<{text:string, box:{x:number,y:number,w:number,h:number}}>} engLines
+ * @returns {{aligned:Array, dropped:Array, pairs:Array}}
+ */
+export function alignLinesToSecondEngine(winLines, engLines, { yTolerance = 26, minOverlap = 0.35 } = {}) {
+  const aligned = [];
+  const dropped = [];
+  const pairs = [];
+  const usedEng = new Set();
+  for (let i = 0; i < winLines.length; i++) {
+    const wl = winLines[i];
+    let best = null;
+    for (let j = 0; j < engLines.length; j++) {
+      if (usedEng.has(j)) continue;
+      const dy = Math.abs(engLines[j].box.y - wl.box.y);
+      if (dy > yTolerance) continue;
+      const overlap = textOverlapRatioV3(wl.text, engLines[j].text);
+      const score = overlap - dy / 1000;
+      if (overlap >= minOverlap && (!best || score > best.score)) best = { j, overlap, dy, score };
+    }
+    if (best) {
+      usedEng.add(best.j);
+      aligned.push(wl);
+      pairs.push({ win: i, eng: best.j, overlap: best.overlap, dy: best.dy });
+    } else {
+      dropped.push(wl);
+    }
+  }
+  return { aligned, dropped, pairs };
+}
+
 // ── v3 管线配置：调参只看 tune 集，eval 只报选中配置 ─────────────────────
 
 export const V3_CONFIGS = [
@@ -379,6 +416,7 @@ export const V3_NOTES = [
  */
 export function runV3Message({ gtText, winText, winTop, rapidLines = [], config = 'vote-garbled' }) {
   const cfg = typeof config === 'string' ? V3_CONFIGS.find((c) => c.id === config) || V3_CONFIGS[1] : config;
+  const skipCorrection = cfg.skipCorrection === true;
   const normalized = normalizeOcrText(winText);
   const garbled = looksGarbled(normalized);
   const info = {
@@ -422,7 +460,11 @@ export function runV3Message({ gtText, winText, winTop, rapidLines = [], config 
     }
   }
 
-  // 最后一步始终是受控纠错（desktop.ts:394 / :437）
+  // 最后一步始终是受控纠错（desktop.ts:394 / :437）；消融实验可用 skipCorrection 关掉
+  if (skipCorrection) {
+    info.finalText = best;
+    return info;
+  }
   const correction = applyControlledCorrection(best);
   info.finalText = correction.text;
   info.corrected = correction.changes.length > 0;

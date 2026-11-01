@@ -1,0 +1,2628 @@
+{
+ "meta": {
+  "bench": "ocr-benchmark",
+  "version": "v3.0.0",
+  "generatedAt": "2026-11-01T01:55:38.079Z",
+  "command": "--engine=winrt --variants=orig,crop_pane,gray,equalize_clahe,median3,upscale2x,upscale3x,scale2x_nearest,scale2x_bilinear,scale2x_bicubic,adaptive_threshold --pipeline=raw --split=tune",
+  "engine": "winrt",
+  "variant": "gray",
+  "variantLabel": "C 灰度",
+  "python": "python",
+  "pythonVersion": "3.14.2",
+  "pillowVersion": "13.0.0",
+  "node": "v26.13.0",
+  "platform": "win32",
+  "corpus": {
+   "manifest": "test\\fixtures\\ocr-corpus\\manifest.json",
+   "seed": 20261031,
+   "scenarioCount": 30,
+   "imageCount": 30,
+   "split": "tune",
+   "splitScenarios": [
+    "clear",
+    "low_contrast",
+    "scale_100",
+    "scale_150",
+    "long_bubble",
+    "bilingual",
+    "emoji",
+    "occluded",
+    "short_msgs",
+    "noisy",
+    "rare_chars",
+    "network_slang",
+    "long_nickname",
+    "empty_error",
+    "scrolled"
+   ]
+  },
+  "durationMs": 10340,
+  "modelLoadMs": 0
+ },
+ "images": [
+  {
+   "captureId": "clear-00",
+   "scenario": "clear",
+   "ok": true,
+   "elapsedMs": 23,
+   "cpuMs": 47,
+   "rssMB": 103,
+   "wallMs": 332,
+   "lines": [
+    {
+     "text": "今天大肥很好吃",
+     "x": 66,
+     "y": 491,
+     "w": 120,
+     "h": 14
+    },
+    {
+     "text": "的吗？我明天也去试试",
+     "x": 265,
+     "y": 546,
+     "w": 149,
+     "h": 14
+    },
+    {
+     "text": "0",
+     "x": 434,
+     "y": 533,
+     "w": 35,
+     "h": 35
+    }
+   ],
+   "metrics": {
+    "cer": 0.10526315789473684,
+    "linePrecision": 0.6666666666666666,
+    "lineRecall": 1,
+    "lineF1": 0.8,
+    "sentenceAcc": 0,
+    "missRate": 0,
+    "falseRate": 0.3333333333333333,
+    "dupRate": 0,
+    "splitRate": 0,
+    "tp": 2,
+    "fp": 1,
+    "dup": 0,
+    "frag": 0,
+    "fn": 0,
+    "gtLines": 2,
+    "ocrLines": 3,
+    "sentences": 2,
+    "correctMessages": 0,
+    "totalEdit": 2,
+    "totalChars": 19,
+    "perMessage": [
+     {
+      "text": "今天大肥鱼很好吃",
+      "ocrText": "今天大肥很好吃",
+      "cer": 0.125,
+      "exact": false
+     },
+     {
+      "text": "真的吗？我明天也去试试",
+      "ocrText": "的吗？我明天也去试试",
+      "cer": 0.09090909090909091,
+      "exact": false
+     }
+    ]
+   }
+  },
+  {
+   "captureId": "clear-01",
+   "scenario": "clear",
+   "ok": true,
+   "elapsedMs": 22,
+   "cpuMs": 31,
+   "rssMB": 102,
+   "wallMs": 335,
+   "lines": [
+    {
+     "text": "周末有空吗",
+     "x": 66,
+     "y": 491,
+     "w": 75,
+     "h": 14
+    },
+    {
+     "text": "有空的，下午三",
+     "x": 279,
+     "y": 546,
+     "w": 108,
+     "h": 14
+    }
+   ],
+   "metrics": {
+    "cer": 0.14285714285714285,
+    "linePrecision": 1,
+    "lineRecall": 1,
+    "lineF1": 1,
+    "sentenceAcc": 0.5,
+    "missRate": 0,
+    "falseRate": 0,
+    "dupRate": 0,
+    "splitRate": 0,
+    "tp": 2,
+    "fp": 0,
+    "dup": 0,
+    "frag": 0,
+    "fn": 0,
+    "gtLines": 2,
+    "ocrLines": 2,
+    "sentences": 2,
+    "correctMessages": 1,
+    "totalEdit": 2,
+    "totalChars": 14,
+    "perMessage": [
+     {
+      "text": "周末有空吗",
+      "ocrText": "周末有空吗",
+      "cer": 0,
+      "exact": true
+     },
+     {
+      "text": "有空的，下午三点见",
+      "ocrText": "有空的，下午三",
+      "cer": 0.2222222222222222,
+      "exact": false
+     }
+    ]
+   }
+  },
+  {
+   "captureId": "low_contrast-00",
+   "scenario": "low_contrast",
+   "ok": true,
+   "elapsedMs": 23,
+   "cpuMs": 141,
+   "rssMB": 102,
+   "wallMs": 329,
+   "lines": [
+    {
+     "text": "苡字淦底看昔有点劲",
+     "x": 66,
+     "y": 490,
+     "w": 149,
+     "h": 15
+    },
+    {
+     "text": "截图压之后就返样",
+     "x": 279,
+     "y": 546,
+     "w": 135,
+     "h": 13
+    }
+   ],
+   "metrics": {
+    "cer": 0.3157894736842105,
+    "linePrecision": 1,
+    "lineRecall": 1,
+    "lineF1": 1,
+    "sentenceAcc": 0,
+    "missRate": 0,
+    "falseRate": 0,
+    "dupRate": 0,
+    "splitRate": 0,
+    "tp": 2,
+    "fp": 0,
+    "dup": 0,
+    "frag": 0,
+    "fn": 0,
+    "gtLines": 2,
+    "ocrLines": 2,
+    "sentences": 2,
+    "correctMessages": 0,
+    "totalEdit": 6,
+    "totalChars": 19,
+    "perMessage": [
+     {
+      "text": "灰字浅底看着有点费劲",
+      "ocrText": "苡字淦底看昔有点劲",
+      "cer": 0.4,
+      "exact": false
+     },
+     {
+      "text": "截图压缩之后就这样",
+      "ocrText": "截图压之后就返样",
+      "cer": 0.2222222222222222,
+      "exact": false
+     }
+    ]
+   }
+  },
+  {
+   "captureId": "low_contrast-01",
+   "scenario": "low_contrast",
+   "ok": true,
+   "elapsedMs": 25,
+   "cpuMs": 94,
+   "rssMB": 102,
+   "wallMs": 327,
+   "lines": [
+    {
+     "text": "低对比所的聊天截图",
+     "x": 66,
+     "y": 491,
+     "w": 134,
+     "h": 13
+    },
+    {
+     "text": "识引明产廾",
+     "x": 279,
+     "y": 546,
+     "w": 135,
+     "h": 13
+    }
+   ],
+   "metrics": {
+    "cer": 0.5555555555555556,
+    "linePrecision": 0.5,
+    "lineRecall": 0.5,
+    "lineF1": 0.5,
+    "sentenceAcc": 0,
+    "missRate": 0.5,
+    "falseRate": 0.5,
+    "dupRate": 0,
+    "splitRate": 0,
+    "tp": 1,
+    "fp": 1,
+    "dup": 0,
+    "frag": 0,
+    "fn": 1,
+    "gtLines": 2,
+    "ocrLines": 2,
+    "sentences": 2,
+    "correctMessages": 0,
+    "totalEdit": 10,
+    "totalChars": 18,
+    "perMessage": [
+     {
+      "text": "低对比度的聊天截图",
+      "ocrText": "低对比所的聊天截图",
+      "cer": 0.1111111111111111,
+      "exact": false
+     },
+     {
+      "text": "识别难度会明显上升",
+      "ocrText": "",
+      "cer": 1,
+      "exact": false
+     }
+    ]
+   }
+  },
+  {
+   "captureId": "scale_100-00",
+   "scenario": "scale_100",
+   "ok": true,
+   "elapsedMs": 24,
+   "cpuMs": 47,
+   "rssMB": 102,
+   "wallMs": 335,
+   "lines": [
+    {
+     "text": "缩放百分之一百的截",
+     "x": 66,
+     "y": 491,
+     "w": 135,
+     "h": 14
+    },
+    {
+     "text": "这是基准尺寸",
+     "x": 324,
+     "y": 546,
+     "w": 90,
+     "h": 14
+    }
+   ],
+   "metrics": {
+    "cer": 0.0625,
+    "linePrecision": 1,
+    "lineRecall": 1,
+    "lineF1": 1,
+    "sentenceAcc": 0.5,
+    "missRate": 0,
+    "falseRate": 0,
+    "dupRate": 0,
+    "splitRate": 0,
+    "tp": 2,
+    "fp": 0,
+    "dup": 0,
+    "frag": 0,
+    "fn": 0,
+    "gtLines": 2,
+    "ocrLines": 2,
+    "sentences": 2,
+    "correctMessages": 1,
+    "totalEdit": 1,
+    "totalChars": 16,
+    "perMessage": [
+     {
+      "text": "缩放百分之一百的截图",
+      "ocrText": "缩放百分之一百的截",
+      "cer": 0.1,
+      "exact": false
+     },
+     {
+      "text": "这是基准尺寸",
+      "ocrText": "这是基准尺寸",
+      "cer": 0,
+      "exact": true
+     }
+    ]
+   }
+  },
+  {
+   "captureId": "scale_100-01",
+   "scenario": "scale_100",
+   "ok": true,
+   "elapsedMs": 22,
+   "cpuMs": 109,
+   "rssMB": 102,
+   "wallMs": 334,
+   "lines": [
+    {
+     "text": "原始尺寸的界面",
+     "x": 66,
+     "y": 491,
+     "w": 105,
+     "h": 14
+    },
+    {
+     "text": "文字边缘最肩楚",
+     "x": 309,
+     "y": 546,
+     "w": 105,
+     "h": 13
+    },
+    {
+     "text": "0",
+     "x": 434,
+     "y": 533,
+     "w": 35,
+     "h": 35
+    }
+   ],
+   "metrics": {
+    "cer": 0.07142857142857142,
+    "linePrecision": 0.6666666666666666,
+    "lineRecall": 1,
+    "lineF1": 0.8,
+    "sentenceAcc": 0.5,
+    "missRate": 0,
+    "falseRate": 0.3333333333333333,
+    "dupRate": 0,
+    "splitRate": 0,
+    "tp": 2,
+    "fp": 1,
+    "dup": 0,
+    "frag": 0,
+    "fn": 0,
+    "gtLines": 2,
+    "ocrLines": 3,
+    "sentences": 2,
+    "correctMessages": 1,
+    "totalEdit": 1,
+    "totalChars": 14,
+    "perMessage": [
+     {
+      "text": "原始尺寸的界面",
+      "ocrText": "原始尺寸的界面",
+      "cer": 0,
+      "exact": true
+     },
+     {
+      "text": "文字边缘最清楚",
+      "ocrText": "文字边缘最肩楚",
+      "cer": 0.14285714285714285,
+      "exact": false
+     }
+    ]
+   }
+  },
+  {
+   "captureId": "scale_150-00",
+   "scenario": "scale_150",
+   "ok": true,
+   "elapsedMs": 36,
+   "cpuMs": 94,
+   "rssMB": 104,
+   "wallMs": 360,
+   "lines": [
+    {
+     "text": "缩放百分之一百五十",
+     "x": 93,
+     "y": 730,
+     "w": 203,
+     "h": 25
+    },
+    {
+     "text": "截图尺寸变大了",
+     "x": 455,
+     "y": 821,
+     "w": 157,
+     "h": 24
+    },
+    {
+     "text": "0",
+     "x": 642,
+     "y": 806,
+     "w": 54,
+     "h": 54
+    }
+   ],
+   "metrics": {
+    "cer": 0,
+    "linePrecision": 0.6666666666666666,
+    "lineRecall": 1,
+    "lineF1": 0.8,
+    "sentenceAcc": 1,
+    "missRate": 0,
+    "falseRate": 0.3333333333333333,
+    "dupRate": 0,
+    "splitRate": 0,
+    "tp": 2,
+    "fp": 1,
+    "dup": 0,
+    "frag": 0,
+    "fn": 0,
+    "gtLines": 2,
+    "ocrLines": 3,
+    "sentences": 2,
+    "correctMessages": 2,
+    "totalEdit": 0,
+    "totalChars": 16,
+    "perMessage": [
+     {
+      "text": "缩放百分之一百五十",
+      "ocrText": "缩放百分之一百五十",
+      "cer": 0,
+      "exact": true
+     },
+     {
+      "text": "截图尺寸变大了",
+      "ocrText": "截图尺寸变大了",
+      "cer": 0,
+      "exact": true
+     }
+    ]
+   }
+  },
+  {
+   "captureId": "scale_150-01",
+   "scenario": "scale_150",
+   "ok": true,
+   "elapsedMs": 25,
+   "cpuMs": 47,
+   "rssMB": 105,
+   "wallMs": 344,
+   "lines": [
+    {
+     "text": "0",
+     "x": 18,
+     "y": 717,
+     "w": 52,
+     "h": 52
+    },
+    {
+     "text": "高分屏的常见比例",
+     "x": 99,
+     "y": 735,
+     "w": 179,
+     "h": 23
+    },
+    {
+     "text": "识别应该更稳",
+     "x": 486,
+     "y": 817,
+     "w": 135,
+     "h": 23
+    },
+    {
+     "text": "0",
+     "x": 651,
+     "y": 799,
+     "w": 53,
+     "h": 53
+    }
+   ],
+   "metrics": {
+    "cer": 0,
+    "linePrecision": 0.5,
+    "lineRecall": 1,
+    "lineF1": 0.6666666666666666,
+    "sentenceAcc": 1,
+    "missRate": 0,
+    "falseRate": 0.5,
+    "dupRate": 0,
+    "splitRate": 0,
+    "tp": 2,
+    "fp": 2,
+    "dup": 0,
+    "frag": 0,
+    "fn": 0,
+    "gtLines": 2,
+    "ocrLines": 4,
+    "sentences": 2,
+    "correctMessages": 2,
+    "totalEdit": 0,
+    "totalChars": 14,
+    "perMessage": [
+     {
+      "text": "高分屏的常见比例",
+      "ocrText": "高分屏的常见比例",
+      "cer": 0,
+      "exact": true
+     },
+     {
+      "text": "识别应该更稳",
+      "ocrText": "识别应该更稳",
+      "cer": 0,
+      "exact": true
+     }
+    ]
+   }
+  },
+  {
+   "captureId": "long_bubble-00",
+   "scenario": "long_bubble",
+   "ok": true,
+   "elapsedMs": 36,
+   "cpuMs": 16,
+   "rssMB": 103,
+   "wallMs": 342,
+   "lines": [
+    {
+     "text": "0",
+     "x": 12,
+     "y": 436,
+     "w": 35,
+     "h": 35
+    },
+    {
+     "text": "今天下午三点开会议纪要我已经整理妤发到",
+     "x": 66,
+     "y": 449,
+     "w": 294,
+     "h": 13
+    },
+    {
+     "text": "群里了，大冢有空音一下，有问题随时在群里回",
+     "x": 66,
+     "y": 471,
+     "w": 293,
+     "h": 13
+    },
+    {
+     "text": "，我这边统一汇处理 ·",
+     "x": 82,
+     "y": 493,
+     "w": 157,
+     "h": 13
+    },
+    {
+     "text": "收到，我音",
+     "x": 316,
+     "y": 547,
+     "w": 98,
+     "h": 13
+    },
+    {
+     "text": "0",
+     "x": 434,
+     "y": 534,
+     "w": 35,
+     "h": 35
+    }
+   ],
+   "metrics": {
+    "cer": 0.1935483870967742,
+    "linePrecision": 0.6666666666666666,
+    "lineRecall": 1,
+    "lineF1": 0.8,
+    "sentenceAcc": 0,
+    "missRate": 0,
+    "falseRate": 0.3333333333333333,
+    "dupRate": 0,
+    "splitRate": 0,
+    "tp": 4,
+    "fp": 2,
+    "dup": 0,
+    "frag": 0,
+    "fn": 0,
+    "gtLines": 4,
+    "ocrLines": 6,
+    "sentences": 2,
+    "correctMessages": 0,
+    "totalEdit": 12,
+    "totalChars": 62,
+    "perMessage": [
+     {
+      "text": "今天下午三点开会，会议纪要我已经整理好发到群里了，大家有空看一下，有问题随时在群里回复，我这边会统一汇总处理。",
+      "ocrText": "今天下午三点开会议纪要我已经整理妤发到群里了，大冢有空音一下，有问题随时在群里回，我这边统一汇处理 ·",
+      "cer": 0.16363636363636364,
+      "exact": false
+     },
+     {
+      "text": "收到，我晚点看",
+      "ocrText": "收到，我音",
+      "cer": 0.42857142857142855,
+      "exact": false
+     }
+    ]
+   }
+  },
+  {
+   "captureId": "long_bubble-01",
+   "scenario": "long_bubble",
+   "ok": true,
+   "elapsedMs": 39,
+   "cpuMs": 16,
+   "rssMB": 102,
+   "wallMs": 353,
+   "lines": [
+    {
+     "text": "你上次说的那个表．青包工程还在吗",
+     "x": 66,
+     "y": 449,
+     "w": 210,
+     "h": 12
+    },
+    {
+     "text": "在的，我吧仓库地址和说明都放在群公舌里了，",
+     "x": 120,
+     "y": 503,
+     "w": 284,
+     "h": 13
+    },
+    {
+     "text": "你按里面的步骤装一下依赖，然启运行测试舍",
+     "x": 120,
+     "y": 525,
+     "w": 294,
+     "h": 13
+    },
+    {
+     "text": "应该就能跑起来，有问题再找我．",
+     "x": 120,
+     "y": 547,
+     "w": 201,
+     "h": 13
+    }
+   ],
+   "metrics": {
+    "cer": 0.1111111111111111,
+    "linePrecision": 1,
+    "lineRecall": 1,
+    "lineF1": 1,
+    "sentenceAcc": 0,
+    "missRate": 0,
+    "falseRate": 0,
+    "dupRate": 0,
+    "splitRate": 0,
+    "tp": 4,
+    "fp": 0,
+    "dup": 0,
+    "frag": 0,
+    "fn": 0,
+    "gtLines": 4,
+    "ocrLines": 4,
+    "sentences": 2,
+    "correctMessages": 0,
+    "totalEdit": 8,
+    "totalChars": 72,
+    "perMessage": [
+     {
+      "text": "你上次说的那个表情包工程还在吗",
+      "ocrText": "你上次说的那个表．青包工程还在吗",
+      "cer": 0.13333333333333333,
+      "exact": false
+     },
+     {
+      "text": "在的，我把仓库地址和说明都放在群公告里了，你按里面的步骤装一下依赖，然后运行测试命令应该就能跑起来，有问题再找我。",
+      "ocrText": "在的，我吧仓库地址和说明都放在群公舌里了，你按里面的步骤装一下依赖，然启运行测试舍应该就能跑起来，有问题再找我．",
+      "cer": 0.10526315789473684,
+      "exact": false
+     }
+    ]
+   }
+  },
+  {
+   "captureId": "bilingual-00",
+   "scenario": "bilingual",
+   "ok": true,
+   "elapsedMs": 31,
+   "cpuMs": 47,
+   "rssMB": 103,
+   "wallMs": 346,
+   "lines": [
+    {
+     "text": "0",
+     "x": 12,
+     "y": 455,
+     "w": 35,
+     "h": 35
+    },
+    {
+     "text": "OK, 明天 1030 我们开个 Zoom 芸议聊一",
+     "x": 66,
+     "y": 468,
+     "w": 286,
+     "h": 14
+    },
+    {
+     "text": "下 OCR 的事情",
+     "x": 66,
+     "y": 491,
+     "w": 100,
+     "h": 14
+    },
+    {
+     "text": "收到，会议链接发我一",
+     "x": 249,
+     "y": 546,
+     "w": 150,
+     "h": 14
+    }
+   ],
+   "metrics": {
+    "cer": 0.1,
+    "linePrecision": 0.75,
+    "lineRecall": 1,
+    "lineF1": 0.8571428571428571,
+    "sentenceAcc": 0,
+    "missRate": 0,
+    "falseRate": 0.25,
+    "dupRate": 0,
+    "splitRate": 0,
+    "tp": 3,
+    "fp": 1,
+    "dup": 0,
+    "frag": 0,
+    "fn": 0,
+    "gtLines": 3,
+    "ocrLines": 4,
+    "sentences": 2,
+    "correctMessages": 0,
+    "totalEdit": 4,
+    "totalChars": 40,
+    "perMessage": [
+     {
+      "text": "OK，明天 10:30 我们开个 Zoom 会议聊一下 OCR 的事情",
+      "ocrText": "OK, 明天 1030 我们开个 Zoom 芸议聊一下 OCR 的事情",
+      "cer": 0.10344827586206896,
+      "exact": false
+     },
+     {
+      "text": "收到，会议链接发我一下",
+      "ocrText": "收到，会议链接发我一",
+      "cer": 0.09090909090909091,
+      "exact": false
+     }
+    ]
+   }
+  },
+  {
+   "captureId": "bilingual-01",
+   "scenario": "bilingual",
+   "ok": true,
+   "elapsedMs": 29,
+   "cpuMs": 109,
+   "rssMB": 103,
+   "wallMs": 361,
+   "lines": [
+    {
+     "text": "这个 pipeline 的 CER 大概是多少",
+     "x": 66,
+     "y": 491,
+     "w": 223,
+     "h": 16
+    },
+    {
+     "text": "我跑一下 benchmark 冉告诉你",
+     "x": 205,
+     "y": 546,
+     "w": 209,
+     "h": 14
+    }
+   ],
+   "metrics": {
+    "cer": 0.027777777777777776,
+    "linePrecision": 1,
+    "lineRecall": 1,
+    "lineF1": 1,
+    "sentenceAcc": 0.5,
+    "missRate": 0,
+    "falseRate": 0,
+    "dupRate": 0,
+    "splitRate": 0,
+    "tp": 2,
+    "fp": 0,
+    "dup": 0,
+    "frag": 0,
+    "fn": 0,
+    "gtLines": 2,
+    "ocrLines": 2,
+    "sentences": 2,
+    "correctMessages": 1,
+    "totalEdit": 1,
+    "totalChars": 36,
+    "perMessage": [
+     {
+      "text": "这个 pipeline 的 CER 大概是多少",
+      "ocrText": "这个 pipeline 的 CER 大概是多少",
+      "cer": 0,
+      "exact": true
+     },
+     {
+      "text": "我跑一下 benchmark 再告诉你",
+      "ocrText": "我跑一下 benchmark 冉告诉你",
+      "cer": 0.058823529411764705,
+      "exact": false
+     }
+    ]
+   }
+  },
+  {
+   "captureId": "emoji-00",
+   "scenario": "emoji",
+   "ok": true,
+   "elapsedMs": 31,
+   "cpuMs": 0,
+   "rssMB": 102,
+   "wallMs": 342,
+   "lines": [
+    {
+     "text": "今天好累啊 0 但是活还得干",
+     "x": 62,
+     "y": 483,
+     "w": 195,
+     "h": 22
+    },
+    {
+     "text": "抱抱你 0 。一）早点睡",
+     "x": 262,
+     "y": 546,
+     "w": 147,
+     "h": 18
+    }
+   ],
+   "metrics": {
+    "cer": 0.2916666666666667,
+    "linePrecision": 1,
+    "lineRecall": 1,
+    "lineF1": 1,
+    "sentenceAcc": 0,
+    "missRate": 0,
+    "falseRate": 0,
+    "dupRate": 0,
+    "splitRate": 0,
+    "tp": 2,
+    "fp": 0,
+    "dup": 0,
+    "frag": 0,
+    "fn": 0,
+    "gtLines": 2,
+    "ocrLines": 2,
+    "sentences": 2,
+    "correctMessages": 0,
+    "totalEdit": 7,
+    "totalChars": 24,
+    "perMessage": [
+     {
+      "text": "今天好累啊 😂 但是活还得干",
+      "ocrText": "今天好累啊 0 但是活还得干",
+      "cer": 0.15384615384615385,
+      "exact": false
+     },
+     {
+      "text": "抱抱你 (￣▽￣) 早点睡",
+      "ocrText": "抱抱你 0 。一）早点睡",
+      "cer": 0.45454545454545453,
+      "exact": false
+     }
+    ]
+   }
+  },
+  {
+   "captureId": "emoji-01",
+   "scenario": "emoji",
+   "ok": true,
+   "elapsedMs": 20,
+   "cpuMs": 0,
+   "rssMB": 99,
+   "wallMs": 339,
+   "lines": [
+    {
+     "text": "下班",
+     "x": 66,
+     "y": 491,
+     "w": 30,
+     "h": 13
+    },
+    {
+     "text": "收到红包",
+     "x": 280,
+     "y": 546,
+     "w": 60,
+     "h": 14
+    },
+    {
+     "text": "谢谢",
+     "x": 384,
+     "y": 546,
+     "w": 30,
+     "h": 13
+    }
+   ],
+   "metrics": {
+    "cer": 1,
+    "linePrecision": 0,
+    "lineRecall": 0,
+    "lineF1": 0,
+    "sentenceAcc": 0,
+    "missRate": 1,
+    "falseRate": 0.6666666666666666,
+    "dupRate": 0,
+    "splitRate": 0.3333333333333333,
+    "tp": 0,
+    "fp": 2,
+    "dup": 0,
+    "frag": 1,
+    "fn": 2,
+    "gtLines": 2,
+    "ocrLines": 3,
+    "sentences": 2,
+    "correctMessages": 0,
+    "totalEdit": 16,
+    "totalChars": 16,
+    "perMessage": [
+     {
+      "text": "下班啦 🎉🎉",
+      "ocrText": "",
+      "cer": 1,
+      "exact": false
+     },
+     {
+      "text": "收到红包啦 🧧 谢谢",
+      "ocrText": "",
+      "cer": 1,
+      "exact": false
+     }
+    ]
+   }
+  },
+  {
+   "captureId": "occluded-00",
+   "scenario": "occluded",
+   "ok": true,
+   "elapsedMs": 24,
+   "cpuMs": 47,
+   "rssMB": 102,
+   "wallMs": 402,
+   "lines": [
+    {
+     "text": "遮扌当的部分还能认出来吗",
+     "x": 249,
+     "y": 546,
+     "w": 165,
+     "h": 14
+    }
+   ],
+   "metrics": {
+    "cer": 0.625,
+    "linePrecision": 1,
+    "lineRecall": 0.5,
+    "lineF1": 0.6666666666666666,
+    "sentenceAcc": 0,
+    "missRate": 0.5,
+    "falseRate": 0,
+    "dupRate": 0,
+    "splitRate": 0,
+    "tp": 1,
+    "fp": 0,
+    "dup": 0,
+    "frag": 0,
+    "fn": 1,
+    "gtLines": 2,
+    "ocrLines": 1,
+    "sentences": 2,
+    "correctMessages": 0,
+    "totalEdit": 15,
+    "totalChars": 24,
+    "perMessage": [
+     {
+      "text": "这条消息被通知条挡住了一半",
+      "ocrText": "",
+      "cer": 1,
+      "exact": false
+     },
+     {
+      "text": "遮挡的部分还能认出来吗",
+      "ocrText": "遮扌当的部分还能认出来吗",
+      "cer": 0.18181818181818182,
+      "exact": false
+     }
+    ]
+   }
+  },
+  {
+   "captureId": "occluded-01",
+   "scenario": "occluded",
+   "ok": true,
+   "elapsedMs": 22,
+   "cpuMs": 94,
+   "rssMB": 103,
+   "wallMs": 334,
+   "lines": [
+    {
+     "text": "只能亞上下文猜了",
+     "x": 294,
+     "y": 546,
+     "w": 119,
+     "h": 14
+    }
+   ],
+   "metrics": {
+    "cer": 0.5625,
+    "linePrecision": 1,
+    "lineRecall": 0.5,
+    "lineF1": 0.6666666666666666,
+    "sentenceAcc": 0,
+    "missRate": 0.5,
+    "falseRate": 0,
+    "dupRate": 0,
+    "splitRate": 0,
+    "tp": 1,
+    "fp": 0,
+    "dup": 0,
+    "frag": 0,
+    "fn": 1,
+    "gtLines": 2,
+    "ocrLines": 1,
+    "sentences": 2,
+    "correctMessages": 0,
+    "totalEdit": 9,
+    "totalChars": 16,
+    "perMessage": [
+     {
+      "text": "被遮挡的聊天内容",
+      "ocrText": "",
+      "cer": 1,
+      "exact": false
+     },
+     {
+      "text": "只能靠上下文猜了",
+      "ocrText": "只能亞上下文猜了",
+      "cer": 0.125,
+      "exact": false
+     }
+    ]
+   }
+  },
+  {
+   "captureId": "short_msgs-00",
+   "scenario": "short_msgs",
+   "ok": true,
+   "elapsedMs": 20,
+   "cpuMs": 78,
+   "rssMB": 102,
+   "wallMs": 359,
+   "lines": [
+    {
+     "text": "好的",
+     "x": 384,
+     "y": 491,
+     "w": 30,
+     "h": 13
+    },
+    {
+     "text": "OK",
+     "x": 66,
+     "y": 547,
+     "w": 22,
+     "h": 11
+    }
+   ],
+   "metrics": {
+    "cer": 0.2,
+    "linePrecision": 1,
+    "lineRecall": 0.6666666666666666,
+    "lineF1": 0.8,
+    "sentenceAcc": 0.6666666666666666,
+    "missRate": 0.3333333333333333,
+    "falseRate": 0,
+    "dupRate": 0,
+    "splitRate": 0,
+    "tp": 2,
+    "fp": 0,
+    "dup": 0,
+    "frag": 0,
+    "fn": 1,
+    "gtLines": 3,
+    "ocrLines": 2,
+    "sentences": 3,
+    "correctMessages": 2,
+    "totalEdit": 1,
+    "totalChars": 5,
+    "perMessage": [
+     {
+      "text": "嗯",
+      "ocrText": "",
+      "cer": 1,
+      "exact": false
+     },
+     {
+      "text": "好的",
+      "ocrText": "好的",
+      "cer": 0,
+      "exact": true
+     },
+     {
+      "text": "OK",
+      "ocrText": "OK",
+      "cer": 0,
+      "exact": true
+     }
+    ]
+   }
+  },
+  {
+   "captureId": "short_msgs-01",
+   "scenario": "short_msgs",
+   "ok": true,
+   "elapsedMs": 20,
+   "cpuMs": 31,
+   "rssMB": 102,
+   "wallMs": 342,
+   "lines": [
+    {
+     "text": "行",
+     "x": 399,
+     "y": 490,
+     "w": 15,
+     "h": 14
+    },
+    {
+     "text": "明天见",
+     "x": 67,
+     "y": 546,
+     "w": 44,
+     "h": 14
+    }
+   ],
+   "metrics": {
+    "cer": 0.3333333333333333,
+    "linePrecision": 1,
+    "lineRecall": 0.6666666666666666,
+    "lineF1": 0.8,
+    "sentenceAcc": 0.6666666666666666,
+    "missRate": 0.3333333333333333,
+    "falseRate": 0,
+    "dupRate": 0,
+    "splitRate": 0,
+    "tp": 2,
+    "fp": 0,
+    "dup": 0,
+    "frag": 0,
+    "fn": 1,
+    "gtLines": 3,
+    "ocrLines": 2,
+    "sentences": 3,
+    "correctMessages": 2,
+    "totalEdit": 2,
+    "totalChars": 6,
+    "perMessage": [
+     {
+      "text": "收到",
+      "ocrText": "",
+      "cer": 1,
+      "exact": false
+     },
+     {
+      "text": "行",
+      "ocrText": "行",
+      "cer": 0,
+      "exact": true
+     },
+     {
+      "text": "明天见",
+      "ocrText": "明天见",
+      "cer": 0,
+      "exact": true
+     }
+    ]
+   }
+  },
+  {
+   "captureId": "noisy-00",
+   "scenario": "noisy",
+   "ok": true,
+   "elapsedMs": 26,
+   "cpuMs": 62,
+   "rssMB": 102,
+   "wallMs": 335,
+   "lines": [
+    {
+     "text": "压缩噪声让文字边缘变脏",
+     "x": 66,
+     "y": 491,
+     "w": 165,
+     "h": 13
+    },
+    {
+     "text": "截质量差的典型情况",
+     "x": 264,
+     "y": 546,
+     "w": 150,
+     "h": 14
+    }
+   ],
+   "metrics": {
+    "cer": 0.047619047619047616,
+    "linePrecision": 1,
+    "lineRecall": 1,
+    "lineF1": 1,
+    "sentenceAcc": 0.5,
+    "missRate": 0,
+    "falseRate": 0,
+    "dupRate": 0,
+    "splitRate": 0,
+    "tp": 2,
+    "fp": 0,
+    "dup": 0,
+    "frag": 0,
+    "fn": 0,
+    "gtLines": 2,
+    "ocrLines": 2,
+    "sentences": 2,
+    "correctMessages": 1,
+    "totalEdit": 1,
+    "totalChars": 21,
+    "perMessage": [
+     {
+      "text": "压缩噪声让文字边缘变脏",
+      "ocrText": "压缩噪声让文字边缘变脏",
+      "cer": 0,
+      "exact": true
+     },
+     {
+      "text": "截图质量差的典型情况",
+      "ocrText": "截质量差的典型情况",
+      "cer": 0.1,
+      "exact": false
+     }
+    ]
+   }
+  },
+  {
+   "captureId": "noisy-01",
+   "scenario": "noisy",
+   "ok": true,
+   "elapsedMs": 21,
+   "cpuMs": 47,
+   "rssMB": 102,
+   "wallMs": 326,
+   "lines": [
+    {
+     "text": "有就点的聊天截",
+     "x": 66,
+     "y": 491,
+     "w": 105,
+     "h": 14
+    },
+    {
+     "text": "还能认得出来",
+     "x": 324,
+     "y": 546,
+     "w": 90,
+     "h": 13
+    },
+    {
+     "text": "0",
+     "x": 434,
+     "y": 533,
+     "w": 35,
+     "h": 35
+    }
+   ],
+   "metrics": {
+    "cer": 0.14285714285714285,
+    "linePrecision": 0.6666666666666666,
+    "lineRecall": 1,
+    "lineF1": 0.8,
+    "sentenceAcc": 0.5,
+    "missRate": 0,
+    "falseRate": 0.3333333333333333,
+    "dupRate": 0,
+    "splitRate": 0,
+    "tp": 2,
+    "fp": 1,
+    "dup": 0,
+    "frag": 0,
+    "fn": 0,
+    "gtLines": 2,
+    "ocrLines": 3,
+    "sentences": 2,
+    "correctMessages": 1,
+    "totalEdit": 2,
+    "totalChars": 14,
+    "perMessage": [
+     {
+      "text": "有噪点的聊天截图",
+      "ocrText": "有就点的聊天截",
+      "cer": 0.25,
+      "exact": false
+     },
+     {
+      "text": "还能认得出来",
+      "ocrText": "还能认得出来",
+      "cer": 0,
+      "exact": true
+     }
+    ]
+   }
+  },
+  {
+   "captureId": "rare_chars-00",
+   "scenario": "rare_chars",
+   "ok": true,
+   "elapsedMs": 26,
+   "cpuMs": 47,
+   "rssMB": 102,
+   "wallMs": 348,
+   "lines": [
+    {
+     "text": "银行行长说重要的事要重复 =",
+     "x": 66,
+     "y": 490,
+     "w": 194,
+     "h": 14
+    },
+    {
+     "text": "亳囂这些字难写",
+     "x": 294,
+     "y": 546,
+     "w": 120,
+     "h": 13
+    }
+   ],
+   "metrics": {
+    "cer": 0.5714285714285714,
+    "linePrecision": 0.5,
+    "lineRecall": 0.5,
+    "lineF1": 0.5,
+    "sentenceAcc": 0,
+    "missRate": 0.5,
+    "falseRate": 0.5,
+    "dupRate": 0,
+    "splitRate": 0,
+    "tp": 1,
+    "fp": 1,
+    "dup": 0,
+    "frag": 0,
+    "fn": 1,
+    "gtLines": 2,
+    "ocrLines": 2,
+    "sentences": 2,
+    "correctMessages": 0,
+    "totalEdit": 16,
+    "totalChars": 28,
+    "perMessage": [
+     {
+      "text": "银行行长说重要的事要重复三遍",
+      "ocrText": "银行行长说重要的事要重复 =",
+      "cer": 0.14285714285714285,
+      "exact": false
+     },
+     {
+      "text": "魑魅魍魉饕餮耄耋这些字真难写",
+      "ocrText": "",
+      "cer": 1,
+      "exact": false
+     }
+    ]
+   }
+  },
+  {
+   "captureId": "rare_chars-01",
+   "scenario": "rare_chars",
+   "ok": true,
+   "elapsedMs": 23,
+   "cpuMs": 78,
+   "rssMB": 102,
+   "wallMs": 339,
+   "lines": [
+    {
+     "text": "觊觎已久的东西終于到手了",
+     "x": 66,
+     "y": 491,
+     "w": 179,
+     "h": 14
+    },
+    {
+     "text": "氤氪的空气里是蹉芘",
+     "x": 264,
+     "y": 546,
+     "w": 150,
+     "h": 13
+    },
+    {
+     "text": "0",
+     "x": 434,
+     "y": 533,
+     "w": 35,
+     "h": 35
+    }
+   ],
+   "metrics": {
+    "cer": 0.18181818181818182,
+    "linePrecision": 0.6666666666666666,
+    "lineRecall": 1,
+    "lineF1": 0.8,
+    "sentenceAcc": 0,
+    "missRate": 0,
+    "falseRate": 0.3333333333333333,
+    "dupRate": 0,
+    "splitRate": 0,
+    "tp": 2,
+    "fp": 1,
+    "dup": 0,
+    "frag": 0,
+    "fn": 0,
+    "gtLines": 2,
+    "ocrLines": 3,
+    "sentences": 2,
+    "correctMessages": 0,
+    "totalEdit": 4,
+    "totalChars": 22,
+    "perMessage": [
+     {
+      "text": "觊觎已久的东西终于到手了",
+      "ocrText": "觊觎已久的东西終于到手了",
+      "cer": 0.08333333333333333,
+      "exact": false
+     },
+     {
+      "text": "氤氲的空气里满是蹉跎",
+      "ocrText": "氤氪的空气里是蹉芘",
+      "cer": 0.3,
+      "exact": false
+     }
+    ]
+   }
+  },
+  {
+   "captureId": "network_slang-00",
+   "scenario": "network_slang",
+   "ok": true,
+   "elapsedMs": 25,
+   "cpuMs": 78,
+   "rssMB": 102,
+   "wallMs": 354,
+   "lines": [
+    {
+     "text": "yyds, 这氵厠纍作绝绝子",
+     "x": 66,
+     "y": 491,
+     "w": 153,
+     "h": 16
+    },
+    {
+     "text": "破防了，",
+     "x": 327,
+     "y": 546,
+     "w": 50,
+     "h": 14
+    }
+   ],
+   "metrics": {
+    "cer": 0.3333333333333333,
+    "linePrecision": 1,
+    "lineRecall": 1,
+    "lineF1": 1,
+    "sentenceAcc": 0,
+    "missRate": 0,
+    "falseRate": 0,
+    "dupRate": 0,
+    "splitRate": 0,
+    "tp": 2,
+    "fp": 0,
+    "dup": 0,
+    "frag": 0,
+    "fn": 0,
+    "gtLines": 2,
+    "ocrLines": 2,
+    "sentences": 2,
+    "correctMessages": 0,
+    "totalEdit": 6,
+    "totalChars": 18,
+    "perMessage": [
+     {
+      "text": "yyds，这波操作绝绝子",
+      "ocrText": "yyds, 这氵厠纍作绝绝子",
+      "cer": 0.3333333333333333,
+      "exact": false
+     },
+     {
+      "text": "破防了，栓Q",
+      "ocrText": "破防了，",
+      "cer": 0.3333333333333333,
+      "exact": false
+     }
+    ]
+   }
+  },
+  {
+   "captureId": "network_slang-01",
+   "scenario": "network_slang",
+   "ok": true,
+   "elapsedMs": 26,
+   "cpuMs": 31,
+   "rssMB": 102,
+   "wallMs": 336,
+   "lines": [
+    {
+     "text": "今天有点 emo ，想躺平",
+     "x": 59,
+     "y": 484,
+     "w": 157,
+     "h": 19
+    },
+    {
+     "text": "I",
+     "x": 305,
+     "y": 541,
+     "w": 11,
+     "h": 37
+    },
+    {
+     "text": "666 ，干饭去",
+     "x": 318,
+     "y": 550,
+     "w": 87,
+     "h": 16
+    },
+    {
+     "text": "0",
+     "x": 424,
+     "y": 541,
+     "w": 36,
+     "h": 36
+    }
+   ],
+   "metrics": {
+    "cer": 0,
+    "linePrecision": 0.5,
+    "lineRecall": 1,
+    "lineF1": 0.6666666666666666,
+    "sentenceAcc": 1,
+    "missRate": 0,
+    "falseRate": 0.5,
+    "dupRate": 0,
+    "splitRate": 0,
+    "tp": 2,
+    "fp": 2,
+    "dup": 0,
+    "frag": 0,
+    "fn": 0,
+    "gtLines": 2,
+    "ocrLines": 4,
+    "sentences": 2,
+    "correctMessages": 2,
+    "totalEdit": 0,
+    "totalChars": 18,
+    "perMessage": [
+     {
+      "text": "今天有点 emo，想躺平",
+      "ocrText": "今天有点 emo ，想躺平",
+      "cer": 0,
+      "exact": true
+     },
+     {
+      "text": "666，干饭去",
+      "ocrText": "666 ，干饭去",
+      "cer": 0,
+      "exact": true
+     }
+    ]
+   }
+  },
+  {
+   "captureId": "long_nickname-00",
+   "scenario": "long_nickname",
+   "ok": true,
+   "elapsedMs": 21,
+   "cpuMs": 16,
+   "rssMB": 102,
+   "wallMs": 329,
+   "lines": [
+    {
+     "text": "0",
+     "x": 12,
+     "y": 478,
+     "w": 35,
+     "h": 35
+    },
+    {
+     "text": "这个昵称有点长",
+     "x": 66,
+     "y": 491,
+     "w": 105,
+     "h": 14
+    },
+    {
+     "text": "长昵称容易被截断",
+     "x": 294,
+     "y": 546,
+     "w": 120,
+     "h": 14
+    }
+   ],
+   "metrics": {
+    "cer": 0,
+    "linePrecision": 0.6666666666666666,
+    "lineRecall": 1,
+    "lineF1": 0.8,
+    "sentenceAcc": 1,
+    "missRate": 0,
+    "falseRate": 0.3333333333333333,
+    "dupRate": 0,
+    "splitRate": 0,
+    "tp": 2,
+    "fp": 1,
+    "dup": 0,
+    "frag": 0,
+    "fn": 0,
+    "gtLines": 2,
+    "ocrLines": 3,
+    "sentences": 2,
+    "correctMessages": 2,
+    "totalEdit": 0,
+    "totalChars": 15,
+    "perMessage": [
+     {
+      "text": "这个昵称有点长",
+      "ocrText": "这个昵称有点长",
+      "cer": 0,
+      "exact": true
+     },
+     {
+      "text": "长昵称容易被截断",
+      "ocrText": "长昵称容易被截断",
+      "cer": 0,
+      "exact": true
+     }
+    ]
+   }
+  },
+  {
+   "captureId": "long_nickname-01",
+   "scenario": "long_nickname",
+   "ok": true,
+   "elapsedMs": 27,
+   "cpuMs": 16,
+   "rssMB": 102,
+   "wallMs": 345,
+   "lines": [
+    {
+     "text": "昵称太长会占标题栏",
+     "x": 67,
+     "y": 491,
+     "w": 149,
+     "h": 14
+    },
+    {
+     "text": "是的，可能还会被省",
+     "x": 264,
+     "y": 546,
+     "w": 135,
+     "h": 14
+    }
+   ],
+   "metrics": {
+    "cer": 0.1,
+    "linePrecision": 1,
+    "lineRecall": 1,
+    "lineF1": 1,
+    "sentenceAcc": 0,
+    "missRate": 0,
+    "falseRate": 0,
+    "dupRate": 0,
+    "splitRate": 0,
+    "tp": 2,
+    "fp": 0,
+    "dup": 0,
+    "frag": 0,
+    "fn": 0,
+    "gtLines": 2,
+    "ocrLines": 2,
+    "sentences": 2,
+    "correctMessages": 0,
+    "totalEdit": 2,
+    "totalChars": 20,
+    "perMessage": [
+     {
+      "text": "昵称太长会占满标题栏",
+      "ocrText": "昵称太长会占标题栏",
+      "cer": 0.1,
+      "exact": false
+     },
+     {
+      "text": "是的，可能还会被省略",
+      "ocrText": "是的，可能还会被省",
+      "cer": 0.1,
+      "exact": false
+     }
+    ]
+   }
+  },
+  {
+   "captureId": "empty_error-00",
+   "scenario": "empty_error",
+   "ok": true,
+   "elapsedMs": 20,
+   "cpuMs": 16,
+   "rssMB": 100,
+   "wallMs": 338,
+   "lines": [],
+   "metrics": {
+    "cer": null,
+    "linePrecision": 1,
+    "lineRecall": null,
+    "lineF1": null,
+    "sentenceAcc": 1,
+    "missRate": 0,
+    "falseRate": 0,
+    "dupRate": 0,
+    "splitRate": 0,
+    "tp": 0,
+    "fp": 0,
+    "dup": 0,
+    "frag": 0,
+    "fn": 0,
+    "gtLines": 0,
+    "ocrLines": 0,
+    "sentences": 0,
+    "correctMessages": 0,
+    "totalEdit": 0,
+    "totalChars": 0,
+    "emptyGt": true,
+    "perMessage": []
+   }
+  },
+  {
+   "captureId": "empty_error-01",
+   "scenario": "empty_error",
+   "ok": true,
+   "elapsedMs": 18,
+   "cpuMs": 78,
+   "rssMB": 100,
+   "wallMs": 341,
+   "lines": [],
+   "metrics": {
+    "cer": null,
+    "linePrecision": 1,
+    "lineRecall": null,
+    "lineF1": null,
+    "sentenceAcc": 1,
+    "missRate": 0,
+    "falseRate": 0,
+    "dupRate": 0,
+    "splitRate": 0,
+    "tp": 0,
+    "fp": 0,
+    "dup": 0,
+    "frag": 0,
+    "fn": 0,
+    "gtLines": 0,
+    "ocrLines": 0,
+    "sentences": 0,
+    "correctMessages": 0,
+    "totalEdit": 0,
+    "totalChars": 0,
+    "emptyGt": true,
+    "perMessage": []
+   }
+  },
+  {
+   "captureId": "scrolled-00",
+   "scenario": "scrolled",
+   "ok": true,
+   "elapsedMs": 36,
+   "cpuMs": 31,
+   "rssMB": 103,
+   "wallMs": 361,
+   "lines": [
+    {
+     "text": "上面这条消只土一十",
+     "x": 66,
+     "y": 70,
+     "w": 143,
+     "h": 12
+    },
+    {
+     "text": "滚动中截很吝易切掉内吝",
+     "x": 66,
+     "y": 176,
+     "w": 156,
+     "h": 12
+    },
+    {
+     "text": "所以要记录滚动位首",
+     "x": 297,
+     "y": 229,
+     "w": 117,
+     "h": 12
+    },
+    {
+     "text": "收到，继续往下",
+     "x": 66,
+     "y": 282,
+     "w": 91,
+     "h": 13
+    },
+    {
+     "text": "今天蠣斯有点久",
+     "x": 323,
+     "y": 335,
+     "w": 91,
+     "h": 12
+    },
+    {
+     "text": "先去忙一会儿",
+     "x": 66,
+     "y": 388,
+     "w": 78,
+     "h": 12
+    },
+    {
+     "text": "好的一会见",
+     "x": 66,
+     "y": 494,
+     "w": 65,
+     "h": 12
+    },
+    {
+     "text": "这条在最下面完整",
+     "x": 297,
+     "y": 547,
+     "w": 117,
+     "h": 12
+    },
+    {
+     "text": "0",
+     "x": 434,
+     "y": 217,
+     "w": 35,
+     "h": 35
+    }
+   ],
+   "metrics": {
+    "cer": 0.47115384615384615,
+    "linePrecision": 0.8888888888888888,
+    "lineRecall": 0.6666666666666666,
+    "lineF1": 0.761904761904762,
+    "sentenceAcc": 0.16666666666666666,
+    "missRate": 0.3333333333333333,
+    "falseRate": 0.1111111111111111,
+    "dupRate": 0,
+    "splitRate": 0,
+    "tp": 8,
+    "fp": 1,
+    "dup": 0,
+    "frag": 0,
+    "fn": 4,
+    "gtLines": 12,
+    "ocrLines": 9,
+    "sentences": 12,
+    "correctMessages": 2,
+    "totalEdit": 49,
+    "totalChars": 104,
+    "perMessage": [
+     {
+      "text": "再往上还有一条完全看不见",
+      "ocrText": "",
+      "cer": 1,
+      "exact": false
+     },
+     {
+      "text": "这条被标题栏挡住一半",
+      "ocrText": "",
+      "cer": 1,
+      "exact": false
+     },
+     {
+      "text": "上面这条消息只露出一半",
+      "ocrText": "上面这条消只土一十",
+      "cer": 0.36363636363636365,
+      "exact": false
+     },
+     {
+      "text": "聊天记录正在往上滚动",
+      "ocrText": "",
+      "cer": 1,
+      "exact": false
+     },
+     {
+      "text": "滚动中截图很容易切掉内容",
+      "ocrText": "滚动中截很吝易切掉内吝",
+      "cer": 0.25,
+      "exact": false
+     },
+     {
+      "text": "所以要记录滚动位置",
+      "ocrText": "所以要记录滚动位首",
+      "cer": 0.1111111111111111,
+      "exact": false
+     },
+     {
+      "text": "收到，继续往下看",
+      "ocrText": "收到，继续往下",
+      "cer": 0.125,
+      "exact": false
+     },
+     {
+      "text": "今天聊得有点久",
+      "ocrText": "今天蠣斯有点久",
+      "cer": 0.2857142857142857,
+      "exact": false
+     },
+     {
+      "text": "先去忙一会儿",
+      "ocrText": "先去忙一会儿",
+      "cer": 0,
+      "exact": true
+     },
+     {
+      "text": "晚点继续聊",
+      "ocrText": "",
+      "cer": 1,
+      "exact": false
+     },
+     {
+      "text": "好的一会见",
+      "ocrText": "好的一会见",
+      "cer": 0,
+      "exact": true
+     },
+     {
+      "text": "这条在最下面最完整",
+      "ocrText": "这条在最下面完整",
+      "cer": 0.1111111111111111,
+      "exact": false
+     }
+    ]
+   }
+  },
+  {
+   "captureId": "scrolled-01",
+   "scenario": "scrolled",
+   "ok": true,
+   "elapsedMs": 37,
+   "cpuMs": 31,
+   "rssMB": 103,
+   "wallMs": 365,
+   "lines": [
+    {
+     "text": "这是中闾的天内孬",
+     "x": 86,
+     "y": 106,
+     "w": 117,
+     "h": 24
+    },
+    {
+     "text": "孬",
+     "x": 21,
+     "y": 194,
+     "w": 37,
+     "h": 38
+    },
+    {
+     "text": "中间三条河巨",
+     "x": 76,
+     "y": 212,
+     "w": 90,
+     "h": 21
+    },
+    {
+     "text": "中间五条满皂",
+     "x": 65,
+     "y": 317,
+     "w": 90,
+     "h": 21
+    },
+    {
+     "text": "这条只 “ 到下",
+     "x": 321,
+     "y": 77,
+     "w": 92,
+     "h": 21
+    },
+    {
+     "text": "中间二条皂",
+     "x": 337,
+     "y": 186,
+     "w": 90,
+     "h": 20
+    },
+    {
+     "text": "0",
+     "x": 435,
+     "y": 290,
+     "w": 38,
+     "h": 38
+    },
+    {
+     "text": "中间箱四条",
+     "x": 326,
+     "y": 291,
+     "w": 64,
+     "h": 18
+    }
+   ],
+   "metrics": {
+    "cer": 0.71875,
+    "linePrecision": 0.75,
+    "lineRecall": 0.5,
+    "lineF1": 0.6,
+    "sentenceAcc": 0,
+    "missRate": 0.5,
+    "falseRate": 0.25,
+    "dupRate": 0,
+    "splitRate": 0,
+    "tp": 6,
+    "fp": 2,
+    "dup": 0,
+    "frag": 0,
+    "fn": 6,
+    "gtLines": 12,
+    "ocrLines": 8,
+    "sentences": 12,
+    "correctMessages": 0,
+    "totalEdit": 69,
+    "totalChars": 96,
+    "perMessage": [
+     {
+      "text": "最上面这条只剩一点点",
+      "ocrText": "",
+      "cer": 1,
+      "exact": false
+     },
+     {
+      "text": "滚动截图顶部会被标题栏盖住",
+      "ocrText": "",
+      "cer": 1,
+      "exact": false
+     },
+     {
+      "text": "这条只能看到下半截",
+      "ocrText": "这条只 “ 到下",
+      "cer": 0.4444444444444444,
+      "exact": false
+     },
+     {
+      "text": "这是中间的聊天内容",
+      "ocrText": "这是中闾的天内孬",
+      "cer": 0.3333333333333333,
+      "exact": false
+     },
+     {
+      "text": "中间第二条消息",
+      "ocrText": "中间二条皂",
+      "cer": 0.42857142857142855,
+      "exact": false
+     },
+     {
+      "text": "中间第三条消息",
+      "ocrText": "中间三条河巨",
+      "cer": 0.42857142857142855,
+      "exact": false
+     },
+     {
+      "text": "中间第四条消息",
+      "ocrText": "中间箱四条",
+      "cer": 0.42857142857142855,
+      "exact": false
+     },
+     {
+      "text": "中间第五条消息",
+      "ocrText": "中间五条满皂",
+      "cer": 0.42857142857142855,
+      "exact": false
+     },
+     {
+      "text": "中间第六条消息",
+      "ocrText": "",
+      "cer": 1,
+      "exact": false
+     },
+     {
+      "text": "倒数第二条",
+      "ocrText": "",
+      "cer": 1,
+      "exact": false
+     },
+     {
+      "text": "倒数第一条",
+      "ocrText": "",
+      "cer": 1,
+      "exact": false
+     },
+     {
+      "text": "最后一条消息完整显示",
+      "ocrText": "",
+      "cer": 1,
+      "exact": false
+     }
+    ]
+   }
+  }
+ ],
+ "totals": {
+  "images": 30,
+  "okImages": 30,
+  "failedImages": 0,
+  "cer": 0.312579415501906,
+  "sentenceAcc": 0.2564102564102564,
+  "linePrecision": 0.7558139534883721,
+  "lineRecall": 0.7831325301204819,
+  "lineF1": 0.7692307692307692,
+  "missRate": 0.21686746987951808,
+  "falseRate": 0.23255813953488372,
+  "dupRate": 0,
+  "splitRate": 0.011627906976744186,
+  "p50Ms": 24,
+  "p95Ms": 37,
+  "cpuP50Ms": 47,
+  "cpuP95Ms": 109,
+  "rssP95MB": 104,
+  "rssMaxMB": 105,
+  "emptyGtImages": 2,
+  "emptyGtOk": 2,
+  "gtLines": 83,
+  "ocrLines": 86,
+  "tp": 65,
+  "fp": 20,
+  "dup": 0,
+  "frag": 1,
+  "fn": 18
+ },
+ "byScenario": {
+  "clear": {
+   "images": 2,
+   "okImages": 2,
+   "failedImages": 0,
+   "cer": 0.12121212121212122,
+   "sentenceAcc": 0.25,
+   "linePrecision": 0.8,
+   "lineRecall": 1,
+   "lineF1": 0.888888888888889,
+   "missRate": 0,
+   "falseRate": 0.2,
+   "dupRate": 0,
+   "splitRate": 0,
+   "p50Ms": 22,
+   "p95Ms": 23,
+   "cpuP50Ms": 31,
+   "cpuP95Ms": 47,
+   "rssP95MB": 103,
+   "rssMaxMB": 103,
+   "emptyGtImages": 0,
+   "emptyGtOk": 0,
+   "gtLines": 4,
+   "ocrLines": 5,
+   "tp": 4,
+   "fp": 1,
+   "dup": 0,
+   "frag": 0,
+   "fn": 0
+  },
+  "low_contrast": {
+   "images": 2,
+   "okImages": 2,
+   "failedImages": 0,
+   "cer": 0.43243243243243246,
+   "sentenceAcc": 0,
+   "linePrecision": 0.75,
+   "lineRecall": 0.75,
+   "lineF1": 0.75,
+   "missRate": 0.25,
+   "falseRate": 0.25,
+   "dupRate": 0,
+   "splitRate": 0,
+   "p50Ms": 23,
+   "p95Ms": 25,
+   "cpuP50Ms": 94,
+   "cpuP95Ms": 141,
+   "rssP95MB": 102,
+   "rssMaxMB": 102,
+   "emptyGtImages": 0,
+   "emptyGtOk": 0,
+   "gtLines": 4,
+   "ocrLines": 4,
+   "tp": 3,
+   "fp": 1,
+   "dup": 0,
+   "frag": 0,
+   "fn": 1
+  },
+  "scale_100": {
+   "images": 2,
+   "okImages": 2,
+   "failedImages": 0,
+   "cer": 0.06666666666666667,
+   "sentenceAcc": 0.5,
+   "linePrecision": 0.8,
+   "lineRecall": 1,
+   "lineF1": 0.888888888888889,
+   "missRate": 0,
+   "falseRate": 0.2,
+   "dupRate": 0,
+   "splitRate": 0,
+   "p50Ms": 22,
+   "p95Ms": 24,
+   "cpuP50Ms": 47,
+   "cpuP95Ms": 109,
+   "rssP95MB": 102,
+   "rssMaxMB": 102,
+   "emptyGtImages": 0,
+   "emptyGtOk": 0,
+   "gtLines": 4,
+   "ocrLines": 5,
+   "tp": 4,
+   "fp": 1,
+   "dup": 0,
+   "frag": 0,
+   "fn": 0
+  },
+  "scale_150": {
+   "images": 2,
+   "okImages": 2,
+   "failedImages": 0,
+   "cer": 0,
+   "sentenceAcc": 1,
+   "linePrecision": 0.5714285714285714,
+   "lineRecall": 1,
+   "lineF1": 0.7272727272727273,
+   "missRate": 0,
+   "falseRate": 0.42857142857142855,
+   "dupRate": 0,
+   "splitRate": 0,
+   "p50Ms": 25,
+   "p95Ms": 36,
+   "cpuP50Ms": 47,
+   "cpuP95Ms": 94,
+   "rssP95MB": 105,
+   "rssMaxMB": 105,
+   "emptyGtImages": 0,
+   "emptyGtOk": 0,
+   "gtLines": 4,
+   "ocrLines": 7,
+   "tp": 4,
+   "fp": 3,
+   "dup": 0,
+   "frag": 0,
+   "fn": 0
+  },
+  "long_bubble": {
+   "images": 2,
+   "okImages": 2,
+   "failedImages": 0,
+   "cer": 0.14925373134328357,
+   "sentenceAcc": 0,
+   "linePrecision": 0.8,
+   "lineRecall": 1,
+   "lineF1": 0.888888888888889,
+   "missRate": 0,
+   "falseRate": 0.2,
+   "dupRate": 0,
+   "splitRate": 0,
+   "p50Ms": 36,
+   "p95Ms": 39,
+   "cpuP50Ms": 16,
+   "cpuP95Ms": 16,
+   "rssP95MB": 103,
+   "rssMaxMB": 103,
+   "emptyGtImages": 0,
+   "emptyGtOk": 0,
+   "gtLines": 8,
+   "ocrLines": 10,
+   "tp": 8,
+   "fp": 2,
+   "dup": 0,
+   "frag": 0,
+   "fn": 0
+  },
+  "bilingual": {
+   "images": 2,
+   "okImages": 2,
+   "failedImages": 0,
+   "cer": 0.06578947368421052,
+   "sentenceAcc": 0.25,
+   "linePrecision": 0.8333333333333334,
+   "lineRecall": 1,
+   "lineF1": 0.9090909090909091,
+   "missRate": 0,
+   "falseRate": 0.16666666666666666,
+   "dupRate": 0,
+   "splitRate": 0,
+   "p50Ms": 29,
+   "p95Ms": 31,
+   "cpuP50Ms": 47,
+   "cpuP95Ms": 109,
+   "rssP95MB": 103,
+   "rssMaxMB": 103,
+   "emptyGtImages": 0,
+   "emptyGtOk": 0,
+   "gtLines": 5,
+   "ocrLines": 6,
+   "tp": 5,
+   "fp": 1,
+   "dup": 0,
+   "frag": 0,
+   "fn": 0
+  },
+  "emoji": {
+   "images": 2,
+   "okImages": 2,
+   "failedImages": 0,
+   "cer": 0.575,
+   "sentenceAcc": 0,
+   "linePrecision": 0.4,
+   "lineRecall": 0.5,
+   "lineF1": 0.4444444444444445,
+   "missRate": 0.5,
+   "falseRate": 0.4,
+   "dupRate": 0,
+   "splitRate": 0.2,
+   "p50Ms": 20,
+   "p95Ms": 31,
+   "cpuP50Ms": 0,
+   "cpuP95Ms": 0,
+   "rssP95MB": 102,
+   "rssMaxMB": 102,
+   "emptyGtImages": 0,
+   "emptyGtOk": 0,
+   "gtLines": 4,
+   "ocrLines": 5,
+   "tp": 2,
+   "fp": 2,
+   "dup": 0,
+   "frag": 1,
+   "fn": 2
+  },
+  "occluded": {
+   "images": 2,
+   "okImages": 2,
+   "failedImages": 0,
+   "cer": 0.6,
+   "sentenceAcc": 0,
+   "linePrecision": 1,
+   "lineRecall": 0.5,
+   "lineF1": 0.6666666666666666,
+   "missRate": 0.5,
+   "falseRate": 0,
+   "dupRate": 0,
+   "splitRate": 0,
+   "p50Ms": 22,
+   "p95Ms": 24,
+   "cpuP50Ms": 47,
+   "cpuP95Ms": 94,
+   "rssP95MB": 103,
+   "rssMaxMB": 103,
+   "emptyGtImages": 0,
+   "emptyGtOk": 0,
+   "gtLines": 4,
+   "ocrLines": 2,
+   "tp": 2,
+   "fp": 0,
+   "dup": 0,
+   "frag": 0,
+   "fn": 2
+  },
+  "short_msgs": {
+   "images": 2,
+   "okImages": 2,
+   "failedImages": 0,
+   "cer": 0.2727272727272727,
+   "sentenceAcc": 0.6666666666666666,
+   "linePrecision": 1,
+   "lineRecall": 0.6666666666666666,
+   "lineF1": 0.8,
+   "missRate": 0.3333333333333333,
+   "falseRate": 0,
+   "dupRate": 0,
+   "splitRate": 0,
+   "p50Ms": 20,
+   "p95Ms": 20,
+   "cpuP50Ms": 31,
+   "cpuP95Ms": 78,
+   "rssP95MB": 102,
+   "rssMaxMB": 102,
+   "emptyGtImages": 0,
+   "emptyGtOk": 0,
+   "gtLines": 6,
+   "ocrLines": 4,
+   "tp": 4,
+   "fp": 0,
+   "dup": 0,
+   "frag": 0,
+   "fn": 2
+  },
+  "noisy": {
+   "images": 2,
+   "okImages": 2,
+   "failedImages": 0,
+   "cer": 0.08571428571428572,
+   "sentenceAcc": 0.5,
+   "linePrecision": 0.8,
+   "lineRecall": 1,
+   "lineF1": 0.888888888888889,
+   "missRate": 0,
+   "falseRate": 0.2,
+   "dupRate": 0,
+   "splitRate": 0,
+   "p50Ms": 21,
+   "p95Ms": 26,
+   "cpuP50Ms": 47,
+   "cpuP95Ms": 62,
+   "rssP95MB": 102,
+   "rssMaxMB": 102,
+   "emptyGtImages": 0,
+   "emptyGtOk": 0,
+   "gtLines": 4,
+   "ocrLines": 5,
+   "tp": 4,
+   "fp": 1,
+   "dup": 0,
+   "frag": 0,
+   "fn": 0
+  },
+  "rare_chars": {
+   "images": 2,
+   "okImages": 2,
+   "failedImages": 0,
+   "cer": 0.4,
+   "sentenceAcc": 0,
+   "linePrecision": 0.6,
+   "lineRecall": 0.75,
+   "lineF1": 0.6666666666666665,
+   "missRate": 0.25,
+   "falseRate": 0.4,
+   "dupRate": 0,
+   "splitRate": 0,
+   "p50Ms": 23,
+   "p95Ms": 26,
+   "cpuP50Ms": 47,
+   "cpuP95Ms": 78,
+   "rssP95MB": 102,
+   "rssMaxMB": 102,
+   "emptyGtImages": 0,
+   "emptyGtOk": 0,
+   "gtLines": 4,
+   "ocrLines": 5,
+   "tp": 3,
+   "fp": 2,
+   "dup": 0,
+   "frag": 0,
+   "fn": 1
+  },
+  "network_slang": {
+   "images": 2,
+   "okImages": 2,
+   "failedImages": 0,
+   "cer": 0.16666666666666666,
+   "sentenceAcc": 0.5,
+   "linePrecision": 0.6666666666666666,
+   "lineRecall": 1,
+   "lineF1": 0.8,
+   "missRate": 0,
+   "falseRate": 0.3333333333333333,
+   "dupRate": 0,
+   "splitRate": 0,
+   "p50Ms": 25,
+   "p95Ms": 26,
+   "cpuP50Ms": 31,
+   "cpuP95Ms": 78,
+   "rssP95MB": 102,
+   "rssMaxMB": 102,
+   "emptyGtImages": 0,
+   "emptyGtOk": 0,
+   "gtLines": 4,
+   "ocrLines": 6,
+   "tp": 4,
+   "fp": 2,
+   "dup": 0,
+   "frag": 0,
+   "fn": 0
+  },
+  "long_nickname": {
+   "images": 2,
+   "okImages": 2,
+   "failedImages": 0,
+   "cer": 0.05714285714285714,
+   "sentenceAcc": 0.5,
+   "linePrecision": 0.8,
+   "lineRecall": 1,
+   "lineF1": 0.888888888888889,
+   "missRate": 0,
+   "falseRate": 0.2,
+   "dupRate": 0,
+   "splitRate": 0,
+   "p50Ms": 21,
+   "p95Ms": 27,
+   "cpuP50Ms": 16,
+   "cpuP95Ms": 16,
+   "rssP95MB": 102,
+   "rssMaxMB": 102,
+   "emptyGtImages": 0,
+   "emptyGtOk": 0,
+   "gtLines": 4,
+   "ocrLines": 5,
+   "tp": 4,
+   "fp": 1,
+   "dup": 0,
+   "frag": 0,
+   "fn": 0
+  },
+  "empty_error": {
+   "images": 2,
+   "okImages": 2,
+   "failedImages": 0,
+   "cer": 0,
+   "sentenceAcc": 0,
+   "linePrecision": 0,
+   "lineRecall": 0,
+   "lineF1": 0,
+   "missRate": 0,
+   "falseRate": 0,
+   "dupRate": 0,
+   "splitRate": 0,
+   "p50Ms": 18,
+   "p95Ms": 20,
+   "cpuP50Ms": 16,
+   "cpuP95Ms": 78,
+   "rssP95MB": 100,
+   "rssMaxMB": 100,
+   "emptyGtImages": 2,
+   "emptyGtOk": 2,
+   "gtLines": 0,
+   "ocrLines": 0,
+   "tp": 0,
+   "fp": 0,
+   "dup": 0,
+   "frag": 0,
+   "fn": 0
+  },
+  "scrolled": {
+   "images": 2,
+   "okImages": 2,
+   "failedImages": 0,
+   "cer": 0.59,
+   "sentenceAcc": 0.08333333333333333,
+   "linePrecision": 0.8235294117647058,
+   "lineRecall": 0.5833333333333334,
+   "lineF1": 0.6829268292682927,
+   "missRate": 0.4166666666666667,
+   "falseRate": 0.17647058823529413,
+   "dupRate": 0,
+   "splitRate": 0,
+   "p50Ms": 36,
+   "p95Ms": 37,
+   "cpuP50Ms": 31,
+   "cpuP95Ms": 31,
+   "rssP95MB": 103,
+   "rssMaxMB": 103,
+   "emptyGtImages": 0,
+   "emptyGtOk": 0,
+   "gtLines": 24,
+   "ocrLines": 17,
+   "tp": 14,
+   "fp": 3,
+   "dup": 0,
+   "frag": 0,
+   "fn": 10
+  }
+ }
+}

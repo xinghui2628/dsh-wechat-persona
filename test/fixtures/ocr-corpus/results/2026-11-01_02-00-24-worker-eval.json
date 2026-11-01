@@ -1,0 +1,102 @@
+{
+ "generatedAt": "2026-11-01T01:59:53.731Z",
+ "command": "--repeat=2",
+ "platform": "win32",
+ "node": "v26.13.0",
+ "python": "python",
+ "corpus": {
+  "manifest": "test/fixtures/ocr-corpus/manifest.json",
+  "images": [
+   "clear-00",
+   "numbers-00",
+   "long_bubble-00",
+   "dark_mode-00",
+   "small_font-00"
+  ],
+  "repeat": 2
+ },
+ "constraints": {
+  "pollIntervalMs": 2000,
+  "scriptTimeoutMs": 90000,
+  "note": "2s 轮询与 90s 脚本上限取自 v0.2.8 生产通道配置（docs/CHANNELS.md）"
+ },
+ "worker": {
+  "ok": true,
+  "wallMs": 14769,
+  "pythonVersion": "3.14.2",
+  "available": true,
+  "engine": "rapidocr_onnxruntime",
+  "version": "1.2.3",
+  "importMs": 224.06989999581128,
+  "initMs": 589.2960999917705,
+  "rssAfterInitMB": 100.890625,
+  "peakRssAfterInitMB": 109.0546875,
+  "firstInferMs": 1717.484599997988,
+  "inferCount": 10,
+  "perImageMs": [
+   1717.5,
+   1785.6,
+   1628.8,
+   1678.2,
+   1409.3,
+   1081.7,
+   1445.7,
+   1144.2,
+   851.4,
+   881.8
+  ],
+  "steadyAvgMs": 1322.9656777726227,
+  "workerBatchTotalMs": 13624.239299999317,
+  "rssAfterInferMB": 110.4296875,
+  "peakRssAfterInferMB": 242.51171875
+ },
+ "perCall": {
+  "samples": [
+   {
+    "captureId": "clear-00",
+    "ok": true,
+    "wallMs": 2848
+   },
+   {
+    "captureId": "numbers-00",
+    "ok": true,
+    "wallMs": 3307
+   },
+   {
+    "captureId": "long_bubble-00",
+    "ok": true,
+    "wallMs": 3503
+   },
+   {
+    "captureId": "dark_mode-00",
+    "ok": true,
+    "wallMs": 2870
+   },
+   {
+    "captureId": "small_font-00",
+    "ok": true,
+    "wallMs": 3123
+   }
+  ],
+  "avgMs": 3130.2,
+  "minMs": 2848,
+  "maxMs": 3503
+ },
+ "comparison": {
+  "workerInitOnceMs": 813,
+  "workerFirstInferMs": 1717,
+  "workerSteadyAvgMs": 1323,
+  "perCallAvgMs": 3130,
+  "savedPerCaptureMs": 1807,
+  "withinPollingBudget": {
+   "perCallFits2s": false,
+   "workerFits2s": true,
+   "perCallFits90s": true
+  },
+  "rssMB": {
+   "afterInit": 101,
+   "afterInfer": 110,
+   "peak": 243
+  }
+ }
+}

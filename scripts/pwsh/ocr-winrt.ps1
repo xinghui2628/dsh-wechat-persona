@@ -128,10 +128,16 @@ try {
 
   $tag = 'zh-Hans-CN'
   try { $tag = [string]$ocrEngine.RecognizerLanguage.LanguageTag } catch { }
+  # 资源指标（v3.0.0 §12.2）：OCR 单图 CPU 时间与进程峰值工作集，供 bench 汇总每变体开销。
+  $self = [System.Diagnostics.Process]::GetCurrentProcess()
+  $cpuMs = [int]$self.TotalProcessorTime.TotalMilliseconds
+  $rssMB = [int]([math]::Round($self.PeakWorkingSet64 / 1MB, 2))
   $payload = [ordered]@{
     ok        = $true
     engine    = "winrt-$tag"
     elapsedMs = [int]$sw.ElapsedMilliseconds
+    cpuMs     = $cpuMs
+    rssMB     = $rssMB
     width     = $width
     height    = $height
     lines     = @($lines)

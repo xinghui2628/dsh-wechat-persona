@@ -1,0 +1,3872 @@
+{
+ "meta": {
+  "bench": "ocr-benchmark-ab-six-groups",
+  "version": "v3.0.0",
+  "generatedAt": "2026-11-01T01:58:56.862Z",
+  "command": "--engine=all --variants=orig,upscale2x,upscale3x --pipeline=ab --split=eval",
+  "split": "eval",
+  "splitScenarios": [
+   "small_font",
+   "gaussian_blur",
+   "scale_125",
+   "scale_175",
+   "repeat_two",
+   "numbers",
+   "dark_mode",
+   "multi_message",
+   "stretched",
+   "ai_disclaimer",
+   "homophone",
+   "similar_nickname",
+   "truncated_bubble",
+   "engine_conflict",
+   "contact_switch"
+  ],
+  "bestVariant": "upscale3x",
+  "bestVariantSource": "tune 集 A–H 预处理实测（见 docs/OCR-BENCHMARK.md §4.5/§6.6）",
+  "groups": [
+   {
+    "id": "A",
+    "label": "v0.2.8 baseline（winrt orig + desktop.ts 后处理）",
+    "stage": "baseline"
+   },
+   {
+    "id": "B",
+    "label": "仅预处理（winrt upscale3x）+ v0.2.8 后处理",
+    "stage": "preprocess"
+   },
+   {
+    "id": "C",
+    "label": "仅换引擎（RapidOCR orig，无第二引擎）",
+    "stage": "engine"
+   },
+   {
+    "id": "D",
+    "label": "仅新对齐（B 的行按新对齐过滤，未对齐行丢弃）",
+    "stage": "align"
+   },
+   {
+    "id": "E",
+    "label": "仅新融合（对齐后行 + 消息级投票，不含纠错）",
+    "stage": "fusion"
+   },
+   {
+    "id": "F",
+    "label": "完整 v3（winrt upscale3x + v3 管线：投票 + 纠错）",
+    "stage": "full-v3"
+   }
+  ],
+  "measure": "消息级 CER = Σ编辑距离 / ΣGT字符数（normalizeForCompare 后）；整句准确率 = 完全一致消息数 / 消息数",
+  "notes": [
+   "A/B/D 沿用 v0.2.8 后处理（baseline-v028.mjs 离线转写，帧 2x/第二引擎 RapidOCR）。",
+   "C 仅把首读引擎换成 RapidOCR，无第二引擎与多帧，其余后处理沿用。",
+   "E 使用 aligned lines + 消息级融合（vote-all 口径）但关闭受控纠错，用于单独衡量融合。",
+   "F 为完整 v3 管线离线等价（4x 帧未采集，偏保守）。",
+   "所有组统一按 GT bbox 分组（真实 pipeline 按 UI 坐标分组），所以是相对消融比较而非线上绝对延迟。"
+  ],
+  "corpus": {
+   "manifest": "test\\fixtures\\ocr-corpus\\manifest.json",
+   "seed": 20261031,
+   "imageCount": 30
+  },
+  "env": {
+   "platform": "win32",
+   "node": "v26.13.0",
+   "pythonVersion": "3.14.2",
+   "pillowVersion": "13.0.0",
+   "rapidocr": "available"
+  }
+ },
+ "images": [
+  {
+   "captureId": "small_font-00",
+   "scenario": "small_font",
+   "ok": true,
+   "alignedPairs": 2,
+   "droppedWinrtLines": 0,
+   "texts": {
+    "A": [
+     "个字号 0 点小。满冯",
+     "爸漓。帆是有点湖"
+    ],
+    "B": [
+     "这个字号有点小，吾清吗",
+     "吾清，就是有点糊"
+    ],
+    "C": [
+     "这个字号有点小，能若清吗",
+     "能若清，就是有点糊"
+    ],
+    "D": [
+     "这个字号有点小，吾清吗",
+     "吾清，就是有点糊"
+    ],
+    "E": [
+     "这个字号有点小，能若清吗",
+     "能若清，就是有点糊"
+    ],
+    "F": [
+     "这个字号有点小，吾清吗",
+     "吾清，就是有点糊"
+    ]
+   },
+   "perMessage": [
+    {
+     "text": "这个字号有点小，能看清吗",
+     "normGtLength": 12,
+     "A": {
+      "ocrText": "个字号 0 点小。满冯",
+      "cer": 0.5833333333333334,
+      "exact": false
+     },
+     "B": {
+      "ocrText": "这个字号有点小，吾清吗",
+      "cer": 0.16666666666666666,
+      "exact": false
+     },
+     "C": {
+      "ocrText": "这个字号有点小，能若清吗",
+      "cer": 0.08333333333333333,
+      "exact": false
+     },
+     "D": {
+      "ocrText": "这个字号有点小，吾清吗",
+      "cer": 0.16666666666666666,
+      "exact": false
+     },
+     "E": {
+      "ocrText": "这个字号有点小，能若清吗",
+      "cer": 0.08333333333333333,
+      "exact": false
+     },
+     "F": {
+      "ocrText": "这个字号有点小，吾清吗",
+      "cer": 0.16666666666666666,
+      "exact": false
+     }
+    },
+    {
+     "text": "能看清，就是有点糊",
+     "normGtLength": 9,
+     "A": {
+      "ocrText": "爸漓。帆是有点湖",
+      "cer": 0.6666666666666666,
+      "exact": false
+     },
+     "B": {
+      "ocrText": "吾清，就是有点糊",
+      "cer": 0.2222222222222222,
+      "exact": false
+     },
+     "C": {
+      "ocrText": "能若清，就是有点糊",
+      "cer": 0.1111111111111111,
+      "exact": false
+     },
+     "D": {
+      "ocrText": "吾清，就是有点糊",
+      "cer": 0.2222222222222222,
+      "exact": false
+     },
+     "E": {
+      "ocrText": "能若清，就是有点糊",
+      "cer": 0.1111111111111111,
+      "exact": false
+     },
+     "F": {
+      "ocrText": "吾清，就是有点糊",
+      "cer": 0.2222222222222222,
+      "exact": false
+     }
+    }
+   ]
+  },
+  {
+   "captureId": "small_font-01",
+   "scenario": "small_font",
+   "ok": true,
+   "alignedPairs": 2,
+   "droppedWinrtLines": 0,
+   "texts": {
+    "A": [
+     "",
+     ""
+    ],
+    "B": [
+     "小学号的截囫识别",
+     "吾吾效果如伺"
+    ],
+    "C": [
+     "小字号的截图识别",
+     "若若效果如何"
+    ],
+    "D": [
+     "小学号的截囫识别",
+     "吾吾效果如伺"
+    ],
+    "E": [
+     "小学号的截囫识别",
+     "吾吾效果如伺"
+    ],
+    "F": [
+     "小学号的截囫识别",
+     "吾吾效果如伺"
+    ]
+   },
+   "perMessage": [
+    {
+     "text": "小字号的截图识别",
+     "normGtLength": 8,
+     "A": {
+      "ocrText": "",
+      "cer": 1,
+      "exact": false
+     },
+     "B": {
+      "ocrText": "小学号的截囫识别",
+      "cer": 0.25,
+      "exact": false
+     },
+     "C": {
+      "ocrText": "小字号的截图识别",
+      "cer": 0,
+      "exact": true
+     },
+     "D": {
+      "ocrText": "小学号的截囫识别",
+      "cer": 0.25,
+      "exact": false
+     },
+     "E": {
+      "ocrText": "小学号的截囫识别",
+      "cer": 0.25,
+      "exact": false
+     },
+     "F": {
+      "ocrText": "小学号的截囫识别",
+      "cer": 0.25,
+      "exact": false
+     }
+    },
+    {
+     "text": "看看效果如何",
+     "normGtLength": 6,
+     "A": {
+      "ocrText": "",
+      "cer": 1,
+      "exact": false
+     },
+     "B": {
+      "ocrText": "吾吾效果如伺",
+      "cer": 0.5,
+      "exact": false
+     },
+     "C": {
+      "ocrText": "若若效果如何",
+      "cer": 0.3333333333333333,
+      "exact": false
+     },
+     "D": {
+      "ocrText": "吾吾效果如伺",
+      "cer": 0.5,
+      "exact": false
+     },
+     "E": {
+      "ocrText": "吾吾效果如伺",
+      "cer": 0.5,
+      "exact": false
+     },
+     "F": {
+      "ocrText": "吾吾效果如伺",
+      "cer": 0.5,
+      "exact": false
+     }
+    }
+   ]
+  },
+  {
+   "captureId": "gaussian_blur-00",
+   "scenario": "gaussian_blur",
+   "ok": true,
+   "alignedPairs": 1,
+   "droppedWinrtLines": 0,
+   "texts": {
+    "A": [
+     "",
+     ""
+    ],
+    "B": [
+     "",
+     "整个过口 - 了"
+    ],
+    "C": [
+     "截图被人手抖了一下",
+     "整个窗口都糊掉了"
+    ],
+    "D": [
+     "",
+     "整个过口 - 了"
+    ],
+    "E": [
+     "截图被人手抖了一下",
+     "整个过口 - 了"
+    ],
+    "F": [
+     "",
+     "整个过口 - 了"
+    ]
+   },
+   "perMessage": [
+    {
+     "text": "截图被人手抖了一下",
+     "normGtLength": 9,
+     "A": {
+      "ocrText": "",
+      "cer": 1,
+      "exact": false
+     },
+     "B": {
+      "ocrText": "",
+      "cer": 1,
+      "exact": false
+     },
+     "C": {
+      "ocrText": "截图被人手抖了一下",
+      "cer": 0,
+      "exact": true
+     },
+     "D": {
+      "ocrText": "",
+      "cer": 1,
+      "exact": false
+     },
+     "E": {
+      "ocrText": "截图被人手抖了一下",
+      "cer": 0,
+      "exact": true
+     },
+     "F": {
+      "ocrText": "",
+      "cer": 1,
+      "exact": false
+     }
+    },
+    {
+     "text": "整个窗口都糊掉了",
+     "normGtLength": 8,
+     "A": {
+      "ocrText": "",
+      "cer": 1,
+      "exact": false
+     },
+     "B": {
+      "ocrText": "整个过口 - 了",
+      "cer": 0.5,
+      "exact": false
+     },
+     "C": {
+      "ocrText": "整个窗口都糊掉了",
+      "cer": 0,
+      "exact": true
+     },
+     "D": {
+      "ocrText": "整个过口 - 了",
+      "cer": 0.5,
+      "exact": false
+     },
+     "E": {
+      "ocrText": "整个过口 - 了",
+      "cer": 0.5,
+      "exact": false
+     },
+     "F": {
+      "ocrText": "整个过口 - 了",
+      "cer": 0.5,
+      "exact": false
+     }
+    }
+   ]
+  },
+  {
+   "captureId": "gaussian_blur-01",
+   "scenario": "gaussian_blur",
+   "ok": true,
+   "alignedPairs": 1,
+   "droppedWinrtLines": 2,
+   "texts": {
+    "A": [
+     "",
+     ""
+    ],
+    "B": [
+     "适 ℃ 出审",
+     "瀵会起几个"
+    ],
+    "C": [
+     "模糊的截图还能读出来吗",
+     "应该会漏掉几个字"
+    ],
+    "D": [
+     "",
+     "瀵会起几个"
+    ],
+    "E": [
+     "模糊的截图还能读出来吗",
+     "应该会漏掉几个字"
+    ],
+    "F": [
+     "适 ℃ 出审",
+     "瀵会起几个"
+    ]
+   },
+   "perMessage": [
+    {
+     "text": "模糊的截图还能读出来吗",
+     "normGtLength": 11,
+     "A": {
+      "ocrText": "",
+      "cer": 1,
+      "exact": false
+     },
+     "B": {
+      "ocrText": "适 ℃ 出审",
+      "cer": 0.9090909090909091,
+      "exact": false
+     },
+     "C": {
+      "ocrText": "模糊的截图还能读出来吗",
+      "cer": 0,
+      "exact": true
+     },
+     "D": {
+      "ocrText": "",
+      "cer": 1,
+      "exact": false
+     },
+     "E": {
+      "ocrText": "模糊的截图还能读出来吗",
+      "cer": 0,
+      "exact": true
+     },
+     "F": {
+      "ocrText": "适 ℃ 出审",
+      "cer": 0.9090909090909091,
+      "exact": false
+     }
+    },
+    {
+     "text": "应该会漏掉几个字",
+     "normGtLength": 8,
+     "A": {
+      "ocrText": "",
+      "cer": 1,
+      "exact": false
+     },
+     "B": {
+      "ocrText": "瀵会起几个",
+      "cer": 0.625,
+      "exact": false
+     },
+     "C": {
+      "ocrText": "应该会漏掉几个字",
+      "cer": 0,
+      "exact": true
+     },
+     "D": {
+      "ocrText": "瀵会起几个",
+      "cer": 0.625,
+      "exact": false
+     },
+     "E": {
+      "ocrText": "应该会漏掉几个字",
+      "cer": 0,
+      "exact": true
+     },
+     "F": {
+      "ocrText": "瀵会起几个",
+      "cer": 0.625,
+      "exact": false
+     }
+    }
+   ]
+  },
+  {
+   "captureId": "scale_125-00",
+   "scenario": "scale_125",
+   "ok": true,
+   "alignedPairs": 2,
+   "droppedWinrtLines": 2,
+   "texts": {
+    "A": [
+     "缩放百分之一百二十五",
+     "看起来清楚了一"
+    ],
+    "B": [
+     "缩放百分之一百二十五",
+     "看起来清楚了一"
+    ],
+    "C": [
+     "缩放百分之一百二十五",
+     "看起来清楚了一点"
+    ],
+    "D": [
+     "缩放百分之一百二十五",
+     "看起来清楚"
+    ],
+    "E": [
+     "缩放百分之一百二十五",
+     "看起来清楚了一点"
+    ],
+    "F": [
+     "缩放百分之一百二十五",
+     "看起来清楚了一"
+    ]
+   },
+   "perMessage": [
+    {
+     "text": "缩放百分之一百二十五",
+     "normGtLength": 10,
+     "A": {
+      "ocrText": "缩放百分之一百二十五",
+      "cer": 0,
+      "exact": true
+     },
+     "B": {
+      "ocrText": "缩放百分之一百二十五",
+      "cer": 0,
+      "exact": true
+     },
+     "C": {
+      "ocrText": "缩放百分之一百二十五",
+      "cer": 0,
+      "exact": true
+     },
+     "D": {
+      "ocrText": "缩放百分之一百二十五",
+      "cer": 0,
+      "exact": true
+     },
+     "E": {
+      "ocrText": "缩放百分之一百二十五",
+      "cer": 0,
+      "exact": true
+     },
+     "F": {
+      "ocrText": "缩放百分之一百二十五",
+      "cer": 0,
+      "exact": true
+     }
+    },
+    {
+     "text": "看起来清楚了一点",
+     "normGtLength": 8,
+     "A": {
+      "ocrText": "看起来清楚了一",
+      "cer": 0.125,
+      "exact": false
+     },
+     "B": {
+      "ocrText": "看起来清楚了一",
+      "cer": 0.125,
+      "exact": false
+     },
+     "C": {
+      "ocrText": "看起来清楚了一点",
+      "cer": 0,
+      "exact": true
+     },
+     "D": {
+      "ocrText": "看起来清楚",
+      "cer": 0.375,
+      "exact": false
+     },
+     "E": {
+      "ocrText": "看起来清楚了一点",
+      "cer": 0,
+      "exact": true
+     },
+     "F": {
+      "ocrText": "看起来清楚了一",
+      "cer": 0.125,
+      "exact": false
+     }
+    }
+   ]
+  },
+  {
+   "captureId": "scale_125-01",
+   "scenario": "scale_125",
+   "ok": true,
+   "alignedPairs": 2,
+   "droppedWinrtLines": 0,
+   "texts": {
+    "A": [
+     "系统縮放调大一档",
+     "字也变大了"
+    ],
+    "B": [
+     "系统缩放调大一档",
+     "字也变大了"
+    ],
+    "C": [
+     "系统缩放调大一档",
+     "字也变大了"
+    ],
+    "D": [
+     "系统缩放调大一档",
+     "字也变大了"
+    ],
+    "E": [
+     "系统缩放调大一档",
+     "字也变大了"
+    ],
+    "F": [
+     "系统缩放调大一档",
+     "字也变大了"
+    ]
+   },
+   "perMessage": [
+    {
+     "text": "系统缩放调大一档",
+     "normGtLength": 8,
+     "A": {
+      "ocrText": "系统縮放调大一档",
+      "cer": 0.125,
+      "exact": false
+     },
+     "B": {
+      "ocrText": "系统缩放调大一档",
+      "cer": 0,
+      "exact": true
+     },
+     "C": {
+      "ocrText": "系统缩放调大一档",
+      "cer": 0,
+      "exact": true
+     },
+     "D": {
+      "ocrText": "系统缩放调大一档",
+      "cer": 0,
+      "exact": true
+     },
+     "E": {
+      "ocrText": "系统缩放调大一档",
+      "cer": 0,
+      "exact": true
+     },
+     "F": {
+      "ocrText": "系统缩放调大一档",
+      "cer": 0,
+      "exact": true
+     }
+    },
+    {
+     "text": "字也变大了",
+     "normGtLength": 5,
+     "A": {
+      "ocrText": "字也变大了",
+      "cer": 0,
+      "exact": true
+     },
+     "B": {
+      "ocrText": "字也变大了",
+      "cer": 0,
+      "exact": true
+     },
+     "C": {
+      "ocrText": "字也变大了",
+      "cer": 0,
+      "exact": true
+     },
+     "D": {
+      "ocrText": "字也变大了",
+      "cer": 0,
+      "exact": true
+     },
+     "E": {
+      "ocrText": "字也变大了",
+      "cer": 0,
+      "exact": true
+     },
+     "F": {
+      "ocrText": "字也变大了",
+      "cer": 0,
+      "exact": true
+     }
+    }
+   ]
+  },
+  {
+   "captureId": "scale_175-00",
+   "scenario": "scale_175",
+   "ok": true,
+   "alignedPairs": 2,
+   "droppedWinrtLines": 0,
+   "texts": {
+    "A": [
+     "缩放百分之一百七十五",
+     "这已经是很大的图了"
+    ],
+    "B": [
+     "缩放百分之一百七十五",
+     "这已经是很大的图了"
+    ],
+    "C": [
+     "缩放百分之一百七十五",
+     "这已经是很大的图了"
+    ],
+    "D": [
+     "缩放百分之一百七十五",
+     "这已经是很大的图了"
+    ],
+    "E": [
+     "缩放百分之一百七十五",
+     "这已经是很大的图了"
+    ],
+    "F": [
+     "缩放百分之一百七十五",
+     "这已经是很大的图了"
+    ]
+   },
+   "perMessage": [
+    {
+     "text": "缩放百分之一百七十五",
+     "normGtLength": 10,
+     "A": {
+      "ocrText": "缩放百分之一百七十五",
+      "cer": 0,
+      "exact": true
+     },
+     "B": {
+      "ocrText": "缩放百分之一百七十五",
+      "cer": 0,
+      "exact": true
+     },
+     "C": {
+      "ocrText": "缩放百分之一百七十五",
+      "cer": 0,
+      "exact": true
+     },
+     "D": {
+      "ocrText": "缩放百分之一百七十五",
+      "cer": 0,
+      "exact": true
+     },
+     "E": {
+      "ocrText": "缩放百分之一百七十五",
+      "cer": 0,
+      "exact": true
+     },
+     "F": {
+      "ocrText": "缩放百分之一百七十五",
+      "cer": 0,
+      "exact": true
+     }
+    },
+    {
+     "text": "这已经是很大的图了",
+     "normGtLength": 9,
+     "A": {
+      "ocrText": "这已经是很大的图了",
+      "cer": 0,
+      "exact": true
+     },
+     "B": {
+      "ocrText": "这已经是很大的图了",
+      "cer": 0,
+      "exact": true
+     },
+     "C": {
+      "ocrText": "这已经是很大的图了",
+      "cer": 0,
+      "exact": true
+     },
+     "D": {
+      "ocrText": "这已经是很大的图了",
+      "cer": 0,
+      "exact": true
+     },
+     "E": {
+      "ocrText": "这已经是很大的图了",
+      "cer": 0,
+      "exact": true
+     },
+     "F": {
+      "ocrText": "这已经是很大的图了",
+      "cer": 0,
+      "exact": true
+     }
+    }
+   ]
+  },
+  {
+   "captureId": "scale_175-01",
+   "scenario": "scale_175",
+   "ok": true,
+   "alignedPairs": 2,
+   "droppedWinrtLines": 0,
+   "texts": {
+    "A": [
+     "大尺寸截图",
+     "计笪量也更大"
+    ],
+    "B": [
+     "大尺寸截图",
+     "计笪量也更大"
+    ],
+    "C": [
+     "大尺寸截图",
+     "计算量也更大"
+    ],
+    "D": [
+     "大尺寸截图",
+     "计笪量也更大"
+    ],
+    "E": [
+     "大尺寸截图",
+     "计笪量也更大"
+    ],
+    "F": [
+     "大尺寸截图",
+     "计笪量也更大"
+    ]
+   },
+   "perMessage": [
+    {
+     "text": "大尺寸截图",
+     "normGtLength": 5,
+     "A": {
+      "ocrText": "大尺寸截图",
+      "cer": 0,
+      "exact": true
+     },
+     "B": {
+      "ocrText": "大尺寸截图",
+      "cer": 0,
+      "exact": true
+     },
+     "C": {
+      "ocrText": "大尺寸截图",
+      "cer": 0,
+      "exact": true
+     },
+     "D": {
+      "ocrText": "大尺寸截图",
+      "cer": 0,
+      "exact": true
+     },
+     "E": {
+      "ocrText": "大尺寸截图",
+      "cer": 0,
+      "exact": true
+     },
+     "F": {
+      "ocrText": "大尺寸截图",
+      "cer": 0,
+      "exact": true
+     }
+    },
+    {
+     "text": "计算量也更大",
+     "normGtLength": 6,
+     "A": {
+      "ocrText": "计笪量也更大",
+      "cer": 0.16666666666666666,
+      "exact": false
+     },
+     "B": {
+      "ocrText": "计笪量也更大",
+      "cer": 0.16666666666666666,
+      "exact": false
+     },
+     "C": {
+      "ocrText": "计算量也更大",
+      "cer": 0,
+      "exact": true
+     },
+     "D": {
+      "ocrText": "计笪量也更大",
+      "cer": 0.16666666666666666,
+      "exact": false
+     },
+     "E": {
+      "ocrText": "计笪量也更大",
+      "cer": 0.16666666666666666,
+      "exact": false
+     },
+     "F": {
+      "ocrText": "计笪量也更大",
+      "cer": 0.16666666666666666,
+      "exact": false
+     }
+    }
+   ]
+  },
+  {
+   "captureId": "repeat_two-00",
+   "scenario": "repeat_two",
+   "ok": true,
+   "alignedPairs": 2,
+   "droppedWinrtLines": 0,
+   "texts": {
+    "A": [
+     "好的收到",
+     "好的收到"
+    ],
+    "B": [
+     "好的收到",
+     "好的收到"
+    ],
+    "C": [
+     "好的收到",
+     "好的收到"
+    ],
+    "D": [
+     "好的收到",
+     "好的收到"
+    ],
+    "E": [
+     "好的收到",
+     "好的收到"
+    ],
+    "F": [
+     "好的收到",
+     "好的收到"
+    ]
+   },
+   "perMessage": [
+    {
+     "text": "好的收到",
+     "normGtLength": 4,
+     "A": {
+      "ocrText": "好的收到",
+      "cer": 0,
+      "exact": true
+     },
+     "B": {
+      "ocrText": "好的收到",
+      "cer": 0,
+      "exact": true
+     },
+     "C": {
+      "ocrText": "好的收到",
+      "cer": 0,
+      "exact": true
+     },
+     "D": {
+      "ocrText": "好的收到",
+      "cer": 0,
+      "exact": true
+     },
+     "E": {
+      "ocrText": "好的收到",
+      "cer": 0,
+      "exact": true
+     },
+     "F": {
+      "ocrText": "好的收到",
+      "cer": 0,
+      "exact": true
+     }
+    },
+    {
+     "text": "好的收到",
+     "normGtLength": 4,
+     "A": {
+      "ocrText": "好的收到",
+      "cer": 0,
+      "exact": true
+     },
+     "B": {
+      "ocrText": "好的收到",
+      "cer": 0,
+      "exact": true
+     },
+     "C": {
+      "ocrText": "好的收到",
+      "cer": 0,
+      "exact": true
+     },
+     "D": {
+      "ocrText": "好的收到",
+      "cer": 0,
+      "exact": true
+     },
+     "E": {
+      "ocrText": "好的收到",
+      "cer": 0,
+      "exact": true
+     },
+     "F": {
+      "ocrText": "好的收到",
+      "cer": 0,
+      "exact": true
+     }
+    }
+   ]
+  },
+  {
+   "captureId": "repeat_two-01",
+   "scenario": "repeat_two",
+   "ok": true,
+   "alignedPairs": 2,
+   "droppedWinrtLines": 0,
+   "texts": {
+    "A": [
+     "明天见",
+     "明天见"
+    ],
+    "B": [
+     "明天见",
+     "明天见"
+    ],
+    "C": [
+     "明天见",
+     "明天见"
+    ],
+    "D": [
+     "明天见",
+     "明天见"
+    ],
+    "E": [
+     "明天见",
+     "明天见"
+    ],
+    "F": [
+     "明天见",
+     "明天见"
+    ]
+   },
+   "perMessage": [
+    {
+     "text": "明天见",
+     "normGtLength": 3,
+     "A": {
+      "ocrText": "明天见",
+      "cer": 0,
+      "exact": true
+     },
+     "B": {
+      "ocrText": "明天见",
+      "cer": 0,
+      "exact": true
+     },
+     "C": {
+      "ocrText": "明天见",
+      "cer": 0,
+      "exact": true
+     },
+     "D": {
+      "ocrText": "明天见",
+      "cer": 0,
+      "exact": true
+     },
+     "E": {
+      "ocrText": "明天见",
+      "cer": 0,
+      "exact": true
+     },
+     "F": {
+      "ocrText": "明天见",
+      "cer": 0,
+      "exact": true
+     }
+    },
+    {
+     "text": "明天见",
+     "normGtLength": 3,
+     "A": {
+      "ocrText": "明天见",
+      "cer": 0,
+      "exact": true
+     },
+     "B": {
+      "ocrText": "明天见",
+      "cer": 0,
+      "exact": true
+     },
+     "C": {
+      "ocrText": "明天见",
+      "cer": 0,
+      "exact": true
+     },
+     "D": {
+      "ocrText": "明天见",
+      "cer": 0,
+      "exact": true
+     },
+     "E": {
+      "ocrText": "明天见",
+      "cer": 0,
+      "exact": true
+     },
+     "F": {
+      "ocrText": "明天见",
+      "cer": 0,
+      "exact": true
+     }
+    }
+   ]
+  },
+  {
+   "captureId": "numbers-00",
+   "scenario": "numbers",
+   "ok": true,
+   "alignedPairs": 4,
+   "droppedWinrtLines": 0,
+   "texts": {
+    "A": [
+     "讠丁单号 sF0000000000 ，全额 12 & 50 元，日 2026 一 10 一 31",
+     "客服电话 1380000000 工作时闫9 ℃ 0 一 18 ℃ 0"
+    ],
+    "B": [
+     "讠丁单号 SF0000000000 ，全额 12 & 50 元，日期 2026 一 1 0 一 31",
+     "客服电话 13800000000 ，工作时间9 ： 00 一 18 ： 00"
+    ],
+    "C": [
+     "订单号SF0000000000，金额128.50元日期2026-10-31",
+     "客服电话13800000000，工作时间9:00-18:00"
+    ],
+    "D": [
+     "讠丁单号 SF0000000000 ，全额 12 & 50 元，日期 2026 一 1 0 一 31",
+     "客服电话 13800000000 ，工作时间9 ： 00 一 18 ： 00"
+    ],
+    "E": [
+     "讠丁单号 SF0000000000 ，全额 12 & 50 元，日期 2026 一 1 0 一 31",
+     "客服电话 13800000000 ，工作时间9 ： 00 一 18 ： 00"
+    ],
+    "F": [
+     "讠丁单号 SF0000000000 ，全额 12 & 50 元，日期 2026 一 1 0 一 31",
+     "客服电话 13800000000 ，工作时间9 ： 00 一 18 ： 00"
+    ]
+   },
+   "perMessage": [
+    {
+     "text": "订单号 SF0000000000，金额 128.50 元，日期 2026-10-31",
+     "normGtLength": 38,
+     "A": {
+      "ocrText": "讠丁单号 sF0000000000 ，全额 12 & 50 元，日 2026 一 10 一 31",
+      "cer": 0.23684210526315788,
+      "exact": false
+     },
+     "B": {
+      "ocrText": "讠丁单号 SF0000000000 ，全额 12 & 50 元，日期 2026 一 1 0 一 31",
+      "cer": 0.18421052631578946,
+      "exact": false
+     },
+     "C": {
+      "ocrText": "订单号SF0000000000，金额128.50元日期2026-10-31",
+      "cer": 0.02631578947368421,
+      "exact": false
+     },
+     "D": {
+      "ocrText": "讠丁单号 SF0000000000 ，全额 12 & 50 元，日期 2026 一 1 0 一 31",
+      "cer": 0.18421052631578946,
+      "exact": false
+     },
+     "E": {
+      "ocrText": "讠丁单号 SF0000000000 ，全额 12 & 50 元，日期 2026 一 1 0 一 31",
+      "cer": 0.18421052631578946,
+      "exact": false
+     },
+     "F": {
+      "ocrText": "讠丁单号 SF0000000000 ，全额 12 & 50 元，日期 2026 一 1 0 一 31",
+      "cer": 0.18421052631578946,
+      "exact": false
+     }
+    },
+    {
+     "text": "客服电话 13800000000，工作时间 9:00-18:00",
+     "normGtLength": 30,
+     "A": {
+      "ocrText": "客服电话 1380000000 工作时闫9 ℃ 0 一 18 ℃ 0",
+      "cer": 0.26666666666666666,
+      "exact": false
+     },
+     "B": {
+      "ocrText": "客服电话 13800000000 ，工作时间9 ： 00 一 18 ： 00",
+      "cer": 0.1,
+      "exact": false
+     },
+     "C": {
+      "ocrText": "客服电话13800000000，工作时间9:00-18:00",
+      "cer": 0,
+      "exact": true
+     },
+     "D": {
+      "ocrText": "客服电话 13800000000 ，工作时间9 ： 00 一 18 ： 00",
+      "cer": 0.1,
+      "exact": false
+     },
+     "E": {
+      "ocrText": "客服电话 13800000000 ，工作时间9 ： 00 一 18 ： 00",
+      "cer": 0.1,
+      "exact": false
+     },
+     "F": {
+      "ocrText": "客服电话 13800000000 ，工作时间9 ： 00 一 18 ： 00",
+      "cer": 0.1,
+      "exact": false
+     }
+    }
+   ]
+  },
+  {
+   "captureId": "numbers-01",
+   "scenario": "numbers",
+   "ok": true,
+   "alignedPairs": 2,
+   "droppedWinrtLines": 0,
+   "texts": {
+    "A": [
+     "转账 6 & 66 元已到账，余额 1024 ℃ 0 元",
+     "2 号线转 10 号线， 22 ： 1 5 最后一班"
+    ],
+    "B": [
+     "转账 66 ， 66 元已到账，余额 1024 ， 00 元",
+     "2 号线转 10 号线， 22 ： 1 5 最后一班"
+    ],
+    "C": [
+     "转账66.66元已到账，余额1024.00元",
+     "2号线转10号线，22:15最后一班"
+    ],
+    "D": [
+     "转账 66 ， 66 元已到账，余额 1024 ， 00 元",
+     "2 号线转 10 号线， 22 ： 1 5 最后一班"
+    ],
+    "E": [
+     "转账 66 ， 66 元已到账，余额 1024 ， 00 元",
+     "2 号线转 10 号线， 22 ： 1 5 最后一班"
+    ],
+    "F": [
+     "转账 66 ， 66 元已到账，余额 1024 ， 00 元",
+     "2 号线转 10 号线， 22 ： 1 5 最后一班"
+    ]
+   },
+   "perMessage": [
+    {
+     "text": "转账 66.66 元已到账，余额 1024.00 元",
+     "normGtLength": 22,
+     "A": {
+      "ocrText": "转账 6 & 66 元已到账，余额 1024 ℃ 0 元",
+      "cer": 0.18181818181818182,
+      "exact": false
+     },
+     "B": {
+      "ocrText": "转账 66 ， 66 元已到账，余额 1024 ， 00 元",
+      "cer": 0.09090909090909091,
+      "exact": false
+     },
+     "C": {
+      "ocrText": "转账66.66元已到账，余额1024.00元",
+      "cer": 0,
+      "exact": true
+     },
+     "D": {
+      "ocrText": "转账 66 ， 66 元已到账，余额 1024 ， 00 元",
+      "cer": 0.09090909090909091,
+      "exact": false
+     },
+     "E": {
+      "ocrText": "转账 66 ， 66 元已到账，余额 1024 ， 00 元",
+      "cer": 0.09090909090909091,
+      "exact": false
+     },
+     "F": {
+      "ocrText": "转账 66 ， 66 元已到账，余额 1024 ， 00 元",
+      "cer": 0.09090909090909091,
+      "exact": false
+     }
+    },
+    {
+     "text": "2 号线转 10 号线，22:15 最后一班",
+     "normGtLength": 18,
+     "A": {
+      "ocrText": "2 号线转 10 号线， 22 ： 1 5 最后一班",
+      "cer": 0.05555555555555555,
+      "exact": false
+     },
+     "B": {
+      "ocrText": "2 号线转 10 号线， 22 ： 1 5 最后一班",
+      "cer": 0.05555555555555555,
+      "exact": false
+     },
+     "C": {
+      "ocrText": "2号线转10号线，22:15最后一班",
+      "cer": 0,
+      "exact": true
+     },
+     "D": {
+      "ocrText": "2 号线转 10 号线， 22 ： 1 5 最后一班",
+      "cer": 0.05555555555555555,
+      "exact": false
+     },
+     "E": {
+      "ocrText": "2 号线转 10 号线， 22 ： 1 5 最后一班",
+      "cer": 0.05555555555555555,
+      "exact": false
+     },
+     "F": {
+      "ocrText": "2 号线转 10 号线， 22 ： 1 5 最后一班",
+      "cer": 0.05555555555555555,
+      "exact": false
+     }
+    }
+   ]
+  },
+  {
+   "captureId": "dark_mode-00",
+   "scenario": "dark_mode",
+   "ok": true,
+   "alignedPairs": 2,
+   "droppedWinrtLines": 0,
+   "texts": {
+    "A": [
+     "深色模式下看得更舒服",
+     "夜里刷手机就袁它了"
+    ],
+    "B": [
+     "深色模式下看得更舒服",
+     "夜里刷手机就靠它了"
+    ],
+    "C": [
+     "深色模式下看得更舒服",
+     "夜里刷手机就靠它了"
+    ],
+    "D": [
+     "深色模式下看得更舒服",
+     "夜里刷手机就靠它了"
+    ],
+    "E": [
+     "深色模式下看得更舒服",
+     "夜里刷手机就靠它了"
+    ],
+    "F": [
+     "深色模式下看得更舒服",
+     "夜里刷手机就靠它了"
+    ]
+   },
+   "perMessage": [
+    {
+     "text": "深色模式下看得更舒服",
+     "normGtLength": 10,
+     "A": {
+      "ocrText": "深色模式下看得更舒服",
+      "cer": 0,
+      "exact": true
+     },
+     "B": {
+      "ocrText": "深色模式下看得更舒服",
+      "cer": 0,
+      "exact": true
+     },
+     "C": {
+      "ocrText": "深色模式下看得更舒服",
+      "cer": 0,
+      "exact": true
+     },
+     "D": {
+      "ocrText": "深色模式下看得更舒服",
+      "cer": 0,
+      "exact": true
+     },
+     "E": {
+      "ocrText": "深色模式下看得更舒服",
+      "cer": 0,
+      "exact": true
+     },
+     "F": {
+      "ocrText": "深色模式下看得更舒服",
+      "cer": 0,
+      "exact": true
+     }
+    },
+    {
+     "text": "夜里刷手机就靠它了",
+     "normGtLength": 9,
+     "A": {
+      "ocrText": "夜里刷手机就袁它了",
+      "cer": 0.1111111111111111,
+      "exact": false
+     },
+     "B": {
+      "ocrText": "夜里刷手机就靠它了",
+      "cer": 0,
+      "exact": true
+     },
+     "C": {
+      "ocrText": "夜里刷手机就靠它了",
+      "cer": 0,
+      "exact": true
+     },
+     "D": {
+      "ocrText": "夜里刷手机就靠它了",
+      "cer": 0,
+      "exact": true
+     },
+     "E": {
+      "ocrText": "夜里刷手机就靠它了",
+      "cer": 0,
+      "exact": true
+     },
+     "F": {
+      "ocrText": "夜里刷手机就靠它了",
+      "cer": 0,
+      "exact": true
+     }
+    }
+   ]
+  },
+  {
+   "captureId": "dark_mode-01",
+   "scenario": "dark_mode",
+   "ok": true,
+   "alignedPairs": 2,
+   "droppedWinrtLines": 0,
+   "texts": {
+    "A": [
+     "色背器的截",
+     "对比度其实不低"
+    ],
+    "B": [
+     "黑色背吕的截图",
+     "对比度其实不低"
+    ],
+    "C": [
+     "黑色背景的截图",
+     "对比度其实不低"
+    ],
+    "D": [
+     "黑色背吕的截图",
+     "对比度其实不低"
+    ],
+    "E": [
+     "黑色背吕的截图",
+     "对比度其实不低"
+    ],
+    "F": [
+     "黑色背吕的截图",
+     "对比度其实不低"
+    ]
+   },
+   "perMessage": [
+    {
+     "text": "黑色背景的截图",
+     "normGtLength": 7,
+     "A": {
+      "ocrText": "色背器的截",
+      "cer": 0.42857142857142855,
+      "exact": false
+     },
+     "B": {
+      "ocrText": "黑色背吕的截图",
+      "cer": 0.14285714285714285,
+      "exact": false
+     },
+     "C": {
+      "ocrText": "黑色背景的截图",
+      "cer": 0,
+      "exact": true
+     },
+     "D": {
+      "ocrText": "黑色背吕的截图",
+      "cer": 0.14285714285714285,
+      "exact": false
+     },
+     "E": {
+      "ocrText": "黑色背吕的截图",
+      "cer": 0.14285714285714285,
+      "exact": false
+     },
+     "F": {
+      "ocrText": "黑色背吕的截图",
+      "cer": 0.14285714285714285,
+      "exact": false
+     }
+    },
+    {
+     "text": "对比度其实不低",
+     "normGtLength": 7,
+     "A": {
+      "ocrText": "对比度其实不低",
+      "cer": 0,
+      "exact": true
+     },
+     "B": {
+      "ocrText": "对比度其实不低",
+      "cer": 0,
+      "exact": true
+     },
+     "C": {
+      "ocrText": "对比度其实不低",
+      "cer": 0,
+      "exact": true
+     },
+     "D": {
+      "ocrText": "对比度其实不低",
+      "cer": 0,
+      "exact": true
+     },
+     "E": {
+      "ocrText": "对比度其实不低",
+      "cer": 0,
+      "exact": true
+     },
+     "F": {
+      "ocrText": "对比度其实不低",
+      "cer": 0,
+      "exact": true
+     }
+    }
+   ]
+  },
+  {
+   "captureId": "multi_message-00",
+   "scenario": "multi_message",
+   "ok": true,
+   "alignedPairs": 6,
+   "droppedWinrtLines": 1,
+   "texts": {
+    "A": [
+     "",
+     "",
+     "晚上一起吃饭吗",
+     "可以啊，吃什么",
+     "大吧竺怎么样",
+     "行。六点半见"
+    ],
+    "B": [
+     "在吗",
+     "在的",
+     "晚上一起吃饭吗",
+     "可以啊，吃什么",
+     "大肥鱼怎么样",
+     "亠占半见"
+    ],
+    "C": [
+     "在吗",
+     "在的",
+     "晚上一起吃饭吗",
+     "可以啊，吃什么",
+     "大肥鱼怎么样",
+     "行，六点半见"
+    ],
+    "D": [
+     "在吗",
+     "在的",
+     "晚上一起吃饭吗",
+     "可以啊，吃什么",
+     "大肥鱼怎么样",
+     "亠占半见"
+    ],
+    "E": [
+     "在吗",
+     "在的",
+     "晚上一起吃饭吗",
+     "可以啊，吃什么",
+     "大肥鱼怎么样",
+     "行，六点半见"
+    ],
+    "F": [
+     "在吗",
+     "在的",
+     "晚上一起吃饭吗",
+     "可以啊，吃什么",
+     "大肥鱼怎么样",
+     "亠占半见"
+    ]
+   },
+   "perMessage": [
+    {
+     "text": "在吗",
+     "normGtLength": 2,
+     "A": {
+      "ocrText": "",
+      "cer": 1,
+      "exact": false
+     },
+     "B": {
+      "ocrText": "在吗",
+      "cer": 0,
+      "exact": true
+     },
+     "C": {
+      "ocrText": "在吗",
+      "cer": 0,
+      "exact": true
+     },
+     "D": {
+      "ocrText": "在吗",
+      "cer": 0,
+      "exact": true
+     },
+     "E": {
+      "ocrText": "在吗",
+      "cer": 0,
+      "exact": true
+     },
+     "F": {
+      "ocrText": "在吗",
+      "cer": 0,
+      "exact": true
+     }
+    },
+    {
+     "text": "在的",
+     "normGtLength": 2,
+     "A": {
+      "ocrText": "",
+      "cer": 1,
+      "exact": false
+     },
+     "B": {
+      "ocrText": "在的",
+      "cer": 0,
+      "exact": true
+     },
+     "C": {
+      "ocrText": "在的",
+      "cer": 0,
+      "exact": true
+     },
+     "D": {
+      "ocrText": "在的",
+      "cer": 0,
+      "exact": true
+     },
+     "E": {
+      "ocrText": "在的",
+      "cer": 0,
+      "exact": true
+     },
+     "F": {
+      "ocrText": "在的",
+      "cer": 0,
+      "exact": true
+     }
+    },
+    {
+     "text": "晚上一起吃饭吗",
+     "normGtLength": 7,
+     "A": {
+      "ocrText": "晚上一起吃饭吗",
+      "cer": 0,
+      "exact": true
+     },
+     "B": {
+      "ocrText": "晚上一起吃饭吗",
+      "cer": 0,
+      "exact": true
+     },
+     "C": {
+      "ocrText": "晚上一起吃饭吗",
+      "cer": 0,
+      "exact": true
+     },
+     "D": {
+      "ocrText": "晚上一起吃饭吗",
+      "cer": 0,
+      "exact": true
+     },
+     "E": {
+      "ocrText": "晚上一起吃饭吗",
+      "cer": 0,
+      "exact": true
+     },
+     "F": {
+      "ocrText": "晚上一起吃饭吗",
+      "cer": 0,
+      "exact": true
+     }
+    },
+    {
+     "text": "可以啊，吃什么",
+     "normGtLength": 7,
+     "A": {
+      "ocrText": "可以啊，吃什么",
+      "cer": 0,
+      "exact": true
+     },
+     "B": {
+      "ocrText": "可以啊，吃什么",
+      "cer": 0,
+      "exact": true
+     },
+     "C": {
+      "ocrText": "可以啊，吃什么",
+      "cer": 0,
+      "exact": true
+     },
+     "D": {
+      "ocrText": "可以啊，吃什么",
+      "cer": 0,
+      "exact": true
+     },
+     "E": {
+      "ocrText": "可以啊，吃什么",
+      "cer": 0,
+      "exact": true
+     },
+     "F": {
+      "ocrText": "可以啊，吃什么",
+      "cer": 0,
+      "exact": true
+     }
+    },
+    {
+     "text": "大肥鱼怎么样",
+     "normGtLength": 6,
+     "A": {
+      "ocrText": "大吧竺怎么样",
+      "cer": 0.3333333333333333,
+      "exact": false
+     },
+     "B": {
+      "ocrText": "大肥鱼怎么样",
+      "cer": 0,
+      "exact": true
+     },
+     "C": {
+      "ocrText": "大肥鱼怎么样",
+      "cer": 0,
+      "exact": true
+     },
+     "D": {
+      "ocrText": "大肥鱼怎么样",
+      "cer": 0,
+      "exact": true
+     },
+     "E": {
+      "ocrText": "大肥鱼怎么样",
+      "cer": 0,
+      "exact": true
+     },
+     "F": {
+      "ocrText": "大肥鱼怎么样",
+      "cer": 0,
+      "exact": true
+     }
+    },
+    {
+     "text": "行，六点半见",
+     "normGtLength": 6,
+     "A": {
+      "ocrText": "行。六点半见",
+      "cer": 0.16666666666666666,
+      "exact": false
+     },
+     "B": {
+      "ocrText": "亠占半见",
+      "cer": 0.6666666666666666,
+      "exact": false
+     },
+     "C": {
+      "ocrText": "行，六点半见",
+      "cer": 0,
+      "exact": true
+     },
+     "D": {
+      "ocrText": "亠占半见",
+      "cer": 0.6666666666666666,
+      "exact": false
+     },
+     "E": {
+      "ocrText": "行，六点半见",
+      "cer": 0,
+      "exact": true
+     },
+     "F": {
+      "ocrText": "亠占半见",
+      "cer": 0.6666666666666666,
+      "exact": false
+     }
+    }
+   ]
+  },
+  {
+   "captureId": "multi_message-01",
+   "scenario": "multi_message",
+   "ok": true,
+   "alignedPairs": 4,
+   "droppedWinrtLines": 0,
+   "texts": {
+    "A": [
+     "下午的会议改到二点了",
+     "",
+     "议纪要记得发我",
+     "妤的，整理完发你"
+    ],
+    "B": [
+     "下午的会议改到三点了",
+     "收到",
+     "会议纪要记得发我",
+     "好的，整理完发你"
+    ],
+    "C": [
+     "下午的会议改到三点了",
+     "收到",
+     "会议纪要记得发我",
+     "好的，整理完发你"
+    ],
+    "D": [
+     "下午的会议改到三点了",
+     "收到",
+     "会议纪要记得发我",
+     "好的，整理完发你"
+    ],
+    "E": [
+     "下午的会议改到三点了",
+     "收到",
+     "会议纪要记得发我",
+     "好的，整理完发你"
+    ],
+    "F": [
+     "下午的会议改到三点了",
+     "收到",
+     "会议纪要记得发我",
+     "好的，整理完发你"
+    ]
+   },
+   "perMessage": [
+    {
+     "text": "下午的会议改到三点了",
+     "normGtLength": 10,
+     "A": {
+      "ocrText": "下午的会议改到二点了",
+      "cer": 0.1,
+      "exact": false
+     },
+     "B": {
+      "ocrText": "下午的会议改到三点了",
+      "cer": 0,
+      "exact": true
+     },
+     "C": {
+      "ocrText": "下午的会议改到三点了",
+      "cer": 0,
+      "exact": true
+     },
+     "D": {
+      "ocrText": "下午的会议改到三点了",
+      "cer": 0,
+      "exact": true
+     },
+     "E": {
+      "ocrText": "下午的会议改到三点了",
+      "cer": 0,
+      "exact": true
+     },
+     "F": {
+      "ocrText": "下午的会议改到三点了",
+      "cer": 0,
+      "exact": true
+     }
+    },
+    {
+     "text": "收到",
+     "normGtLength": 2,
+     "A": {
+      "ocrText": "",
+      "cer": 1,
+      "exact": false
+     },
+     "B": {
+      "ocrText": "收到",
+      "cer": 0,
+      "exact": true
+     },
+     "C": {
+      "ocrText": "收到",
+      "cer": 0,
+      "exact": true
+     },
+     "D": {
+      "ocrText": "收到",
+      "cer": 0,
+      "exact": true
+     },
+     "E": {
+      "ocrText": "收到",
+      "cer": 0,
+      "exact": true
+     },
+     "F": {
+      "ocrText": "收到",
+      "cer": 0,
+      "exact": true
+     }
+    },
+    {
+     "text": "会议纪要记得发我",
+     "normGtLength": 8,
+     "A": {
+      "ocrText": "议纪要记得发我",
+      "cer": 0.125,
+      "exact": false
+     },
+     "B": {
+      "ocrText": "会议纪要记得发我",
+      "cer": 0,
+      "exact": true
+     },
+     "C": {
+      "ocrText": "会议纪要记得发我",
+      "cer": 0,
+      "exact": true
+     },
+     "D": {
+      "ocrText": "会议纪要记得发我",
+      "cer": 0,
+      "exact": true
+     },
+     "E": {
+      "ocrText": "会议纪要记得发我",
+      "cer": 0,
+      "exact": true
+     },
+     "F": {
+      "ocrText": "会议纪要记得发我",
+      "cer": 0,
+      "exact": true
+     }
+    },
+    {
+     "text": "好的，整理完发你",
+     "normGtLength": 8,
+     "A": {
+      "ocrText": "妤的，整理完发你",
+      "cer": 0.125,
+      "exact": false
+     },
+     "B": {
+      "ocrText": "好的，整理完发你",
+      "cer": 0,
+      "exact": true
+     },
+     "C": {
+      "ocrText": "好的，整理完发你",
+      "cer": 0,
+      "exact": true
+     },
+     "D": {
+      "ocrText": "好的，整理完发你",
+      "cer": 0,
+      "exact": true
+     },
+     "E": {
+      "ocrText": "好的，整理完发你",
+      "cer": 0,
+      "exact": true
+     },
+     "F": {
+      "ocrText": "好的，整理完发你",
+      "cer": 0,
+      "exact": true
+     }
+    }
+   ]
+  },
+  {
+   "captureId": "stretched-00",
+   "scenario": "stretched",
+   "ok": true,
+   "alignedPairs": 2,
+   "droppedWinrtLines": 1,
+   "texts": {
+    "A": [
+     "i 玄是一一弓长衤皮为黄向立亻申的截图",
+     "上匕 1 列刁〈又寸，二．子一 “ 2 开彡"
+    ],
+    "B": [
+     "这是一弓长衤皮为黄向扌立亻申的截图",
+     "上匕伊」不又寸，文字会变开彡"
+    ],
+    "C": [
+     "这是一张被横向拉伸的截图",
+     "比例不对，文字会变形"
+    ],
+    "D": [
+     "这是一弓长衤皮为黄向扌立亻申的截图",
+     "文字会开彡"
+    ],
+    "E": [
+     "这是一弓长衤皮为黄向扌立亻申的截图",
+     "比例不对，文字会变形"
+    ],
+    "F": [
+     "这是一弓长衤皮为黄向扌立亻申的截图",
+     "上匕莎刂不只寸，文字会开彡"
+    ]
+   },
+   "perMessage": [
+    {
+     "text": "这是一张被横向拉伸的截图",
+     "normGtLength": 12,
+     "A": {
+      "ocrText": "i 玄是一一弓长衤皮为黄向立亻申的截图",
+      "cer": 1,
+      "exact": false
+     },
+     "B": {
+      "ocrText": "这是一弓长衤皮为黄向扌立亻申的截图",
+      "cer": 0.8333333333333334,
+      "exact": false
+     },
+     "C": {
+      "ocrText": "这是一张被横向拉伸的截图",
+      "cer": 0,
+      "exact": true
+     },
+     "D": {
+      "ocrText": "这是一弓长衤皮为黄向扌立亻申的截图",
+      "cer": 0.8333333333333334,
+      "exact": false
+     },
+     "E": {
+      "ocrText": "这是一弓长衤皮为黄向扌立亻申的截图",
+      "cer": 0.8333333333333334,
+      "exact": false
+     },
+     "F": {
+      "ocrText": "这是一弓长衤皮为黄向扌立亻申的截图",
+      "cer": 0.8333333333333334,
+      "exact": false
+     }
+    },
+    {
+     "text": "比例不对，文字会变形",
+     "normGtLength": 10,
+     "A": {
+      "ocrText": "上匕 1 列刁〈又寸，二．子一 “ 2 开彡",
+      "cer": 1.6,
+      "exact": false
+     },
+     "B": {
+      "ocrText": "上匕伊」不又寸，文字会变开彡",
+      "cer": 0.8,
+      "exact": false
+     },
+     "C": {
+      "ocrText": "比例不对，文字会变形",
+      "cer": 0,
+      "exact": true
+     },
+     "D": {
+      "ocrText": "文字会开彡",
+      "cer": 0.7,
+      "exact": false
+     },
+     "E": {
+      "ocrText": "比例不对，文字会变形",
+      "cer": 0,
+      "exact": true
+     },
+     "F": {
+      "ocrText": "上匕莎刂不只寸，文字会开彡",
+      "cer": 0.8,
+      "exact": false
+     }
+    }
+   ]
+  },
+  {
+   "captureId": "stretched-01",
+   "scenario": "stretched",
+   "ok": true,
+   "alignedPairs": 2,
+   "droppedWinrtLines": 0,
+   "texts": {
+    "A": [
+     "立亻申．茜的文字宽度变了",
+     "只另 IJ 率自乥会一卜阝"
+    ],
+    "B": [
+     "扌立亻电后．的文字夺．了",
+     "` 识．另刂率可乭会一下阝条"
+    ],
+    "C": [
+     "拉伸后的文字宽度变了",
+     "识别率可能会下降"
+    ],
+    "D": [
+     "扌立亻电后．的文字夺．了",
+     "` 识．另刂率可乭会一下阝条"
+    ],
+    "E": [
+     "扌立亻申后的文字席夺了",
+     "识另刂率可目匕下降"
+    ],
+    "F": [
+     "扌立亻申后的文字席夺了",
+     "识另刂率可目匕下降"
+    ]
+   },
+   "perMessage": [
+    {
+     "text": "拉伸后的文字宽度变了",
+     "normGtLength": 10,
+     "A": {
+      "ocrText": "立亻申．茜的文字宽度变了",
+      "cer": 0.5,
+      "exact": false
+     },
+     "B": {
+      "ocrText": "扌立亻电后．的文字夺．了",
+      "cer": 0.8,
+      "exact": false
+     },
+     "C": {
+      "ocrText": "拉伸后的文字宽度变了",
+      "cer": 0,
+      "exact": true
+     },
+     "D": {
+      "ocrText": "扌立亻电后．的文字夺．了",
+      "cer": 0.8,
+      "exact": false
+     },
+     "E": {
+      "ocrText": "扌立亻申后的文字席夺了",
+      "cer": 0.7,
+      "exact": false
+     },
+     "F": {
+      "ocrText": "扌立亻申后的文字席夺了",
+      "cer": 0.7,
+      "exact": false
+     }
+    },
+    {
+     "text": "识别率可能会下降",
+     "normGtLength": 8,
+     "A": {
+      "ocrText": "只另 IJ 率自乥会一卜阝",
+      "cer": 1.125,
+      "exact": false
+     },
+     "B": {
+      "ocrText": "` 识．另刂率可乭会一下阝条",
+      "cer": 1,
+      "exact": false
+     },
+     "C": {
+      "ocrText": "识别率可能会下降",
+      "cer": 0,
+      "exact": true
+     },
+     "D": {
+      "ocrText": "` 识．另刂率可乭会一下阝条",
+      "cer": 1,
+      "exact": false
+     },
+     "E": {
+      "ocrText": "识另刂率可目匕下降",
+      "cer": 0.5,
+      "exact": false
+     },
+     "F": {
+      "ocrText": "识另刂率可目匕下降",
+      "cer": 0.5,
+      "exact": false
+     }
+    }
+   ]
+  },
+  {
+   "captureId": "ai_disclaimer-00",
+   "scenario": "ai_disclaimer",
+   "ok": true,
+   "alignedPairs": 3,
+   "droppedWinrtLines": 0,
+   "texts": {
+    "A": [
+     "本消息由 AI 分身目动生成，若不需要谲回「停」人工会尽快接手处理．",
+     "妤的，矧了谢谢憷醒"
+    ],
+    "B": [
+     "本消息由 AI 分身自动生成若不需要请回复「停」，人工会尽快接手处理。",
+     "好的，知道了，谢谢提醍"
+    ],
+    "C": [
+     "本消息由AI分身自动生成，若不需要请回复停」，人工会尽快接手处理。",
+     "好的，知道了，谢谢提醒"
+    ],
+    "D": [
+     "本消息由 AI 分身自动生成若不需要请回复「停」，人工会尽快接手处理。",
+     "好的，知道了，谢谢提醍"
+    ],
+    "E": [
+     "本消息由 AI 分身自动生成若不需要请回复「停」，人工会尽快接手处理。",
+     "好的，知道了，谢谢提醍"
+    ],
+    "F": [
+     "本消息由 AI 分身自动生成若不需要请回复「停」，人工会尽快接手处理。",
+     "好的，知道了，谢谢提醍"
+    ]
+   },
+   "perMessage": [
+    {
+     "text": "本消息由 AI 分身自动生成，若不需要请回复「停」，人工会尽快接手处理。",
+     "normGtLength": 34,
+     "A": {
+      "ocrText": "本消息由 AI 分身目动生成，若不需要谲回「停」人工会尽快接手处理．",
+      "cer": 0.14705882352941177,
+      "exact": false
+     },
+     "B": {
+      "ocrText": "本消息由 AI 分身自动生成若不需要请回复「停」，人工会尽快接手处理。",
+      "cer": 0.029411764705882353,
+      "exact": false
+     },
+     "C": {
+      "ocrText": "本消息由AI分身自动生成，若不需要请回复停」，人工会尽快接手处理。",
+      "cer": 0.029411764705882353,
+      "exact": false
+     },
+     "D": {
+      "ocrText": "本消息由 AI 分身自动生成若不需要请回复「停」，人工会尽快接手处理。",
+      "cer": 0.029411764705882353,
+      "exact": false
+     },
+     "E": {
+      "ocrText": "本消息由 AI 分身自动生成若不需要请回复「停」，人工会尽快接手处理。",
+      "cer": 0.029411764705882353,
+      "exact": false
+     },
+     "F": {
+      "ocrText": "本消息由 AI 分身自动生成若不需要请回复「停」，人工会尽快接手处理。",
+      "cer": 0.029411764705882353,
+      "exact": false
+     }
+    },
+    {
+     "text": "好的，知道了，谢谢提醒",
+     "normGtLength": 11,
+     "A": {
+      "ocrText": "妤的，矧了谢谢憷醒",
+      "cer": 0.45454545454545453,
+      "exact": false
+     },
+     "B": {
+      "ocrText": "好的，知道了，谢谢提醍",
+      "cer": 0.09090909090909091,
+      "exact": false
+     },
+     "C": {
+      "ocrText": "好的，知道了，谢谢提醒",
+      "cer": 0,
+      "exact": true
+     },
+     "D": {
+      "ocrText": "好的，知道了，谢谢提醍",
+      "cer": 0.09090909090909091,
+      "exact": false
+     },
+     "E": {
+      "ocrText": "好的，知道了，谢谢提醍",
+      "cer": 0.09090909090909091,
+      "exact": false
+     },
+     "F": {
+      "ocrText": "好的，知道了，谢谢提醍",
+      "cer": 0.09090909090909091,
+      "exact": false
+     }
+    }
+   ]
+  },
+  {
+   "captureId": "ai_disclaimer-01",
+   "scenario": "ai_disclaimer",
+   "ok": true,
+   "alignedPairs": 3,
+   "droppedWinrtLines": 0,
+   "texts": {
+    "A": [
+     "本消息由 AI 分身目动回，内仅供参考 ·",
+     ""
+    ],
+    "B": [
+     "提示：本消息由 AI 分身自动回复，内容仅供参考。",
+     "明白，那我先不打扰了"
+    ],
+    "C": [
+     "提示：本消息由AI分身自动回复，内容仅供参考。",
+     "明白，那我先不打扰了"
+    ],
+    "D": [
+     "提示：本消息由 AI 分身自动回复，内容仅供参考。",
+     "明白，那我先不打扰了"
+    ],
+    "E": [
+     "提示：本消息由 AI 分身自动回复，内容仅供参考。",
+     "明白，那我先不打扰了"
+    ],
+    "F": [
+     "提示：本消息由 AI 分身自动回复，内容仅供参考。",
+     "明白，那我先不打扰了"
+    ]
+   },
+   "perMessage": [
+    {
+     "text": "提示：本消息由 AI 分身自动回复，内容仅供参考。",
+     "normGtLength": 23,
+     "A": {
+      "ocrText": "本消息由 AI 分身目动回，内仅供参考 ·",
+      "cer": 0.30434782608695654,
+      "exact": false
+     },
+     "B": {
+      "ocrText": "提示：本消息由 AI 分身自动回复，内容仅供参考。",
+      "cer": 0,
+      "exact": true
+     },
+     "C": {
+      "ocrText": "提示：本消息由AI分身自动回复，内容仅供参考。",
+      "cer": 0,
+      "exact": true
+     },
+     "D": {
+      "ocrText": "提示：本消息由 AI 分身自动回复，内容仅供参考。",
+      "cer": 0,
+      "exact": true
+     },
+     "E": {
+      "ocrText": "提示：本消息由 AI 分身自动回复，内容仅供参考。",
+      "cer": 0,
+      "exact": true
+     },
+     "F": {
+      "ocrText": "提示：本消息由 AI 分身自动回复，内容仅供参考。",
+      "cer": 0,
+      "exact": true
+     }
+    },
+    {
+     "text": "明白，那我先不打扰了",
+     "normGtLength": 10,
+     "A": {
+      "ocrText": "",
+      "cer": 1,
+      "exact": false
+     },
+     "B": {
+      "ocrText": "明白，那我先不打扰了",
+      "cer": 0,
+      "exact": true
+     },
+     "C": {
+      "ocrText": "明白，那我先不打扰了",
+      "cer": 0,
+      "exact": true
+     },
+     "D": {
+      "ocrText": "明白，那我先不打扰了",
+      "cer": 0,
+      "exact": true
+     },
+     "E": {
+      "ocrText": "明白，那我先不打扰了",
+      "cer": 0,
+      "exact": true
+     },
+     "F": {
+      "ocrText": "明白，那我先不打扰了",
+      "cer": 0,
+      "exact": true
+     }
+    }
+   ]
+  },
+  {
+   "captureId": "homophone-00",
+   "scenario": "homophone",
+   "ok": true,
+   "alignedPairs": 2,
+   "droppedWinrtLines": 0,
+   "texts": {
+    "A": [
+     "己所不欲，勿施于人",
+     "已经、自己、巳时要分清"
+    ],
+    "B": [
+     "己所不欲，勿施于人",
+     "已经、自己、巳时要分清"
+    ],
+    "C": [
+     "己所不欲，勿施于人",
+     "已经、自己、已时要分清"
+    ],
+    "D": [
+     "己所不欲，勿施于人",
+     "已经、自己、巳时要分清"
+    ],
+    "E": [
+     "己所不欲，勿施于人",
+     "已经、自己、巳时要分清"
+    ],
+    "F": [
+     "己所不欲，勿施于人",
+     "已经、自己、巳时要分清"
+    ]
+   },
+   "perMessage": [
+    {
+     "text": "己所不欲，勿施于人",
+     "normGtLength": 9,
+     "A": {
+      "ocrText": "己所不欲，勿施于人",
+      "cer": 0,
+      "exact": true
+     },
+     "B": {
+      "ocrText": "己所不欲，勿施于人",
+      "cer": 0,
+      "exact": true
+     },
+     "C": {
+      "ocrText": "己所不欲，勿施于人",
+      "cer": 0,
+      "exact": true
+     },
+     "D": {
+      "ocrText": "己所不欲，勿施于人",
+      "cer": 0,
+      "exact": true
+     },
+     "E": {
+      "ocrText": "己所不欲，勿施于人",
+      "cer": 0,
+      "exact": true
+     },
+     "F": {
+      "ocrText": "己所不欲，勿施于人",
+      "cer": 0,
+      "exact": true
+     }
+    },
+    {
+     "text": "已经、自己、巳时要分清",
+     "normGtLength": 11,
+     "A": {
+      "ocrText": "已经、自己、巳时要分清",
+      "cer": 0,
+      "exact": true
+     },
+     "B": {
+      "ocrText": "已经、自己、巳时要分清",
+      "cer": 0,
+      "exact": true
+     },
+     "C": {
+      "ocrText": "已经、自己、已时要分清",
+      "cer": 0.09090909090909091,
+      "exact": false
+     },
+     "D": {
+      "ocrText": "已经、自己、巳时要分清",
+      "cer": 0,
+      "exact": true
+     },
+     "E": {
+      "ocrText": "已经、自己、巳时要分清",
+      "cer": 0,
+      "exact": true
+     },
+     "F": {
+      "ocrText": "已经、自己、巳时要分清",
+      "cer": 0,
+      "exact": true
+     }
+    }
+   ]
+  },
+  {
+   "captureId": "homophone-01",
+   "scenario": "homophone",
+   "ok": true,
+   "alignedPairs": 2,
+   "droppedWinrtLines": 0,
+   "texts": {
+    "A": [
+     "耒来和末日只差一一櫛",
+     "辨认辩论子三个字难倒我了"
+    ],
+    "B": [
+     "耒来和末日只差一横",
+     "辨认辩论子三个字难倒我了"
+    ],
+    "C": [
+     "未来和末日只差一横",
+     "辨认辩论辫子三个字难倒我了"
+    ],
+    "D": [
+     "耒来和末日只差一横",
+     "辨认辩论子三个字难倒我了"
+    ],
+    "E": [
+     "耒来和末日只差一横",
+     "辨认辩论辫子三个字难倒我了"
+    ],
+    "F": [
+     "耒来和末日只差一横",
+     "辨认辩论子三个字难倒我了"
+    ]
+   },
+   "perMessage": [
+    {
+     "text": "未来和末日只差一横",
+     "normGtLength": 9,
+     "A": {
+      "ocrText": "耒来和末日只差一一櫛",
+      "cer": 0.3333333333333333,
+      "exact": false
+     },
+     "B": {
+      "ocrText": "耒来和末日只差一横",
+      "cer": 0.1111111111111111,
+      "exact": false
+     },
+     "C": {
+      "ocrText": "未来和末日只差一横",
+      "cer": 0,
+      "exact": true
+     },
+     "D": {
+      "ocrText": "耒来和末日只差一横",
+      "cer": 0.1111111111111111,
+      "exact": false
+     },
+     "E": {
+      "ocrText": "耒来和末日只差一横",
+      "cer": 0.1111111111111111,
+      "exact": false
+     },
+     "F": {
+      "ocrText": "耒来和末日只差一横",
+      "cer": 0.1111111111111111,
+      "exact": false
+     }
+    },
+    {
+     "text": "辨认辩论辫子三个字难倒我了",
+     "normGtLength": 13,
+     "A": {
+      "ocrText": "辨认辩论子三个字难倒我了",
+      "cer": 0.07692307692307693,
+      "exact": false
+     },
+     "B": {
+      "ocrText": "辨认辩论子三个字难倒我了",
+      "cer": 0.07692307692307693,
+      "exact": false
+     },
+     "C": {
+      "ocrText": "辨认辩论辫子三个字难倒我了",
+      "cer": 0,
+      "exact": true
+     },
+     "D": {
+      "ocrText": "辨认辩论子三个字难倒我了",
+      "cer": 0.07692307692307693,
+      "exact": false
+     },
+     "E": {
+      "ocrText": "辨认辩论辫子三个字难倒我了",
+      "cer": 0,
+      "exact": true
+     },
+     "F": {
+      "ocrText": "辨认辩论子三个字难倒我了",
+      "cer": 0.07692307692307693,
+      "exact": false
+     }
+    }
+   ]
+  },
+  {
+   "captureId": "similar_nickname-00",
+   "scenario": "similar_nickname",
+   "ok": true,
+   "alignedPairs": 2,
+   "droppedWinrtLines": 0,
+   "texts": {
+    "A": [
+     "在吗",
+     "在的"
+    ],
+    "B": [
+     "在吗",
+     "在的"
+    ],
+    "C": [
+     "在吗",
+     "在的"
+    ],
+    "D": [
+     "在吗",
+     "在的"
+    ],
+    "E": [
+     "在吗",
+     "在的"
+    ],
+    "F": [
+     "在吗",
+     "在的"
+    ]
+   },
+   "perMessage": [
+    {
+     "text": "在吗",
+     "normGtLength": 2,
+     "A": {
+      "ocrText": "在吗",
+      "cer": 0,
+      "exact": true
+     },
+     "B": {
+      "ocrText": "在吗",
+      "cer": 0,
+      "exact": true
+     },
+     "C": {
+      "ocrText": "在吗",
+      "cer": 0,
+      "exact": true
+     },
+     "D": {
+      "ocrText": "在吗",
+      "cer": 0,
+      "exact": true
+     },
+     "E": {
+      "ocrText": "在吗",
+      "cer": 0,
+      "exact": true
+     },
+     "F": {
+      "ocrText": "在吗",
+      "cer": 0,
+      "exact": true
+     }
+    },
+    {
+     "text": "在的",
+     "normGtLength": 2,
+     "A": {
+      "ocrText": "在的",
+      "cer": 0,
+      "exact": true
+     },
+     "B": {
+      "ocrText": "在的",
+      "cer": 0,
+      "exact": true
+     },
+     "C": {
+      "ocrText": "在的",
+      "cer": 0,
+      "exact": true
+     },
+     "D": {
+      "ocrText": "在的",
+      "cer": 0,
+      "exact": true
+     },
+     "E": {
+      "ocrText": "在的",
+      "cer": 0,
+      "exact": true
+     },
+     "F": {
+      "ocrText": "在的",
+      "cer": 0,
+      "exact": true
+     }
+    }
+   ]
+  },
+  {
+   "captureId": "similar_nickname-01",
+   "scenario": "similar_nickname",
+   "ok": true,
+   "alignedPairs": 2,
+   "droppedWinrtLines": 0,
+   "texts": {
+    "A": [
+     "晚上有空吗",
+     "八点之后"
+    ],
+    "B": [
+     "晚上有空吗",
+     "八点之后"
+    ],
+    "C": [
+     "晚上有空吗",
+     "八点之后"
+    ],
+    "D": [
+     "晚上有空吗",
+     "八点之后"
+    ],
+    "E": [
+     "晚上有空吗",
+     "八点之后"
+    ],
+    "F": [
+     "晚上有空吗",
+     "八点之后"
+    ]
+   },
+   "perMessage": [
+    {
+     "text": "晚上有空吗",
+     "normGtLength": 5,
+     "A": {
+      "ocrText": "晚上有空吗",
+      "cer": 0,
+      "exact": true
+     },
+     "B": {
+      "ocrText": "晚上有空吗",
+      "cer": 0,
+      "exact": true
+     },
+     "C": {
+      "ocrText": "晚上有空吗",
+      "cer": 0,
+      "exact": true
+     },
+     "D": {
+      "ocrText": "晚上有空吗",
+      "cer": 0,
+      "exact": true
+     },
+     "E": {
+      "ocrText": "晚上有空吗",
+      "cer": 0,
+      "exact": true
+     },
+     "F": {
+      "ocrText": "晚上有空吗",
+      "cer": 0,
+      "exact": true
+     }
+    },
+    {
+     "text": "八点之后",
+     "normGtLength": 4,
+     "A": {
+      "ocrText": "八点之后",
+      "cer": 0,
+      "exact": true
+     },
+     "B": {
+      "ocrText": "八点之后",
+      "cer": 0,
+      "exact": true
+     },
+     "C": {
+      "ocrText": "八点之后",
+      "cer": 0,
+      "exact": true
+     },
+     "D": {
+      "ocrText": "八点之后",
+      "cer": 0,
+      "exact": true
+     },
+     "E": {
+      "ocrText": "八点之后",
+      "cer": 0,
+      "exact": true
+     },
+     "F": {
+      "ocrText": "八点之后",
+      "cer": 0,
+      "exact": true
+     }
+    }
+   ]
+  },
+  {
+   "captureId": "truncated_bubble-00",
+   "scenario": "truncated_bubble",
+   "ok": true,
+   "alignedPairs": 2,
+   "droppedWinrtLines": 1,
+   "texts": {
+    "A": [
+     "这是一条被口右边缘截断的超长消息，后半部分内容根本看刁",
+     "收到"
+    ],
+    "B": [
+     "这是一条被口右边缘截断的超长消息后半部分内容根本看刁",
+     "收到"
+    ],
+    "C": [
+     "这是一条被窗口右边缘截断的超长消息，后半部分内容根本看不",
+     "收到"
+    ],
+    "D": [
+     "这是一条被口右边缘截断的超长消息",
+     "收到"
+    ],
+    "E": [
+     "这是一条被窗口右边缘截断的超长消息，后半部分内容根本看不",
+     "收到"
+    ],
+    "F": [
+     "这是一条被口右边缘截断的超长消息后半部分内容根本看刁",
+     "收到"
+    ]
+   },
+   "perMessage": [
+    {
+     "text": "这是一条被窗口右边缘截断的超长消息，后半部分内容根本看不全",
+     "normGtLength": 29,
+     "A": {
+      "ocrText": "这是一条被口右边缘截断的超长消息，后半部分内容根本看刁",
+      "cer": 0.10344827586206896,
+      "exact": false
+     },
+     "B": {
+      "ocrText": "这是一条被口右边缘截断的超长消息后半部分内容根本看刁",
+      "cer": 0.13793103448275862,
+      "exact": false
+     },
+     "C": {
+      "ocrText": "这是一条被窗口右边缘截断的超长消息，后半部分内容根本看不",
+      "cer": 0.034482758620689655,
+      "exact": false
+     },
+     "D": {
+      "ocrText": "这是一条被口右边缘截断的超长消息",
+      "cer": 0.4482758620689655,
+      "exact": false
+     },
+     "E": {
+      "ocrText": "这是一条被窗口右边缘截断的超长消息，后半部分内容根本看不",
+      "cer": 0.034482758620689655,
+      "exact": false
+     },
+     "F": {
+      "ocrText": "这是一条被口右边缘截断的超长消息后半部分内容根本看刁",
+      "cer": 0.13793103448275862,
+      "exact": false
+     }
+    },
+    {
+     "text": "收到",
+     "normGtLength": 2,
+     "A": {
+      "ocrText": "收到",
+      "cer": 0,
+      "exact": true
+     },
+     "B": {
+      "ocrText": "收到",
+      "cer": 0,
+      "exact": true
+     },
+     "C": {
+      "ocrText": "收到",
+      "cer": 0,
+      "exact": true
+     },
+     "D": {
+      "ocrText": "收到",
+      "cer": 0,
+      "exact": true
+     },
+     "E": {
+      "ocrText": "收到",
+      "cer": 0,
+      "exact": true
+     },
+     "F": {
+      "ocrText": "收到",
+      "cer": 0,
+      "exact": true
+     }
+    }
+   ]
+  },
+  {
+   "captureId": "truncated_bubble-01",
+   "scenario": "truncated_bubble",
+   "ok": true,
+   "alignedPairs": 2,
+   "droppedWinrtLines": 0,
+   "texts": {
+    "A": [
+     "超长气泡在截里只显示左边一段，右边直接被裁掉了",
+     ""
+    ],
+    "B": [
+     "超长气泡在截图里只显示左边一段，右边直接被裁扌卓了",
+     "明白了"
+    ],
+    "C": [
+     "超长气泡在截图里只显示左边一段，右边直接被裁掉了",
+     "明白了"
+    ],
+    "D": [
+     "超长气泡在截图里只显示左边一段，右边直接被裁扌卓了",
+     "明白了"
+    ],
+    "E": [
+     "超长气泡在截图里只显示左边一段，右边直接被裁扌卓了",
+     "明白了"
+    ],
+    "F": [
+     "超长气泡在截图里只显示左边一段，右边直接被裁扌卓了",
+     "明白了"
+    ]
+   },
+   "perMessage": [
+    {
+     "text": "超长气泡在截图里只显示左边一段，右边直接被裁掉了",
+     "normGtLength": 24,
+     "A": {
+      "ocrText": "超长气泡在截里只显示左边一段，右边直接被裁掉了",
+      "cer": 0.041666666666666664,
+      "exact": false
+     },
+     "B": {
+      "ocrText": "超长气泡在截图里只显示左边一段，右边直接被裁扌卓了",
+      "cer": 0.08333333333333333,
+      "exact": false
+     },
+     "C": {
+      "ocrText": "超长气泡在截图里只显示左边一段，右边直接被裁掉了",
+      "cer": 0,
+      "exact": true
+     },
+     "D": {
+      "ocrText": "超长气泡在截图里只显示左边一段，右边直接被裁扌卓了",
+      "cer": 0.08333333333333333,
+      "exact": false
+     },
+     "E": {
+      "ocrText": "超长气泡在截图里只显示左边一段，右边直接被裁扌卓了",
+      "cer": 0.08333333333333333,
+      "exact": false
+     },
+     "F": {
+      "ocrText": "超长气泡在截图里只显示左边一段，右边直接被裁扌卓了",
+      "cer": 0.08333333333333333,
+      "exact": false
+     }
+    },
+    {
+     "text": "明白了",
+     "normGtLength": 3,
+     "A": {
+      "ocrText": "",
+      "cer": 1,
+      "exact": false
+     },
+     "B": {
+      "ocrText": "明白了",
+      "cer": 0,
+      "exact": true
+     },
+     "C": {
+      "ocrText": "明白了",
+      "cer": 0,
+      "exact": true
+     },
+     "D": {
+      "ocrText": "明白了",
+      "cer": 0,
+      "exact": true
+     },
+     "E": {
+      "ocrText": "明白了",
+      "cer": 0,
+      "exact": true
+     },
+     "F": {
+      "ocrText": "明白了",
+      "cer": 0,
+      "exact": true
+     }
+    }
+   ]
+  },
+  {
+   "captureId": "engine_conflict-00",
+   "scenario": "engine_conflict",
+   "ok": true,
+   "alignedPairs": 0,
+   "droppedWinrtLines": 0,
+   "texts": {
+    "A": [
+     "",
+     ""
+    ],
+    "B": [
+     "",
+     ""
+    ],
+    "C": [
+     "己已已成成这几个字容易认错",
+     "银行行长重要的事说三遍"
+    ],
+    "D": [
+     "",
+     ""
+    ],
+    "E": [
+     "己已已成成这几个字容易认错",
+     "己已已成成这几个字容易认错"
+    ],
+    "F": [
+     "",
+     ""
+    ]
+   },
+   "perMessage": [
+    {
+     "text": "己已巳戌戍这几个字容易认错",
+     "normGtLength": 13,
+     "A": {
+      "ocrText": "",
+      "cer": 1,
+      "exact": false
+     },
+     "B": {
+      "ocrText": "",
+      "cer": 1,
+      "exact": false
+     },
+     "C": {
+      "ocrText": "己已已成成这几个字容易认错",
+      "cer": 0.23076923076923078,
+      "exact": false
+     },
+     "D": {
+      "ocrText": "",
+      "cer": 1,
+      "exact": false
+     },
+     "E": {
+      "ocrText": "己已已成成这几个字容易认错",
+      "cer": 0.23076923076923078,
+      "exact": false
+     },
+     "F": {
+      "ocrText": "",
+      "cer": 1,
+      "exact": false
+     }
+    },
+    {
+     "text": "银行行长重要的事说三遍",
+     "normGtLength": 11,
+     "A": {
+      "ocrText": "",
+      "cer": 1,
+      "exact": false
+     },
+     "B": {
+      "ocrText": "",
+      "cer": 1,
+      "exact": false
+     },
+     "C": {
+      "ocrText": "银行行长重要的事说三遍",
+      "cer": 0,
+      "exact": true
+     },
+     "D": {
+      "ocrText": "",
+      "cer": 1,
+      "exact": false
+     },
+     "E": {
+      "ocrText": "己已已成成这几个字容易认错",
+      "cer": 1.1818181818181819,
+      "exact": false
+     },
+     "F": {
+      "ocrText": "",
+      "cer": 1,
+      "exact": false
+     }
+    }
+   ]
+  },
+  {
+   "captureId": "engine_conflict-01",
+   "scenario": "engine_conflict",
+   "ok": true,
+   "alignedPairs": 0,
+   "droppedWinrtLines": 0,
+   "texts": {
+    "A": [
+     "",
+     ""
+    ],
+    "B": [
+     "",
+     ""
+    ],
+    "C": [
+     "未末日日看起来很接近",
+     "辩在低清载图里会混"
+    ],
+    "D": [
+     "",
+     ""
+    ],
+    "E": [
+     "未末日日看起来很接近",
+     "未末日日看起来很接近"
+    ],
+    "F": [
+     "",
+     ""
+    ]
+   },
+   "perMessage": [
+    {
+     "text": "未末曰日看起来很接近",
+     "normGtLength": 10,
+     "A": {
+      "ocrText": "",
+      "cer": 1,
+      "exact": false
+     },
+     "B": {
+      "ocrText": "",
+      "cer": 1,
+      "exact": false
+     },
+     "C": {
+      "ocrText": "未末日日看起来很接近",
+      "cer": 0.1,
+      "exact": false
+     },
+     "D": {
+      "ocrText": "",
+      "cer": 1,
+      "exact": false
+     },
+     "E": {
+      "ocrText": "未末日日看起来很接近",
+      "cer": 0.1,
+      "exact": false
+     },
+     "F": {
+      "ocrText": "",
+      "cer": 1,
+      "exact": false
+     }
+    },
+    {
+     "text": "辩辨辫在低清截图里会混",
+     "normGtLength": 11,
+     "A": {
+      "ocrText": "",
+      "cer": 1,
+      "exact": false
+     },
+     "B": {
+      "ocrText": "",
+      "cer": 1,
+      "exact": false
+     },
+     "C": {
+      "ocrText": "辩在低清载图里会混",
+      "cer": 0.2727272727272727,
+      "exact": false
+     },
+     "D": {
+      "ocrText": "",
+      "cer": 1,
+      "exact": false
+     },
+     "E": {
+      "ocrText": "未末日日看起来很接近",
+      "cer": 1,
+      "exact": false
+     },
+     "F": {
+      "ocrText": "",
+      "cer": 1,
+      "exact": false
+     }
+    }
+   ]
+  },
+  {
+   "captureId": "contact_switch-00",
+   "scenario": "contact_switch",
+   "ok": true,
+   "alignedPairs": 2,
+   "droppedWinrtLines": 0,
+   "texts": {
+    "A": [
+     "刚焕了个聊天国口",
+     "截里混了上一个会话的内容"
+    ],
+    "B": [
+     "刚换了个聊天口",
+     "截图里混了上一个会话的内容"
+    ],
+    "C": [
+     "刚换了个聊天窗口",
+     "截图里混了上一个会话的内容"
+    ],
+    "D": [
+     "刚换了个聊天口",
+     "截图里混了上一个会话的内容"
+    ],
+    "E": [
+     "刚换了个聊天窗口",
+     "截图里混了上一个会话的内容"
+    ],
+    "F": [
+     "刚换了个聊天口",
+     "截图里混了上一个会话的内容"
+    ]
+   },
+   "perMessage": [
+    {
+     "text": "刚换了个聊天窗口",
+     "normGtLength": 8,
+     "A": {
+      "ocrText": "刚焕了个聊天国口",
+      "cer": 0.25,
+      "exact": false
+     },
+     "B": {
+      "ocrText": "刚换了个聊天口",
+      "cer": 0.125,
+      "exact": false
+     },
+     "C": {
+      "ocrText": "刚换了个聊天窗口",
+      "cer": 0,
+      "exact": true
+     },
+     "D": {
+      "ocrText": "刚换了个聊天口",
+      "cer": 0.125,
+      "exact": false
+     },
+     "E": {
+      "ocrText": "刚换了个聊天窗口",
+      "cer": 0,
+      "exact": true
+     },
+     "F": {
+      "ocrText": "刚换了个聊天口",
+      "cer": 0.125,
+      "exact": false
+     }
+    },
+    {
+     "text": "截图里混了上一个会话的内容",
+     "normGtLength": 13,
+     "A": {
+      "ocrText": "截里混了上一个会话的内容",
+      "cer": 0.07692307692307693,
+      "exact": false
+     },
+     "B": {
+      "ocrText": "截图里混了上一个会话的内容",
+      "cer": 0,
+      "exact": true
+     },
+     "C": {
+      "ocrText": "截图里混了上一个会话的内容",
+      "cer": 0,
+      "exact": true
+     },
+     "D": {
+      "ocrText": "截图里混了上一个会话的内容",
+      "cer": 0,
+      "exact": true
+     },
+     "E": {
+      "ocrText": "截图里混了上一个会话的内容",
+      "cer": 0,
+      "exact": true
+     },
+     "F": {
+      "ocrText": "截图里混了上一个会话的内容",
+      "cer": 0,
+      "exact": true
+     }
+    }
+   ]
+  },
+  {
+   "captureId": "contact_switch-01",
+   "scenario": "contact_switch",
+   "ok": true,
+   "alignedPairs": 2,
+   "droppedWinrtLines": 0,
+   "texts": {
+    "A": [
+     "切焕联系人之后的截",
+     "注意别吧上一条对话当成新氵肖息"
+    ],
+    "B": [
+     "切换联系人之后的截图",
+     "/ 一另刂吧上一条对话当成新消息"
+    ],
+    "C": [
+     "切换联系人之后的截图",
+     "注意别把上一条对话当成新消息"
+    ],
+    "D": [
+     "切换联系人之后的截图",
+     "/ 一另刂吧上一条对话当成新消息"
+    ],
+    "E": [
+     "切换联系人之后的截图",
+     "/ 一另刂吧上一条对话当成新消息"
+    ],
+    "F": [
+     "切换联系人之后的截图",
+     "/ 一另刂吧上一条对话当成新消息"
+    ]
+   },
+   "perMessage": [
+    {
+     "text": "切换联系人之后的截图",
+     "normGtLength": 10,
+     "A": {
+      "ocrText": "切焕联系人之后的截",
+      "cer": 0.2,
+      "exact": false
+     },
+     "B": {
+      "ocrText": "切换联系人之后的截图",
+      "cer": 0,
+      "exact": true
+     },
+     "C": {
+      "ocrText": "切换联系人之后的截图",
+      "cer": 0,
+      "exact": true
+     },
+     "D": {
+      "ocrText": "切换联系人之后的截图",
+      "cer": 0,
+      "exact": true
+     },
+     "E": {
+      "ocrText": "切换联系人之后的截图",
+      "cer": 0,
+      "exact": true
+     },
+     "F": {
+      "ocrText": "切换联系人之后的截图",
+      "cer": 0,
+      "exact": true
+     }
+    },
+    {
+     "text": "注意别把上一条对话当成新消息",
+     "normGtLength": 14,
+     "A": {
+      "ocrText": "注意别吧上一条对话当成新氵肖息",
+      "cer": 0.21428571428571427,
+      "exact": false
+     },
+     "B": {
+      "ocrText": "/ 一另刂吧上一条对话当成新消息",
+      "cer": 0.35714285714285715,
+      "exact": false
+     },
+     "C": {
+      "ocrText": "注意别把上一条对话当成新消息",
+      "cer": 0,
+      "exact": true
+     },
+     "D": {
+      "ocrText": "/ 一另刂吧上一条对话当成新消息",
+      "cer": 0.35714285714285715,
+      "exact": false
+     },
+     "E": {
+      "ocrText": "/ 一另刂吧上一条对话当成新消息",
+      "cer": 0.35714285714285715,
+      "exact": false
+     },
+     "F": {
+      "ocrText": "/ 一另刂吧上一条对话当成新消息",
+      "cer": 0.35714285714285715,
+      "exact": false
+     }
+    }
+   ]
+  }
+ ],
+ "totals": {
+  "A": {
+   "id": "A",
+   "label": "v0.2.8 baseline（winrt orig + desktop.ts 后处理）",
+   "stage": "baseline",
+   "cer": 0.35585585585585583,
+   "sentenceAcc": 0.30303030303030304,
+   "editDistance": 237,
+   "gtChars": 666,
+   "messages": 66,
+   "correctMessages": 20,
+   "emptyGtOk": 0
+  },
+  "B": {
+   "id": "B",
+   "label": "仅预处理（winrt upscale3x）+ v0.2.8 后处理",
+   "stage": "preprocess",
+   "cer": 0.22822822822822822,
+   "sentenceAcc": 0.5151515151515151,
+   "editDistance": 152,
+   "gtChars": 666,
+   "messages": 66,
+   "correctMessages": 34,
+   "emptyGtOk": 0
+  },
+  "C": {
+   "id": "C",
+   "label": "仅换引擎（RapidOCR orig，无第二引擎）",
+   "stage": "engine",
+   "cer": 0.02252252252252252,
+   "sentenceAcc": 0.8484848484848485,
+   "editDistance": 15,
+   "gtChars": 666,
+   "messages": 66,
+   "correctMessages": 56,
+   "emptyGtOk": 0
+  },
+  "D": {
+   "id": "D",
+   "label": "仅新对齐（B 的行按新对齐过滤，未对齐行丢弃）",
+   "stage": "align",
+   "cer": 0.24474474474474475,
+   "sentenceAcc": 0.5151515151515151,
+   "editDistance": 163,
+   "gtChars": 666,
+   "messages": 66,
+   "correctMessages": 34,
+   "emptyGtOk": 0
+  },
+  "E": {
+   "id": "E",
+   "label": "仅新融合（对齐后行 + 消息级投票，不含纠错）",
+   "stage": "fusion",
+   "cer": 0.12912912912912913,
+   "sentenceAcc": 0.6363636363636364,
+   "editDistance": 86,
+   "gtChars": 666,
+   "messages": 66,
+   "correctMessages": 42,
+   "emptyGtOk": 0
+  },
+  "F": {
+   "id": "F",
+   "label": "完整 v3（winrt upscale3x + v3 管线：投票 + 纠错）",
+   "stage": "full-v3",
+   "cer": 0.22072072072072071,
+   "sentenceAcc": 0.5151515151515151,
+   "editDistance": 147,
+   "gtChars": 666,
+   "messages": 66,
+   "correctMessages": 34,
+   "emptyGtOk": 0
+  }
+ },
+ "events": {
+  "messages": 66,
+  "conflictCount": 28,
+  "uncertainCount": 12,
+  "correctedCount": 3,
+  "misCorrectedCount": 0,
+  "duplicateEvents": 0,
+  "conflictRate": 0.42424242424242425,
+  "uncertainRate": 0.18181818181818182,
+  "misCorrectedRate": 0,
+  "wrongContactAssociation": "未测：合成语料每张图只有单个会话，无跨会话关联可构造（真实数据需另测）"
+ },
+ "byScenario": {
+  "A": {
+   "small_font": {
+    "cer": 0.7714285714285715,
+    "sentenceAcc": 0
+   },
+   "gaussian_blur": {
+    "cer": 1,
+    "sentenceAcc": 0
+   },
+   "scale_125": {
+    "cer": 0.06451612903225806,
+    "sentenceAcc": 0.5
+   },
+   "scale_175": {
+    "cer": 0.03333333333333333,
+    "sentenceAcc": 0.75
+   },
+   "repeat_two": {
+    "cer": 0,
+    "sentenceAcc": 1
+   },
+   "numbers": {
+    "cer": 0.2037037037037037,
+    "sentenceAcc": 0
+   },
+   "dark_mode": {
+    "cer": 0.12121212121212122,
+    "sentenceAcc": 0.5
+   },
+   "multi_message": {
+    "cer": 0.20689655172413793,
+    "sentenceAcc": 0.2
+   },
+   "stretched": {
+    "cer": 1.05,
+    "sentenceAcc": 0
+   },
+   "ai_disclaimer": {
+    "cer": 0.34615384615384615,
+    "sentenceAcc": 0
+   },
+   "homophone": {
+    "cer": 0.09523809523809523,
+    "sentenceAcc": 0.5
+   },
+   "similar_nickname": {
+    "cer": 0,
+    "sentenceAcc": 1
+   },
+   "truncated_bubble": {
+    "cer": 0.1206896551724138,
+    "sentenceAcc": 0.25
+   },
+   "engine_conflict": {
+    "cer": 1,
+    "sentenceAcc": 0
+   },
+   "contact_switch": {
+    "cer": 0.17777777777777778,
+    "sentenceAcc": 0
+   }
+  },
+  "B": {
+   "small_font": {
+    "cer": 0.2571428571428571,
+    "sentenceAcc": 0
+   },
+   "gaussian_blur": {
+    "cer": 0.7777777777777778,
+    "sentenceAcc": 0
+   },
+   "scale_125": {
+    "cer": 0.03225806451612903,
+    "sentenceAcc": 0.75
+   },
+   "scale_175": {
+    "cer": 0.03333333333333333,
+    "sentenceAcc": 0.75
+   },
+   "repeat_two": {
+    "cer": 0,
+    "sentenceAcc": 1
+   },
+   "numbers": {
+    "cer": 0.12037037037037036,
+    "sentenceAcc": 0
+   },
+   "dark_mode": {
+    "cer": 0.030303030303030304,
+    "sentenceAcc": 0.75
+   },
+   "multi_message": {
+    "cer": 0.06896551724137931,
+    "sentenceAcc": 0.9
+   },
+   "stretched": {
+    "cer": 0.85,
+    "sentenceAcc": 0
+   },
+   "ai_disclaimer": {
+    "cer": 0.02564102564102564,
+    "sentenceAcc": 0.5
+   },
+   "homophone": {
+    "cer": 0.047619047619047616,
+    "sentenceAcc": 0.5
+   },
+   "similar_nickname": {
+    "cer": 0,
+    "sentenceAcc": 1
+   },
+   "truncated_bubble": {
+    "cer": 0.10344827586206896,
+    "sentenceAcc": 0.5
+   },
+   "engine_conflict": {
+    "cer": 1,
+    "sentenceAcc": 0
+   },
+   "contact_switch": {
+    "cer": 0.13333333333333333,
+    "sentenceAcc": 0.5
+   }
+  },
+  "C": {
+   "small_font": {
+    "cer": 0.11428571428571428,
+    "sentenceAcc": 0.25
+   },
+   "gaussian_blur": {
+    "cer": 0,
+    "sentenceAcc": 1
+   },
+   "scale_125": {
+    "cer": 0,
+    "sentenceAcc": 1
+   },
+   "scale_175": {
+    "cer": 0,
+    "sentenceAcc": 1
+   },
+   "repeat_two": {
+    "cer": 0,
+    "sentenceAcc": 1
+   },
+   "numbers": {
+    "cer": 0.009259259259259259,
+    "sentenceAcc": 0.75
+   },
+   "dark_mode": {
+    "cer": 0,
+    "sentenceAcc": 1
+   },
+   "multi_message": {
+    "cer": 0,
+    "sentenceAcc": 1
+   },
+   "stretched": {
+    "cer": 0,
+    "sentenceAcc": 1
+   },
+   "ai_disclaimer": {
+    "cer": 0.01282051282051282,
+    "sentenceAcc": 0.75
+   },
+   "homophone": {
+    "cer": 0.023809523809523808,
+    "sentenceAcc": 0.75
+   },
+   "similar_nickname": {
+    "cer": 0,
+    "sentenceAcc": 1
+   },
+   "truncated_bubble": {
+    "cer": 0.017241379310344827,
+    "sentenceAcc": 0.75
+   },
+   "engine_conflict": {
+    "cer": 0.15555555555555556,
+    "sentenceAcc": 0.25
+   },
+   "contact_switch": {
+    "cer": 0,
+    "sentenceAcc": 1
+   }
+  },
+  "D": {
+   "small_font": {
+    "cer": 0.2571428571428571,
+    "sentenceAcc": 0
+   },
+   "gaussian_blur": {
+    "cer": 0.8055555555555556,
+    "sentenceAcc": 0
+   },
+   "scale_125": {
+    "cer": 0.0967741935483871,
+    "sentenceAcc": 0.75
+   },
+   "scale_175": {
+    "cer": 0.03333333333333333,
+    "sentenceAcc": 0.75
+   },
+   "repeat_two": {
+    "cer": 0,
+    "sentenceAcc": 1
+   },
+   "numbers": {
+    "cer": 0.12037037037037036,
+    "sentenceAcc": 0
+   },
+   "dark_mode": {
+    "cer": 0.030303030303030304,
+    "sentenceAcc": 0.75
+   },
+   "multi_message": {
+    "cer": 0.06896551724137931,
+    "sentenceAcc": 0.9
+   },
+   "stretched": {
+    "cer": 0.825,
+    "sentenceAcc": 0
+   },
+   "ai_disclaimer": {
+    "cer": 0.02564102564102564,
+    "sentenceAcc": 0.5
+   },
+   "homophone": {
+    "cer": 0.047619047619047616,
+    "sentenceAcc": 0.5
+   },
+   "similar_nickname": {
+    "cer": 0,
+    "sentenceAcc": 1
+   },
+   "truncated_bubble": {
+    "cer": 0.25862068965517243,
+    "sentenceAcc": 0.5
+   },
+   "engine_conflict": {
+    "cer": 1,
+    "sentenceAcc": 0
+   },
+   "contact_switch": {
+    "cer": 0.13333333333333333,
+    "sentenceAcc": 0.5
+   }
+  },
+  "E": {
+   "small_font": {
+    "cer": 0.2,
+    "sentenceAcc": 0
+   },
+   "gaussian_blur": {
+    "cer": 0.1111111111111111,
+    "sentenceAcc": 0.75
+   },
+   "scale_125": {
+    "cer": 0,
+    "sentenceAcc": 1
+   },
+   "scale_175": {
+    "cer": 0.03333333333333333,
+    "sentenceAcc": 0.75
+   },
+   "repeat_two": {
+    "cer": 0,
+    "sentenceAcc": 1
+   },
+   "numbers": {
+    "cer": 0.12037037037037036,
+    "sentenceAcc": 0
+   },
+   "dark_mode": {
+    "cer": 0.030303030303030304,
+    "sentenceAcc": 0.75
+   },
+   "multi_message": {
+    "cer": 0,
+    "sentenceAcc": 1
+   },
+   "stretched": {
+    "cer": 0.525,
+    "sentenceAcc": 0.25
+   },
+   "ai_disclaimer": {
+    "cer": 0.02564102564102564,
+    "sentenceAcc": 0.5
+   },
+   "homophone": {
+    "cer": 0.023809523809523808,
+    "sentenceAcc": 0.75
+   },
+   "similar_nickname": {
+    "cer": 0,
+    "sentenceAcc": 1
+   },
+   "truncated_bubble": {
+    "cer": 0.05172413793103448,
+    "sentenceAcc": 0.5
+   },
+   "engine_conflict": {
+    "cer": 0.6222222222222222,
+    "sentenceAcc": 0
+   },
+   "contact_switch": {
+    "cer": 0.1111111111111111,
+    "sentenceAcc": 0.75
+   }
+  },
+  "F": {
+   "small_font": {
+    "cer": 0.2571428571428571,
+    "sentenceAcc": 0
+   },
+   "gaussian_blur": {
+    "cer": 0.7777777777777778,
+    "sentenceAcc": 0
+   },
+   "scale_125": {
+    "cer": 0.03225806451612903,
+    "sentenceAcc": 0.75
+   },
+   "scale_175": {
+    "cer": 0.03333333333333333,
+    "sentenceAcc": 0.75
+   },
+   "repeat_two": {
+    "cer": 0,
+    "sentenceAcc": 1
+   },
+   "numbers": {
+    "cer": 0.12037037037037036,
+    "sentenceAcc": 0
+   },
+   "dark_mode": {
+    "cer": 0.030303030303030304,
+    "sentenceAcc": 0.75
+   },
+   "multi_message": {
+    "cer": 0.06896551724137931,
+    "sentenceAcc": 0.9
+   },
+   "stretched": {
+    "cer": 0.725,
+    "sentenceAcc": 0
+   },
+   "ai_disclaimer": {
+    "cer": 0.02564102564102564,
+    "sentenceAcc": 0.5
+   },
+   "homophone": {
+    "cer": 0.047619047619047616,
+    "sentenceAcc": 0.5
+   },
+   "similar_nickname": {
+    "cer": 0,
+    "sentenceAcc": 1
+   },
+   "truncated_bubble": {
+    "cer": 0.10344827586206896,
+    "sentenceAcc": 0.5
+   },
+   "engine_conflict": {
+    "cer": 1,
+    "sentenceAcc": 0
+   },
+   "contact_switch": {
+    "cer": 0.13333333333333333,
+    "sentenceAcc": 0.5
+   }
+  }
+ }
+}
