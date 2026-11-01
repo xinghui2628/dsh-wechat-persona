@@ -15,8 +15,8 @@
 #   9. 敏感信息扫描               → Sensitive data scan（scripts/check-sensitive.mjs）
 #  10. 发布包内容检查             → Package content check（scripts/check-package.mjs）
 # - 不使用「npm ci 失败就 npm install」之类回退：锁文件问题必须直接暴露。
-# - linux-guard job 跑与平台无关的子集（类型检查/测试/敏感扫描），OCR bench 在 Linux 上
-#   不可能可用，显式 marked skip（见该 job 内 ::notice::）。
+# - linux-guard job 跑与平台无关的子集（类型检查/测试/敏感扫描），OCR bench 与桌面通道测试
+#   在 Linux 上不可能通过，显式 marked skip（见该 job 内 ::notice::）。
 # - **不得依赖私人数据**：CI 不读取真实微信、聊天图片、个人截图、OneDrive 路径或任何
 #   本机用户目录；OCR 语料全部为 scripts/ocr/gen_corpus.py 生成的合成虚构图像（已入库）。
 #   check-sensitive 只扫 git 受跟踪文件；新增加的文件提交后才会被扫描。
@@ -193,7 +193,11 @@ jobs:
         run: npm run typecheck
 
       - name: Sandbox tests (cross-platform units + fakes)
-        run: npm run test:sandbox
+        run: |
+          # 桌面通道（test/channels）依赖 Windows PowerShell + 微信窗口自动化，Linux runner 上
+          # 不可能通过；它们由 windows-latest 的 verify job 覆盖，本 job 只跑跨平台子集。
+          echo "::notice title=Linux guard::channels tests are Windows-only and run in the windows-latest verify job."
+          node --import ./test/core/sandbox-preload.mjs ./node_modules/vitest/vitest.mjs run --pool=threads test/core test/engine test/server test/client
 
       - name: Sensitive data scan
         run: node scripts/check-sensitive.mjs
