@@ -17,6 +17,11 @@
 - API 鉴权加固：除回环 socket + `x-dsh-wechat-persona` 头外，新增 Host/Origin/Sec-Fetch-Site 校验、可选 Bearer token（`config.apiToken`，SHA-256 + `timingSafeEqual` 恒定时间比较，可落盘到 dataDir 0600 文件）、进程内限速（240 次/分）、请求体 10s 超时、Content-Type 校验。
 - 人格导入安全：schema 白名单 + 深度/数组/字符串长度上限、拒绝原型污染键与路径穿越 id、错误信息不回显原值；新增 `docs/SECURITY.md`（威胁模型/鉴权矩阵/残余风险）。
 
+### AI 身份透明（任务书 10.4）
+
+- 人设不再声称「不是 AI」：系统提示词最高优先级规则新增「AI 身份透明」（被直接问是不是 AI/机器人/模型时如实说明，不冒充真人、不声称是具体的人、不诱导敏感信息），默认人格兜底、内置人格 systemPrompt 与示例对话、人格导入转换约束、`persona/persona.md`、`persona/examples.md` 全部同步。
+- 相应更新 `test/core/persona.test.ts`、`test/core/persona-library.test.ts` 断言（内置人格提示词长度仍在 200-500 区间）。
+
 ### OCR 流水线重构（阶段 B/C）
 
 - 纯逻辑抽离到 `src/core/ocr/*`：`types/geometry/normalize/correction/vote/bubbles/baseline/pipeline`，可单测、无 IO；`src/channels/pc/desktop.ts` 移除 `// @ts-nocheck` 与全部 `any`，改为强类型（`tsc --noEmit` 0 错）。

@@ -142,7 +142,7 @@ describe('内置人格包（真实 personas/builtin）', () => {
       const promptLength = Array.from(pack.systemPrompt).length
       expect(promptLength, `${id} 提示词过短`).toBeGreaterThanOrEqual(200)
       expect(promptLength, `${id} 提示词过长`).toBeLessThanOrEqual(500)
-      for (const phrase of ['不自称 AI', '不客服腔', '短句口语']) {
+      for (const phrase of ['如实说是 AI', '不客服腔', '短句口语']) {
         expect(pack.systemPrompt, `${id} 缺少约束「${phrase}」`).toContain(phrase)
       }
       expect(pack.examples.length).toBeGreaterThanOrEqual(8)
@@ -404,7 +404,7 @@ describe('importJson / SillyTavern 兼容', () => {
     expect(pack?.tags).toEqual(['治愈', '日常'])
     expect(pack?.systemPrompt).toContain('【角色设定】')
     expect(pack?.systemPrompt).toContain('安静、慢热、爱猫。')
-    expect(pack?.systemPrompt).toContain('不自称 AI')
+    expect(pack?.systemPrompt).toContain('如实说是 AI')
     expect(pack?.systemPrompt).toContain('不客服腔')
     expect(pack?.examples).toEqual([
       { user: '在吗', reply: '在的，咋啦' },

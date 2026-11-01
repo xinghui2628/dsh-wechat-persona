@@ -129,7 +129,7 @@ describe('loadPersona', () => {
     const { logger, warns } = makeLogger()
     const pack = await loadPersona({ dir, name: '小号', logger })
     expect(pack.systemPrompt).toContain('小号')
-    expect(pack.systemPrompt).toContain('不自称 AI')
+    expect(pack.systemPrompt).toContain('如实说是 AI')
     expect(pack.examples).toHaveLength(3)
     expect(warns).toHaveLength(1)
   })
