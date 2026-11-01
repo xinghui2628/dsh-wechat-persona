@@ -1,8 +1,18 @@
 import type { OcrAgreement } from './types.ts'
 
 /**
- * 置信度评估输入（设计文档 6.5）。
- * 只接收真实可得的证据：没有原生 confidence 就传 undefined（不得编造/占位）。
+ * 可解释「识别质量」评估（设计文档 6.5，发布前验收任务书 4.2）。
+ *
+ * ## 这是规则评分，不是概率
+ * `score` 是多因子加权规则分（0..1），便于在诊断中心解释与调阈值；
+ * **不是概率**、没有经过概率校准，禁止在 UI/日志/文档中宣称「置信度 90%」这类概率语义。
+ *
+ * ## 两个阈值（与 PS1 的 0.90 / 0.85 不是一个量纲）
+ * - `CONFIDENCE_HIGH = 0.75` / `CONFIDENCE_LOW = 0.45`：本文件的「多因子加权质量分」
+ *   分档阈值，只决定 accept / verify / reject 三分支（放行 / 二次验证 / 不投递）。
+ * - PS1 `scripts/pwsh/wechat-uia.ps1` 的 `0.90` 是双引擎文本**重合度**（agree 线），
+ *   `0.85` 是第二引擎**原生 score 的采纳线**（原生分数与我们加权规则分不同量纲）。
+ * 两者不可互换、不可互相比较，后续调参也需分别标定。
  */
 export interface ConfidenceInputs {
   /** 引擎原生置信度 0..1；Windows OCR 不提供 → undefined，不计分 */
@@ -52,9 +62,15 @@ export interface ConfidenceEvaluation {
   vetoed: boolean
 }
 
-/** 高可信阈值：达到即进入正常回复流程。 */
+/**
+ * 规则评分高阈值（0..1，加权规则分，非概率）：达到即进入正常流程。
+ * 与 PS1 的 0.90 重合度线 / 0.85 第二引擎原生分采纳线不是同一量纲。
+ */
 export const CONFIDENCE_HIGH = 0.75
-/** 低可信阈值：低于该值不自动回复；介于两者之间需要二次验证。 */
+/**
+ * 规则评分低阈值（0..1，加权规则分，非概率）：低于该值不自动投递；
+ * 介于低/高阈值之间需要二次验证（同帧第二引擎或重识别）。
+ */
 export const CONFIDENCE_LOW = 0.45
 
 const WEIGHTS = {
@@ -196,7 +212,7 @@ export function evaluateConfidence(inputs: ConfidenceInputs = {}): ConfidenceEva
     parts.push(`文本很短（${inputs.textLength} 字）`)
   }
   const decisionLabel = decision === 'accept' ? '可放行' : decision === 'verify' ? '需二次验证' : '不自动投递'
-  parts.unshift(`置信度 ${format(score)}，${decisionLabel}（${decision}）`)
+  parts.unshift(`规则评分 ${format(score)}（非概率），${decisionLabel}（${decision}）`)
 
   return { score, signals, decision, explain: parts.join('；'), vetoed }
 }

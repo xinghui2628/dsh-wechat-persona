@@ -33,6 +33,9 @@ export interface Point {
 /** 发送模式（任务书 13.4）：auto=自动发送；draft=只生成草稿；confirm=草稿+人工确认。 */
 export type SendMode = 'auto' | 'draft' | 'confirm'
 
+/** OCR 读取流水线模式（任务书 4.3 Feature Flag）：v3=新流水线；legacy=回退 v0.2.8 行为。 */
+export type OcrPipelineMode = 'legacy' | 'v3'
+
 export interface WechatPersonaConfig {
   /** 总开关（关闭时插件不启动任何监听，工具返回停用提示）。 */
   enabled: boolean
@@ -76,6 +79,21 @@ export interface WechatPersonaConfig {
    * 建议只在本机配置；GET /config 会隐藏该字段，不会回显明文。
    */
   apiToken: string
+  /**
+   * 只读测试模式（发布前验收专用，默认 false）。
+   *
+   * 开启后代码层硬性隔离「只读」与「会改应用状态」：一切真实通道发送（自动回复、
+   * `/test/send`、草稿批准）被拒绝并返回 `delivery: 'not-sent'`；不会执行输入框粘贴/
+   * 回车等键鼠模拟；重启后配置保持开启，不会自动恢复真实发送。
+   */
+  readOnlyTestMode: boolean
+  /**
+   * OCR 读取流水线模式（任务书 4.3 受控 Feature Flag，默认 `v3`）。
+   * - `v3`：v3.0.0 新流水线（气泡归属、不确定拒绝、置信度门禁）；
+   * - `legacy`：回退 v0.2.8 行为（脚本返回消息全部接受，仅保留自回声过滤），
+   *   用于真实设备验证期一键回退（不改变脚本采集与 ack）。
+   */
+  ocrPipelineMode: OcrPipelineMode
 
   /** 人格库（多套人格、切换、启停）。 */
   persona: {
@@ -305,6 +323,10 @@ export const Config: z<WechatPersonaConfig> = z.object({
     .default('auto')
     .description('发送模式：auto=生成后自动发送（默认）；draft=只生成草稿，需在设置页人工「批准」后才发送；confirm=只生成草稿，人工确认后发送（safeMode 优先级更高）'),
   apiToken: z.string().default('').description('API 共享 token：留空=兼容模式（启动时自动生成到数据目录但不强制）；填写后所有 API 请求必须带 Authorization: Bearer <token>'),
+  readOnlyTestMode: z.boolean().default(false).description('只读测试模式（发布前验收用）：开启后代码层拒绝一切真实通道发送与键鼠模拟，重启后仍保持；用于真实微信只读回归，默认关闭'),
+  ocrPipelineMode: z.union([z.const('legacy'), z.const('v3')])
+    .default('v3')
+    .description('OCR 读取流水线模式：v3=新流水线（气泡归属/不确定拒绝/置信度门禁，默认）；legacy=回退 v0.2.8 行为（真实设备验证期一键回退）'),
 
   persona: z.object({
     activeId: z.string().default('builtin-small').description('当前启用的人格包 id；留空 = 关闭人格回复'),
@@ -521,6 +543,17 @@ export function migrateConfig(input: unknown): {
     raw.sendMode = 'auto'
     changed = true
     notes.push('迁移：新增 sendMode 默认 auto（生成后自动发送）')
+  }
+  // 3.0.1 新增只读测试模式 / OCR 流水线模式：旧配置没有这些字段。
+  if (typeof raw.readOnlyTestMode !== 'boolean') {
+    raw.readOnlyTestMode = false
+    changed = true
+    notes.push('迁移：新增 readOnlyTestMode 默认 false（只读测试模式默认关闭）')
+  }
+  if (raw.ocrPipelineMode !== 'legacy' && raw.ocrPipelineMode !== 'v3') {
+    raw.ocrPipelineMode = 'v3'
+    changed = true
+    notes.push('迁移：新增 ocrPipelineMode 默认 v3（可用 legacy 一键回退）')
   }
   if (typeof reply.groupChatEnabled !== 'boolean') {
     reply.groupChatEnabled = false

@@ -3553,6 +3553,34 @@
               title: '安全红线',
               desc: '命中违禁词会暂停回复并记录风控事件；建议保留默认开关。',
             },
+            // 发布前验收（任务书第五部分）：只读测试模式展示。开启后本页不提供关闭按钮（防止误操作绕过），
+            // 关闭需经配置文件/二次确认；未开启时允许在这里开启，便于验收前准备。
+            draft.readOnlyTestMode === true
+              ? h(
+                  'div',
+                  { className: 'dwp-row' },
+                  h(Badge, { tone: 'warn' }, '只读测试模式已开启'),
+                  h(
+                    'span',
+                    { className: 'dwp-hint' },
+                    '代码层已禁止一切真实通道发送：自动回复、手动测试、草稿批准都会被拒绝；mock 通道仍可空转。该模式是持久化配置，重启后仍生效，不能在本页关闭（需修改配置文件并重启插件）。',
+                  ),
+                )
+              : h(
+                  'div',
+                  { className: 'dwp-row' },
+                  h(
+                    Button,
+                    { size: 'sm', onClick: function () { set('readOnlyTestMode', true) } },
+                    '开启只读测试模式',
+                  ),
+                  h(
+                    'span',
+                    { className: 'dwp-hint' },
+                    '发布前验收用：开启并保存后，引擎/通道/API/PS1 四层都会拒绝一切真实发送（自动回复、测试发送、草稿批准、键盘回车/粘贴提交），仍可读取与诊断；开启后本页不提供关闭按钮。',
+                  ),
+                ),
+            h('div', { className: 'dwp-divider' }),
             // task-12 / 13.4：发送模式（auto / draft / confirm）。draft/confirm 只生成草稿，
             // 必须在「日志与测试 → 待发送草稿」里人工批准后才会真正发送。
             h(Field, {
@@ -3730,6 +3758,8 @@
         const events = decorateEvents(logs.data && logs.data.events, limit)
         const summary = logs.data && logs.data.summary ? logs.data.summary : null
         const status = s.status || null
+        // 发布前验收（任务书第五部分）：只读测试模式（配置真源，重启后仍生效）。
+        const readOnlyTestMode = s.config && s.config.readOnlyTestMode === true
 
         // Phase F：OCR / 读屏诊断（只读，不触发截图；通道未提供时显示原因）。
         const [ocr, setOcr] = React.useState(null)
@@ -3980,6 +4010,14 @@
                 h(Button, { size: 'sm', busy: draftBusy, onClick: refreshDrafts }, '刷新'),
               ),
             },
+            readOnlyTestMode
+              ? h(
+                  'div',
+                  { className: 'dwp-row' },
+                  h(Badge, { tone: 'warn' }, '只读测试模式已开启'),
+                  h('span', { className: 'dwp-hint' }, '「批准」会触发真实发送，已被代码层禁用（API 返回 409，detail=read-only-mode）；「拒绝」仍可用。'),
+                )
+              : null,
             draftError ? h('div', { className: 'dwp-errorBox' }, '读取草稿失败：' + draftError) : null,
             !drafts && !draftError ? h('div', { className: 'dwp-hint' }, '正在读取草稿…') : null,
             drafts && drafts.length === 0 ? h(EmptyState, null, '暂无待发送草稿（当前是自动发送模式，或还没有生成过草稿）。') : null,
@@ -4010,7 +4048,7 @@
                         'div',
                         { className: 'dwp-actions' },
                         draft.status === 'pending'
-                          ? h(Button, { size: 'sm', variant: 'primary', busy: busy, onClick: function () { decideDraft('approve', draft.id) } }, '批准')
+                          ? h(Button, { size: 'sm', variant: 'primary', busy: busy, disabled: readOnlyTestMode, title: readOnlyTestMode ? '只读测试模式下禁止批准发送' : '', onClick: function () { decideDraft('approve', draft.id) } }, '批准')
                           : null,
                         draft.status === 'pending'
                           ? h(Button, { size: 'sm', busy: busy, onClick: function () { decideDraft('reject', draft.id) } }, '拒绝')
@@ -4056,6 +4094,8 @@
                   h(KeyValue, null, '截图模式', ocr.screenshotMode || '—'),
                   h(KeyValue, null, '引擎版本', ocr.engineVersion || '—'),
                   h(KeyValue, null, '质量', ocr.qualityStatus || '—'),
+                  // 发布前验收（任务书 4.3）：受控流水线 flag（legacy=回退 v0.2.8 行为；v3=归属/融合/置信度门禁）。
+                  h(KeyValue, null, 'OCR 流水线', ocr.pipelineMode || '—'),
                   h(KeyValue, null, '二次 OCR', ocr.secondOcrUsed ? '是' : '否'),
                   h(KeyValue, null, 'reject 行数', ocr.rejectCount === undefined ? '—' : String(ocr.rejectCount)),
                   h(KeyValue, null, '冲突数', ocr.conflictCount === undefined ? '—' : String(ocr.conflictCount)),
@@ -4705,6 +4745,16 @@
               tone: 'warn',
             }
           : null
+        // 发布前验收（任务书第五部分）：只读测试模式（持久化配置）全局提示。
+        // 该提示只做展示，页面上不提供任何绕过发送门禁的开关。
+        const readOnlyTestModeOn = !!(config && config.readOnlyTestMode === true)
+        const readOnlyTestModeMessage = readOnlyTestModeOn
+          ? {
+              text:
+                '只读测试模式已开启（持久化配置，重启后仍生效）：代码层已禁止一切真实发送——自动回复、/test/send、/drafts/approve、desktop 发送以及 PS1 的键盘回车/粘贴提交都会被拒绝；当前仅允许读取、诊断与 mock 空转。',
+              tone: 'warn',
+            }
+          : null
 
         const titleNode = h(
           'div',
@@ -4747,6 +4797,7 @@
                   h(Badge, { tone: view.tone }, view.label),
                   health && health.version ? h(Badge, { tone: 'neutral' }, 'v' + health.version) : null,
                   readOnly ? h(Badge, { tone: 'warn', title: readOnlyReason || '配置当前不可写' }, '只读') : null,
+                  readOnlyTestModeOn ? h(Badge, { tone: 'warn', title: '只读测试模式：代码层禁止一切真实发送' }, '只读测试模式') : null,
                   h(Button, { size: 'sm', onClick: function () { load(true) } }, '刷新'),
                 ),
               ),
@@ -4790,6 +4841,7 @@
                 })
               : null,
             readOnlyMessage ? h(Banner, { message: readOnlyMessage }) : null,
+            readOnlyTestModeMessage ? h(Banner, { message: readOnlyTestModeMessage }) : null,
             config && config.onboardingDone !== true ? h(OnboardingWizard, { shared: shared }) : null,
             h(
               'div',

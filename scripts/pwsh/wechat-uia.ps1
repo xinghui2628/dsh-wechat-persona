@@ -65,6 +65,8 @@ param(
     # 可选：上一次读取已成功投递的 captureId（水位线）。脚本据此丢弃已确认的 pending 行；
     # 未确认的行仍会重放（消息 id 稳定，调用方靠 inFlight 去重）。
     [string]$Ack = '',
+    # 只读测试模式（发布前验收第五部分）：拒绝一切发送与键鼠模拟；read 只允许 -NoSearch 被动读取。
+    [switch]$ReadOnly,
     # 可选：shot 动作的截图输出路径（默认写到临时目录）。
     [string]$OutPath = ''
 )
@@ -161,6 +163,8 @@ function Char-IsAsciiWord([char]$Ch) { return ([int]$Ch -lt 128 -and [char]::IsL
 
 # ── 脚本级配置 ───────────────────────────────────────────────────────────
 $script:Force = Test-TruthyEnv ([Environment]::GetEnvironmentVariable('WXUIA_FORCE'))
+# 只读测试模式：-ReadOnly 或环境变量 WXUIA_READ_ONLY=1 开启；代码层拒绝发送与主动读取。
+$script:ReadOnlyMode = [bool]$ReadOnly -or (Test-TruthyEnv ([Environment]::GetEnvironmentVariable('WXUIA_READ_ONLY')))
 $script:NoBaseline = Test-TruthyEnv ([Environment]::GetEnvironmentVariable('WXUIA_NOBASELINE'))
 $script:IdleThresholdMs = Get-Env-Int 'WXUIA_IDLE_MS' 1500 0 3600000
 $script:SendWaitMs = Get-Env-Int 'WXUIA_SEND_WAIT_MS' 900 500 1200
@@ -509,6 +513,10 @@ function Get-WindowShot([IntPtr]$Hwnd, [string]$OutPath) {
         $bmp = New-Object System.Drawing.Bitmap($w, $h)
         # 被别的窗口挡住时，窗口区域截图会拍到遮挡物：短暂切前台再截图，结束后由 finally 恢复前台。
         if ([WXDriver]::IsOccluded($Hwnd)) {
+            if ($script:ReadOnlyMode) {
+                # 只读模式禁止为了截图而切换前台（会改变焦点与窗口层级，属于禁止的副作用）。
+                throw '只读测试模式：微信窗口被遮挡，需要切换前台才能截图；已拒绝（请先手动把微信窗口置于前台再读取）'
+            }
             [WXDriver]::ForceForeground($Hwnd) | Out-Null
             $script:FocusStolen = $true
             Start-Sleep -Milliseconds 150
@@ -1591,6 +1599,16 @@ try {
     if ($Action -eq 'read' -and [string]::IsNullOrWhiteSpace($Contact)) { Fail-With 'read 缺少 -Contact' }
     if ($Action -eq 'send' -and [string]::IsNullOrWhiteSpace($Contact)) { Fail-With 'send 缺少 -Contact' }
 
+    # ── 只读测试模式硬阻断（发布前验收第五部分）────────────────────────────
+    # send 在脚本入口直接失败：不找窗口、不点击、不粘贴、不回车（任何键鼠模拟都不会发生）。
+    if ($script:ReadOnlyMode -and $Action -eq 'send') {
+        Fail-With '只读测试模式：已拒绝发送（PS1 只读模式禁止一切键鼠模拟，未执行点击/粘贴/回车提交）'
+    }
+    # read 只允许被动读取已打开的聊天：主动搜索/点击会话会改变已读状态与焦点，默认禁用。
+    if ($script:ReadOnlyMode -and $Action -eq 'read' -and -not $NoSearch) {
+        Fail-With '只读测试模式：read 需要 -NoSearch（只允许被动读取已打开的聊天；主动搜索/点击会改变已读状态与焦点，已被禁止）'
+    }
+
     # 可选的脚本级工作时段闸门（默认不限制，在线时段由插件 schedule 管理）。
     if (-not (Test-AllowedHours)) {
         $hours = [Environment]::GetEnvironmentVariable('WXUIA_ACTIVE_HOURS')
@@ -1615,6 +1633,9 @@ try {
     # 找窗口：先在可见窗口里精确匹配；找不到再允许恢复最小化窗口。
     $hwnd = [WXDriver]::FindWindowByTitle($WindowTitle)
     if ($hwnd -eq [IntPtr]::Zero) {
+        if ($script:ReadOnlyMode) {
+            Fail-With '只读测试模式：微信窗口不可见或已最小化；恢复/显示窗口会改变窗口状态，已拒绝（请先手动打开微信窗口后重试）'
+        }
         $hwnd = [WXDriver]::FindWindowAnyState($WindowTitle)
 if ($hwnd -ne [IntPtr]::Zero) { Ensure-UsableWindow $hwnd }
         if ($hwnd -ne [IntPtr]::Zero) {
@@ -1627,6 +1648,8 @@ if ($hwnd -ne [IntPtr]::Zero) { Ensure-UsableWindow $hwnd }
         Fail-With "未找到微信窗口（WindowTitle=$WindowTitle）。请确认微信已登录、窗口标题匹配，或调整 channels.desktop.windowTitle"
     }
     $script:TargetHwnd = $hwnd
+    # 只读测试模式：不恢复/移动/置顶/切换前台窗口（会改变窗口状态与焦点，属于禁止的副作用）。
+    if (-not $script:ReadOnlyMode) {
     try { Ensure-UsableWindow $hwnd } catch { }
     $wasMin = $false
     # 窗口被拖窄时左侧会话列表会消失：自动最大化，保证 list/read/send 的分栏稳定。
@@ -1655,6 +1678,7 @@ if ($hwnd -ne [IntPtr]::Zero) { Ensure-UsableWindow $hwnd }
     Start-Sleep -Milliseconds 180
     [WXDriver]::ForceForeground($hwnd) | Out-Null
     Start-Sleep -Milliseconds 320
+    }
     $prevFg = [WXDriver]::GetForegroundWindow()
     try {
         [WXDriver]::GetCursorPos([ref]$prevCursor) | Out-Null

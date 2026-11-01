@@ -1296,15 +1296,21 @@ export function createPersonaApi(deps: PersonaApiDeps): PersonaApi {
         }
         return okJson({
           ok: true,
-          status,
+          status: status ? { ...status, readOnlyTestMode: config.readOnlyTestMode === true } : null,
           channel,
           configSummary,
           safeMode: config.safeMode === true,
+          // 发布前验收（任务书第五部分）：只读测试模式状态，只读诊断用（不改任何发送路径）。
+          readOnlyTestMode: config.readOnlyTestMode === true,
           // task-12 / 13.4：发送模式与草稿队列状态（引擎未提供时按配置/0 兜底）。
           sendMode: status?.sendMode ?? config.sendMode,
           pendingDrafts: status?.pendingDrafts ?? 0,
           sendState: status?.sendState ?? null,
-          security: { apiTokenEnabled: apiToken !== '', rateLimitPerMinute: API_RATE_LIMIT_MAX },
+          security: {
+            apiTokenEnabled: apiToken !== '',
+            rateLimitPerMinute: API_RATE_LIMIT_MAX,
+            readOnlyTestMode: config.readOnlyTestMode === true,
+          },
         })
       }
 
@@ -1740,10 +1746,15 @@ export function createPersonaApi(deps: PersonaApiDeps): PersonaApi {
         const text = typeof obj.text === 'string' ? obj.text.trim() : ''
         if (contactId === '') return failJson(400, 'contactId 不能为空')
         if (text === '') return failJson(400, 'text 不能为空')
+        // 发布前验收（任务书第五部分）：只读测试模式下 API 层**最前面**硬拒绝，即使引擎未启动
+        // 也不放行；绝不调用引擎 sendTest / 通道 send。状态码按 task-17 约定返回 409。
+        if (deps.getConfig().readOnlyTestMode === true) {
+          return failJson(409, '只读测试模式已开启：已拒绝一切真实发送（POST /test/send）', 'read-only-mode')
+        }
         const engine = currentEngine()
         if (!engine) return failJson(409, '引擎未启动，无法发送测试消息')
         // P1-5：暂停期间手动发送与自动发送一样被门禁拒绝（引擎 sendTest 内部还有一层
-        // canSend 兜底：安全模式/熔断/预算/白名单/频控；这里提前返回明确的 409，方便工具/设置页提示）。
+        // canSend 兜底：只读测试模式/安全模式/熔断/预算/白名单/频控；这里提前返回明确的 409，方便工具/设置页提示）。
         let engineStatus: EngineStatus | null = null
         try {
           engineStatus = await engine.status()
@@ -1791,9 +1802,14 @@ export function createPersonaApi(deps: PersonaApiDeps): PersonaApi {
         const id = typeof obj.id === 'string' ? obj.id.trim() : ''
         if (id === '') return failJson(400, 'id 不能为空')
         if (id.length > 128) return failJson(400, 'id 过长')
+        const isApprove = routePath === '/drafts/approve'
+        // 发布前验收（任务书第五部分）：只读测试模式下「批准」会触发真实发送，API 层直接 409；
+        // 「拒绝」只改草稿状态、不产生任何发送，仍允许。放在 engine 检查之前保证硬阻断。
+        if (isApprove && deps.getConfig().readOnlyTestMode === true) {
+          return failJson(409, '只读测试模式已开启：已拒绝草稿批准发送（代码层不触达真实通道）', 'read-only-mode')
+        }
         const engine = currentEngine()
         if (!engine) return failJson(409, '引擎未启动，无法处理草稿')
-        const isApprove = routePath === '/drafts/approve'
         const handler = (
           engine as PersonaEngineLike & {
             approveDraft?: (draftId: string) => Promise<unknown>

@@ -298,6 +298,10 @@ export type SkipReason =
   | 'draft-only'
   | 'model-failed'
   | 'send-failed'
+  /** 安全运行模式（safeMode=true 且通道非 mock 时拒绝一切真实发送）。 */
+  | 'safe-mode'
+  /** 发布前验收：只读测试模式（readOnlyTestMode=true 时拒绝一切真实发送）。 */
+  | 'read-only'
 
 export type Decision = { skip: false } | { skip: true; reason: SkipReason; detail?: string }
 
@@ -641,6 +645,11 @@ export interface EngineStatus {
   pendingDrafts?: number
   /** 最近一次发送生命周期状态（9.1）。 */
   sendState?: string
+  /**
+   * 只读测试模式（发布前验收，任务书第五部分；持久化配置，重启后仍生效）。
+   * 为 true 时代码层拒绝一切真实通道发送与键鼠模拟。
+   */
+  readOnlyTestMode?: boolean
 }
 
 /** memory.ts 暴露的接口（engine 依赖）。 */

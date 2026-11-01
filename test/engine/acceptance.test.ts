@@ -1224,3 +1224,66 @@ describe('13.4 draft / confirm：生成草稿、人工批准才发送，且批�
     expect(h2.channel.sent).toHaveLength(1)
   })
 })
+
+/* ─────────────────── 发布前验收：只读测试模式（任务书第五部分） ─────────────────── */
+
+describe('发布前验收：只读测试模式（真实发送从代码层完全禁用）', () => {
+  const readOnlyConfig = {
+    readOnlyTestMode: true,
+    whitelist,
+    reply: { ...defaultConfig().reply, stickerProbability: 0 },
+  }
+
+  it('真实通道：LLM 正常生成，但 channel.send 一次都不调用；审计记录 read-only-mode', async () => {
+    const h = makeHarness({ config: readOnlyConfig, channelId: 'desktop' })
+    await h.engine.start()
+    expect(h.channel.startCalls).toBe(1)
+    await h.engine.handleInbound(inbound())
+    expect(h.llm.calls).toHaveLength(1)
+    expect(h.channel.sent).toHaveLength(0)
+    const status = (await h.engine.status()) as unknown as { readOnlyTestMode?: boolean }
+    expect(status.readOnlyTestMode).toBe(true)
+    expect(h.audit.reasons('skip')).toContain('read-only-mode')
+    const blocked = h.audit.events.find((event) => event.type === 'skip' && event.reason === 'read-only-mode')
+    expect(String(blocked?.detail)).toContain('只读测试模式')
+    expect(h.state.stats.sends).toBe(0)
+  })
+
+  it('mock 通道不受影响：只读测试模式允许 mock 空转', async () => {
+    const h = makeHarness({ config: readOnlyConfig })
+    await h.engine.handleInbound(inbound())
+    expect(h.channel.sent.length).toBeGreaterThanOrEqual(1)
+  })
+
+  it('sendTest 与草稿批准走同一门禁：返回 not-sent，不触达通道', async () => {
+    const h = makeHarness({ config: { ...readOnlyConfig, sendMode: 'draft' as const }, channelId: 'desktop' })
+    await h.engine.handleInbound(inbound())
+    const drafts = await h.engine.listDrafts()
+    expect(drafts).toHaveLength(1)
+    const sent = await h.engine.sendTest('张三', '只读测试')
+    expect(sent.ok).toBe(false)
+    expect(sent.delivery).toBe('not-sent')
+    expect(String(sent.error)).toContain('只读测试模式')
+    expect(h.channel.sent).toHaveLength(0)
+    const approved = await h.engine.approveDraft(drafts[0]!.id)
+    expect(approved.ok).toBe(false)
+    expect(String(approved.error)).toContain('只读测试模式')
+    expect(h.channel.sent).toHaveLength(0)
+  })
+
+  it('重启（新引擎实例同一配置）仍拒绝：配置持久化，启动写配置态审计', async () => {
+    const h1 = makeHarness({ config: readOnlyConfig, channelId: 'desktop' })
+    await h1.engine.start()
+    const startAudit = h1.audit.events.find((event) => event.type === 'config' && event.reason === 'read-only-mode')
+    expect(startAudit).toBeDefined()
+    expect(String(startAudit?.detail)).toContain('只读测试模式')
+
+    const h2 = makeHarness({ config: readOnlyConfig, channelId: 'desktop' })
+    await h2.engine.start()
+    const result = await h2.engine.sendTest('张三', '重启后尝试')
+    expect(result.ok).toBe(false)
+    expect(result.delivery).toBe('not-sent')
+    await h2.engine.handleInbound(inbound())
+    expect(h2.channel.sent).toHaveLength(0)
+  })
+})

@@ -787,3 +787,100 @@ describe('与 PersonaLibrary 集成', () => {
     expect(again.entries.find((entry) => entry.id === 'persona-a')?.installed).toBe(true)
   })
 })
+
+/* ─────────────────── 发布前安全复核：SSRF 边界（只读追加） ─────────────────── */
+
+describe('发布前安全复核：SSRF 边界（当前实现 + 已知缺口证据）', () => {
+  it('IPv4 十进制/十六进制/短点分/前导零写法经 URL 归一化后仍被拒绝', () => {
+    for (const url of [
+      'http://2130706433/',
+      'http://0x7f000001/',
+      'http://127.1/',
+      'http://0177.0.0.1/',
+      'http://127.0.0.1./',
+      'http://localhost.:80/',
+      'http://127.0.0.1:8080/',
+      'http://0.0.0.0/',
+    ]) {
+      expect(() => assertSafeMarketUrl(url), url).toThrow(/不允许指向本机或内网地址/)
+    }
+  })
+
+  it('IPv6 回环/映射/ULA/链路本地/未指定地址被拒绝', () => {
+    for (const url of [
+      'http://[::1]/',
+      'http://[0:0:0:0:0:0:0:1]/',
+      'http://[::ffff:127.0.0.1]/',
+      'http://[::ffff:7f00:1]/',
+      'http://[fc00::1]/',
+      'http://[fd12:3456::1]/',
+      'http://[fe80::1]/',
+      'http://[::]/',
+    ]) {
+      expect(() => assertSafeMarketUrl(url), url).toThrow(/不允许指向本机或内网地址/)
+    }
+  })
+
+  it('内嵌凭据与非 http(s) 协议被拒绝；错误信息不回显原始 URL', () => {
+    for (const url of ['http://127.0.0.1@example.com/', 'http://user:pass@example.com/']) {
+      expect(() => assertSafeMarketUrl(url), url).toThrow(/不允许包含用户名或密码/)
+    }
+    for (const url of ['file:///etc/passwd', 'javascript:alert(1)', 'ftp://evil.example.test/a.json']) {
+      expect(() => assertSafeMarketUrl(url), url).toThrow(/只支持 http\/https/)
+    }
+    try {
+      assertSafeMarketUrl('http://2130706433/')
+      throw new Error('unreachable')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      expect(message).not.toContain('2130706433')
+      expect(message).not.toContain('127.0.0.1')
+    }
+  })
+
+  it('[已知缺口 P2] IPv4-compatible / NAT64 形式的 IPv6 字面量当前不被字符串校验拦截', () => {
+    // 说明：需要特定网络栈（IPv4-compatible 路由 / NAT64）才可能真正连到 127.0.0.1，
+    // 当前实现按字符串判定会放行；修复方案与测试设计见 docs/SECURITY-REVIEW-PRE-RELEASE.md。
+    expect(() => assertSafeMarketUrl('http://[::127.0.0.1]/')).not.toThrow()
+    expect(() => assertSafeMarketUrl('http://[64:ff9b::127.0.0.1]/')).not.toThrow()
+  })
+
+  it('[已知缺口 P1] 公网域名通过字符串校验，DNS 解析/重绑定不由本实现校验（注入 fetch 证据）', async () => {
+    expect(isPrivateMarketHost('rebind.example.test')).toBe(false)
+    const calls: FakeFetchCall[] = []
+    const market = new PersonaMarket({
+      config: marketConfig(() => {}, 'http://rebind.example.test/index.json'),
+      library: new FakeLibrary(),
+      logger: new FakeLogger(),
+      fetchImpl: fakeFetch(
+        {
+          'http://rebind.example.test/index.json': () =>
+            jsonResponse({
+              version: 1,
+              personas: [makeEntry({ id: 'persona-a', name: '人格 A', url: PACK_URL })],
+            }),
+        },
+        calls,
+      ),
+    })
+    const result = await market.fetchIndex()
+    // 当前实现只校验 URL 字符串，真正解析到哪个 IP 由 fetch/DNS 决定（潜在 DNS rebinding）。
+    expect(result.source).toBe('remote')
+    expect(calls[0]?.url).toBe('http://rebind.example.test/index.json')
+  })
+
+  it('302 重定向到十进制 IPv4 / IPv6 映射 / 末尾点地址时，每一跳校验都会拒绝', async () => {
+    for (const target of ['http://2130706433/', 'http://[::ffff:127.0.0.1]/', 'http://127.0.0.1./']) {
+      const calls: FakeFetchCall[] = []
+      const market = new PersonaMarket({
+        config: marketConfig(),
+        library: new FakeLibrary(),
+        logger: new FakeLogger(),
+        fetchImpl: fakeFetch({ [INDEX_URL]: () => redirectResponse(target) }, calls),
+      })
+      const result = await market.fetchIndex()
+      expect(result.source, target).toBe('builtin')
+      expect(calls, target).toHaveLength(1)
+    }
+  })
+})

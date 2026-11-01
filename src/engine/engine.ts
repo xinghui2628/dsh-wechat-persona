@@ -148,6 +148,14 @@ interface SendBlock {
 const SAFE_MODE_SKIP_REASON = 'safe-mode' as unknown as SkipReason
 
 /**
+ * 只读测试模式拦截的审计 reason（发布前验收，任务书第五部分）。
+ *
+ * 值固定为 'read-only-mode'：canSend 拒绝 reason 与启动时的配置态审计事件一致，
+ * 便于设置页/验收脚本用同一个字符串检索。
+ */
+const READ_ONLY_SKIP_REASON = 'read-only-mode' as unknown as SkipReason
+
+/**
  * 判断入站文本是不是机器人自己刚说过的话（通道回读造成）。
  * 列表预览会截断、OCR 会漏字认错字，所以整串之外还要比前缀/后缀与字符重合率。
  * 安全原则：宁可漏回一条，也不自问自答。
@@ -221,9 +229,19 @@ export class PersonaEngine {
     // 9.4 / 13.4：读回发送账本与草稿队列，保证跨重启不重复发送、草稿仍可人工批准。
     await this.ledger.load()
     await this.loadDrafts()
+    // 发布前验收（任务书第五部分）：只读测试模式是持久化配置，启动时写一条配置态审计，
+    // 并在 status/API 里可见。它只拦真实发送、不拦启动接收，所以 start 传 checkReadOnly:false
+    //（自动回复 / sendTest / 草稿批准仍会被 canSend 拒绝）。
+    if (this.deps.config.readOnlyTestMode === true) {
+      await this.audit({
+        type: 'config',
+        reason: 'read-only-mode',
+        detail: '只读测试模式已开启：代码层拒绝一切真实通道发送与键鼠模拟；配置持久化，重启后仍生效',
+      })
+    }
     // P1-7：启动时若状态仍是暂停/熔断，绝不静默开始收消息/发消息；等主人显式 resume。
     // 只拦暂停/熔断：预算耗尽不应让通道永远起不来（次日预算会自动恢复）。
-    const blocked = this.canSend({ checkBudget: false, checkSafeMode: false })
+    const blocked = this.canSend({ checkBudget: false, checkSafeMode: false, checkReadOnly: false })
     if (blocked) {
       this.deps.logger.warn('启动时处于暂停/熔断状态，保持暂停不启动通道', `${blocked.reason}: ${blocked.detail}`)
       await this.audit({ type: 'start', reason: blocked.reason, detail: `blocked: ${blocked.detail}` })
@@ -347,7 +365,9 @@ export class PersonaEngine {
       sendMode: config.sendMode,
       pendingDrafts: this.pendingDrafts(),
       sendState: this.sendState,
-    }
+      // 发布前验收（任务书第五部分）：只读测试模式状态（只读诊断，不参与发送决策的旁路）。
+      readOnlyTestMode: config.readOnlyTestMode === true,
+    } as EngineStatus & { readOnlyTestMode: boolean }
   }
 
   /**
@@ -463,7 +483,7 @@ export class PersonaEngine {
    * 统一发送门禁（P0-1 / P1-5）：暂停、熔断、预算、白名单、频控任一不满足都拒绝发送。
    * 自动回复在拟人延迟后、每个 part 发出前、每次重试前调用；手动发送（sendTest）也走这里。
    */
-  canSend(options: { contactId?: string; contactName?: string; checkWhitelist?: boolean; checkRate?: boolean; checkBudget?: boolean; checkSafeMode?: boolean } = {}): SendBlock | null {
+  canSend(options: { contactId?: string; contactName?: string; checkWhitelist?: boolean; checkRate?: boolean; checkBudget?: boolean; checkSafeMode?: boolean; checkReadOnly?: boolean } = {}): SendBlock | null {
     const { config, state } = this.deps
     // 先看 AbortSignal：pause()/stop()/熔断会 abort，这是最实时的“已暂停”信号。
     if (this.abortController.signal.aborted) {
@@ -474,6 +494,15 @@ export class PersonaEngine {
     }
     if (state.breaker.tripped) {
       return { reason: 'breaker', detail: `熔断已触发${state.breaker.reason ? `：${state.breaker.reason}` : ''}` }
+    }
+    // 只读测试模式（发布前验收，任务书第五部分）：开启后真实通道一律拒发；
+    // mock 通道只是空转、不会触达真实微信，所以不拦。start() 传 checkReadOnly:false
+    //（启动通道只接收/读取，本身不产生发送）。
+    if (options.checkReadOnly !== false && config.readOnlyTestMode === true && this.deps.channel.id !== 'mock') {
+      return {
+        reason: READ_ONLY_SKIP_REASON,
+        detail: `只读测试模式：已禁止一切真实发送（当前通道：${String(this.deps.channel.id)}）`,
+      }
     }
     // 安全运行模式（Phase F）：默认关闭；开启后只允许 mock 通道空转，真实通道一律拒发。
     // engine.start() 不受此限制（接收消息是安全的），所以 start 传 checkSafeMode:false。
@@ -1255,7 +1284,9 @@ export class PersonaEngine {
 
     // 9) 草稿模式：生成后不发，落盘到人工确认队列（13.4）
     //    触发条件优先级：预算草稿/超限 > safeMode > sendMode（draft/confirm）
-    //    safeMode 下即使 sendMode=auto 也只生成草稿，绝不触达真实微信。
+    //    safeMode 下即使 sendMode=auto 也只生成草稿，绝不触达真实微信；
+    //    只读测试模式不在这里转草稿，而是继续走到发送循环、由 canSend 统一拒绝
+    //    （保证自动回复也走同一条门禁、审计 reason 一致）。
     const phase = budgetPhase(config, state.budget, now)
     const configuredMode = config.sendMode === 'draft' || config.sendMode === 'confirm' ? config.sendMode : 'auto'
     const safeBlocked = config.safeMode === true && channel.id !== 'mock'

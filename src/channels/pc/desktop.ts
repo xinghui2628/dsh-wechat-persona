@@ -65,6 +65,10 @@ const MAX_SENT_HISTORY = 5;
 const SENT_STATE_PATH = join(tmpdir(), 'dsh-wechat-persona-sent.json');
 // v3.0.0：ack 水位线落在 dataDir 里（跨进程重启仍能读回，避免重启后重放已处理帧）。
 const ACK_STATE_FILE = 'desktop-ack.json';
+// 发布前验收（任务书 4.1 / 8.2）：已投递消息 id 持久化去重，插件重启后脚本重放同一 pending id
+// 不会二次投递给引擎；上限 500 条（FIFO，避免状态文件无限增长）。
+const DELIVERED_STATE_FILE = 'desktop-delivered.json';
+const MAX_DELIVERED_IDS = 500;
 
 export type DesktopScriptName = 'wechat-uia' | 'user-activity';
 
@@ -171,6 +175,11 @@ export interface DesktopOcrDiagnostics {
   secondOcrUsed?: boolean;
   /** 识别质量状态（由脚本诊断或本次计数推导）。 */
   qualityStatus?: 'ok' | 'degraded' | 'empty' | 'unknown';
+  /**
+   * OCR 流水线模式（发布前验收 4.3 受控 Feature Flag）：
+   * legacy=回退 v0.2.8 行为（不做气泡归属/融合状态/置信度门禁）；v3=启用新版流水线。
+   */
+  pipelineMode?: 'legacy' | 'v3';
 }
 
 /** 解析 user-activity.ps1 的 stdout（纯数字 / {"idleMs":N} / idle=N）；解析不出返回 null。 */
@@ -232,6 +241,15 @@ export class DesktopChannel {
   uncertainCount = 0;
   /** v3.0.0 Phase C：因置信度不足被拒投的累计条数（不投递但保留 pending，下次重放再试）。 */
   rejectCount = 0;
+  /**
+   * 发布前验收（任务书 4.1）：已投递消息 `联系人|id` 的持久化集合。
+   * 插件重启后 inFlight 清空、脚本仍会重放未确认 pending；持久化集合保证同一 id 不二次投递。
+   */
+  deliveredIds = new Set<string>();
+  /** 已投递集合是否已从 dataDir 读回（懒加载，避免构造函数做异步 IO）。 */
+  private deliveredLoaded = false;
+  /** 已投递集合落盘串行链（失败只记 debug，不影响读取主流程）。 */
+  private deliveredSaveChain: Promise<void> = Promise.resolve();
   // v3.0.0：ack 水位线是否已从 dataDir 读回（懒加载，避免构造函数做异步 IO）。
   private ackLoaded = false;
   // v3.0.0：ack 落盘串行链（多次 commit 不并发写同一个文件；失败不影响主流程）。
@@ -272,6 +290,9 @@ export class DesktopChannel {
     this.ackByContact = new Map();
     this.uncertainCount = 0;
     this.rejectCount = 0;
+    this.deliveredIds = new Set();
+    this.deliveredLoaded = false;
+    this.deliveredSaveChain = Promise.resolve();
     this.ocrDiagnostics = {};
     this.ocrStartedAt = 0;
     this.loadSentState();
@@ -323,6 +344,37 @@ export class DesktopChannel {
     this.ackSaveChain = this.ackSaveChain
       .then(() => this.store.writeJson(ACK_STATE_FILE, snapshot))
       .catch(() => { this.logger.debug?.('[desktop] ack 水位线落盘失败（不影响本轮读取）'); });
+  }
+
+  /**
+   * 发布前验收（任务书 4.1）：懒加载已投递 id 集合。
+   * 与 inFlight 不同，它跨进程重启保留，保证脚本重放同一 pending id 时不会二次投递。
+   */
+  private async loadDeliveredState(): Promise<void> {
+    if (this.deliveredLoaded) return;
+    this.deliveredLoaded = true;
+    try {
+      const data = await this.store.readJson<{ ids?: unknown }>(DELIVERED_STATE_FILE);
+      const ids = Array.isArray(data?.ids) ? data.ids : [];
+      for (const id of ids) {
+        if (typeof id !== 'string' || !id) continue;
+        this.deliveredIds.add(id);
+      }
+    } catch { /* 首次运行或文件损坏：当作空集合（inFlight 与脚本 pending 仍能兜底去重） */ }
+  }
+
+  /** 记录一条已投递消息（`联系人|id`），超过上限时按 FIFO 丢弃最旧的，并串行落盘。 */
+  private rememberDelivered(key: string): void {
+    this.deliveredIds.add(key);
+    while (this.deliveredIds.size > MAX_DELIVERED_IDS) {
+      const oldest = this.deliveredIds.values().next();
+      if (oldest.done) break;
+      this.deliveredIds.delete(oldest.value);
+    }
+    const snapshot = Array.from(this.deliveredIds).slice(-MAX_DELIVERED_IDS);
+    this.deliveredSaveChain = this.deliveredSaveChain
+      .then(() => this.store.writeJson(DELIVERED_STATE_FILE, { ids: snapshot, updatedAt: Date.now() }))
+      .catch(() => { this.logger.debug?.('[desktop] 已投递 id 落盘失败（不影响本轮读取）'); });
   }
 
   normalizeText(text: string): string {
@@ -537,7 +589,7 @@ export class DesktopChannel {
     this.logger.info?.('[desktop] 已停止');
   }
 
-  status(): ChannelStatus & { ocr?: DesktopOcrDiagnostics } {
+  status(): ChannelStatus & { ocr?: DesktopOcrDiagnostics; readOnlyTestMode?: boolean } {
     return {
       id: this.id,
       state: this.state,
@@ -546,8 +598,13 @@ export class DesktopChannel {
       since: this.since,
       lastInboundAt: this.lastInboundAt,
       lastSendAt: this.lastSendAt,
+      // 发布前验收（任务书 4.3）：流水线模式随诊断透出（legacy/v3），供设置页与只读诊断接口展示。
+      readOnlyTestMode: this.config.readOnlyTestMode === true,
       // 只读诊断：最近一次 OCR 读取的帧号/引擎/行数/耗时，不含聊天正文。
-      ocr: { ...this.ocrDiagnostics },
+      ocr: {
+        ...this.ocrDiagnostics,
+        pipelineMode: this.config.ocrPipelineMode === 'legacy' ? 'legacy' : 'v3',
+      },
     };
   }
 
@@ -586,18 +643,34 @@ export class DesktopChannel {
   }
 
   /**
+   * 只读测试模式下的脚本参数（发布前验收第五部分）：传 -ReadOnly 与 -NoSearch。
+   * 脚本据此拒绝 send 动作，并让 read 走被动路径（不 Ctrl+F/不点击会话、只读已打开的聊天，
+   * 避免改变已读状态与焦点等副作用）。
+   */
+  private readOnlyArgs(): string[] {
+    return this.config.readOnlyTestMode === true ? ['-ReadOnly', '-NoSearch'] : [];
+  }
+
+  /**
    * 把一次 read 的脚本输出转成投递计划（v3.0.0 Phase C）：
    * - 透传 captureId / pane / side / box，交给 core/ocr/pipeline.ts 做气泡归属过滤；
    * - uncertain（几何无法判断）与 outbound（自己）一律拒投并计数，绝不猜；
    * - 旧脚本输出（无 pane/box/side）按 legacy 兼容接受，升级过程不丢消息。
+   *
+   * 发布前验收（任务书 4.3）：`config.ocrPipelineMode === 'legacy'` 时走受控回退路径——
+   * 只要脚本返回非空文本就接受，跳过气泡归属/融合状态/置信度门禁（自回声过滤仍保留）。
    */
   private planRead(name: string, data: DesktopScriptPayload): OcrDispatchPlan {
-    const plan = planInboundDispatch({
-      captureId: data.captureId,
-      ack: this.ackByContact.get(name) || '',
-      pane: data.pane,
-      messages: Array.isArray(data.messages) ? data.messages : [],
-    });
+    const legacy = this.config.ocrPipelineMode === 'legacy';
+    const messages = Array.isArray(data.messages) ? data.messages : [];
+    const plan = legacy
+      ? this.planReadLegacy(name, data, messages)
+      : planInboundDispatch({
+          captureId: data.captureId,
+          ack: this.ackByContact.get(name) || '',
+          pane: data.pane,
+          messages,
+        });
     this.uncertainCount += plan.uncertainCount;
     const lineCount = Array.isArray(data.lines)
       ? data.lines.length
@@ -633,6 +706,51 @@ export class DesktopChannel {
       }
     }
     return plan;
+  }
+
+  /**
+   * legacy 流水线（task-16 受控回退）：只透传消息文本/id/captureId/side，不评估归属与置信度。
+   * 调用方仍执行自回声过滤（isOwnText），行为等价 v0.2.8：脚本给出非空文本即视为入站。
+   */
+  private planReadLegacy(
+    name: string,
+    data: DesktopScriptPayload,
+    messages: DesktopScriptMessage[],
+  ): OcrDispatchPlan {
+    const accepted: OcrAcceptedMessage[] = [];
+    const seen = new Set<string>();
+    let index = 0;
+    for (const message of messages) {
+      const text = typeof message?.text === 'string' ? message.text.trim() : '';
+      if (!text) continue;
+      const rawId = typeof message.id === 'string' && message.id ? message.id : '';
+      const id = rawId || `legacy-${index}`;
+      index += 1;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      const side: BubbleSide =
+        message.side === 'left' || message.side === 'right' || message.side === 'unknown'
+          ? message.side
+          : 'unknown';
+      accepted.push({
+        id,
+        text,
+        captureId: typeof message.captureId === 'string' ? message.captureId : data.captureId || '',
+        side,
+      });
+    }
+    const captureId = typeof data.captureId === 'string' ? data.captureId : '';
+    return {
+      captureId,
+      ack: this.ackByContact.get(name) || '',
+      nextAck: /^cap-\d+/i.test(captureId) ? captureId : '',
+      accepted,
+      rejected: [],
+      uncertainCount: 0,
+      outboundCount: 0,
+      duplicateCount: 0,
+      legacyCount: accepted.length,
+    };
   }
 
   /** 记录本次读取的帧号，作为下次读取的 ack 水位线（只传已成功处理的帧），并持久化。 */
@@ -687,9 +805,10 @@ export class DesktopChannel {
     this.logger.debug?.(`[desktop] 置信度不足（${reason}），不投递并保留 pending 下次再试`);
   }
 
-  /** 该消息是否已经投递过（重放消息跳过置信度门禁，避免同一帧反复卡住 ack）。 */
+  /** 该消息是否已经投递过（跨重启检查持久化集合；重放消息跳过置信度门禁，避免同一帧反复卡住 ack）。 */
   private wasDelivered(name: string, id: string): boolean {
-    return this.inFlight.has(`${name}|${id}`);
+    const key = `${name}|${id}`;
+    return this.inFlight.has(key) || this.deliveredIds.has(key);
   }
 
   /**
@@ -702,6 +821,8 @@ export class DesktopChannel {
     data: DesktopScriptPayload,
     rawById: Map<string, DesktopScriptMessage>,
   ): ConfidenceEvaluation | null {
+    // 发布前验收（任务书 4.3）：legacy 流水线不做置信度门禁（回退 v0.2.8 行为）。
+    if (this.config.ocrPipelineMode === 'legacy') return null;
     const raw = rawById.get(message.id);
     const hasEvidence =
       !!data.diag ||
@@ -762,6 +883,7 @@ export class DesktopChannel {
 
   async readInboundOnce(): Promise<void> {
     await this.loadAckState();
+    await this.loadDeliveredState();
     this.ocrStartedAt = Date.now();
     const contacts = this.contactNames();
     if (!contacts.length) return;
@@ -775,6 +897,7 @@ export class DesktopChannel {
       '-WindowTitle', cfg.windowTitle || '微信',
       '-Contacts', contacts.join(','),
       '-CurrentContact', current,
+      ...this.readOnlyArgs(),
     ]);
     const parsed = this.parseJson(list);
     if (!parsed || parsed.ok !== true || !Array.isArray(parsed.rows)) {
@@ -842,7 +965,8 @@ export class DesktopChannel {
       ];
       // v3.0.0：不再传 -MaxMessages（脚本已不截断），改为回传上次确认的 captureId 水位线。
       args.push(...this.ackArgs(item.name));
-      if (item.selected || item.name === current) {
+      args.push(...this.readOnlyArgs());
+      if ((item.selected || item.name === current) && !args.includes('-NoSearch')) {
         // 会话已经打开时只读窗口，不触发 Ctrl+F 搜索。
         args.push('-NoSearch', '-CurrentContact', item.name);
       }
@@ -913,7 +1037,8 @@ export class DesktopChannel {
       ];
       // v3.0.0：回传上次确认的 captureId 水位线，让脚本重放未确认的行（id 稳定，靠 inFlight 去重）。
       args.push(...this.ackArgs(name));
-      if (noSearchNames.has(name)) {
+      args.push(...this.readOnlyArgs());
+      if (noSearchNames.has(name) && !args.includes('-NoSearch')) {
         // 只读当前已经打开的会话：脚本在标题与 CurrentContact 都对不上时直接返回 ok:false，不做 Ctrl+F。
         args.push('-NoSearch', '-CurrentContact', name);
       }
@@ -990,9 +1115,19 @@ export class DesktopChannel {
     } catch (error) {
       this.logger.warn?.(`[desktop] handler 异常：${String(error)}`);
     }
+    // 发布前验收（任务书 4.1）：投递成功即落盘 `联系人|id`，插件重启后不重复投递同一 pending 行。
+    this.rememberDelivered(key);
   }
 
   async send(contactId: string, part: OutboundPart, signal?: AbortSignal): Promise<SendResult> {
+    // 发布前验收（任务书第五部分）：只读测试模式在通道层**第一行**硬拒绝——
+    // 不调用任何脚本、不做键鼠模拟、不进入任何后续门禁分支；返回 not-sent 防止引擎误判 unknown。
+    if (this.config.readOnlyTestMode === true) {
+      const error = '只读测试模式：已禁止一切真实发送（代码层硬阻断，未调用任何脚本、未做键鼠模拟）';
+      this.lastError = error;
+      this.logger.warn?.('[desktop] 发送被只读测试模式拒绝（未执行任何自动化）');
+      return { ok: false, delivery: 'not-sent', error };
+    }
     if (part?.kind !== 'text') {
       return { ok: false, error: '桌面通道暂不支持发送表情（UIA 表情面板未实现）' };
     }

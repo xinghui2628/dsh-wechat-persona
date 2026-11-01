@@ -1852,3 +1852,153 @@ describe('Host HTTP API：attachPersonaRoutes 传输层', () => {
     expect(disposedCount).toBe(routes.length)
   })
 })
+
+/* ══════════════════ 发布前安全复核 / 只读测试模式（task-17 只读追加） ══════════════════ */
+
+describe('发布前安全复核：鉴权强度 / 凭据泄露 / 草稿权限', () => {
+  const REVIEW_TOKEN = 'review-token-0123456789abcdef'
+  const tokenHeaders = (token = REVIEW_TOKEN): Record<string, string> => ({
+    ...AUTH_HEADERS,
+    authorization: `Bearer ${token}`,
+  })
+
+  it('兼容模式下 Host/Origin/Sec-Fetch-Site 可被非浏览器客户端伪造 → 它们只防浏览器，不是调用方鉴权', async () => {
+    const env = await makeEnv()
+    const spoofed = {
+      ...AUTH_HEADERS,
+      host: '127.0.0.1:57124',
+      origin: 'http://127.0.0.1:57124',
+      'sec-fetch-site': 'same-origin',
+    }
+    expectOk(await call(env, 'GET', '/health', undefined, '', spoofed))
+    expectOk(await call(env, 'POST', '/pause', { reason: 'review' }, '', spoofed))
+  })
+
+  it('非回环来源地址：即使伪造全部头也返回 403（L1 回环限制真实生效）', async () => {
+    const env = await makeEnv()
+    const response = await call(
+      env,
+      'GET',
+      '/health',
+      undefined,
+      '',
+      { ...AUTH_HEADERS, host: '127.0.0.1:57124' },
+      '192.168.1.50',
+    )
+    expectFail(response, 403, /回环/)
+  })
+
+  it('启用 token 后：Host / Origin / Sec-Fetch-Site 校验先于 token，正确 token 也不能绕过', async () => {
+    const env = await makeEnv({ apiToken: REVIEW_TOKEN })
+    expectFail(
+      await call(env, 'GET', '/health', undefined, '', { ...tokenHeaders(), host: 'evil.example.test' }),
+      403,
+      /Host/,
+    )
+    expectFail(
+      await call(env, 'GET', '/health', undefined, '', { ...tokenHeaders(), origin: 'http://evil.example.test' }),
+      403,
+      /Origin/,
+    )
+    expectFail(
+      await call(env, 'GET', '/health', undefined, '', { ...tokenHeaders(), 'sec-fetch-site': 'cross-site' }),
+      403,
+      /跨站/,
+    )
+    expectOk(
+      await call(env, 'GET', '/health', undefined, '', {
+        ...tokenHeaders(),
+        host: '127.0.0.1:57124',
+        origin: 'http://127.0.0.1:57124',
+      }),
+    )
+  })
+
+  it('GET /config 不回显 token 明文，只给出 apiTokenConfigured 布尔标记', async () => {
+    const env = await makeEnv({ apiToken: REVIEW_TOKEN })
+    env.config.apiToken = REVIEW_TOKEN
+    const json = expectOk(await call(env, 'GET', '/config', undefined, '', tokenHeaders()))
+    expect((json.config as WechatPersonaConfig).apiToken).toBe('')
+    expect(json.apiTokenConfigured).toBe(true)
+    expect(JSON.stringify(json)).not.toContain(REVIEW_TOKEN)
+  })
+
+  it('配置校验错误不回显提交值（token 不进入错误响应），且不会保存', async () => {
+    const env = await makeEnv({ apiToken: REVIEW_TOKEN })
+    const badConfig = { ...env.config, activeChannel: '__invalid_channel__', apiToken: REVIEW_TOKEN }
+    const response = await call(env, 'POST', '/config', { config: badConfig }, '', tokenHeaders())
+    expectFail(response, 400, /配置校验失败/)
+    // 错误 detail 只回显字段路径与允许值，不回显提交的非法值 / token。
+    expect(JSON.stringify(response.json)).not.toContain(REVIEW_TOKEN)
+    expect(JSON.stringify(response.json)).not.toContain('__invalid_channel__')
+    expect(env.savedConfigs).toHaveLength(0)
+  })
+
+  it('/drafts/approve 与其它写操作同一鉴权：缺 dsh 头 403，启用 token 后缺 token 401', async () => {
+    const compatEnv = await makeEnv()
+    expectFail(await call(compatEnv, 'POST', '/drafts/approve', { id: 'draft-1' }, '', {}), 403, /x-dsh-wechat-persona/)
+    const tokenEnv = await makeEnv({ apiToken: REVIEW_TOKEN })
+    expectFail(await call(tokenEnv, 'POST', '/drafts/approve', { id: 'draft-1' }, '', AUTH_HEADERS), 401, /token/)
+    expectOk(await call(tokenEnv, 'POST', '/drafts/approve', { id: 'draft-1' }, '', tokenHeaders()))
+    expect(tokenEnv.engine!.approveDraftCalls).toEqual(['draft-1'])
+  })
+
+  it('[已知残余面 P2] POST /personas/install {url} 只校验协议，不拒绝内网地址（downloadPersonaPack 未做 SSRF 防护）', async () => {
+    const env = await makeEnv()
+    const calls: string[] = []
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = (async (input: string | URL | Request) => {
+      calls.push(String(input))
+      throw new Error('review-stub-blocked')
+    }) as typeof fetch
+    try {
+      const response = await call(env, 'POST', '/personas/install', { url: 'http://127.0.0.1:9/internal/pack.json' })
+      expect(calls).toHaveLength(1)
+      expect(calls[0]).toContain('127.0.0.1:9/internal/pack.json')
+      expectFail(response, 400, /安装人格失败/)
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+})
+
+describe('发布前验收：只读测试模式（真实发送从 API 层完全禁用）', () => {
+  it('/test/send 直接 409 且不调用引擎 sendTest（真实发送函数未被触达）', async () => {
+    const env = await makeEnv()
+    env.config.readOnlyTestMode = true
+    const json = expectFail(
+      await call(env, 'POST', '/test/send', { contactId: 'wxid_alice', text: '只读' }),
+      409,
+      /只读测试模式/,
+    )
+    expect(json.detail).toBe('read-only-mode')
+    expect(env.engine!.sent).toHaveLength(0)
+  })
+
+  it('/drafts/approve 直接 409 且不调用引擎 approveDraft；/drafts/reject 仍可用', async () => {
+    const env = await makeEnv()
+    env.config.readOnlyTestMode = true
+    expectFail(await call(env, 'POST', '/drafts/approve', { id: 'draft-1' }), 409, /只读测试模式/)
+    expect(env.engine!.approveDraftCalls).toHaveLength(0)
+    const rejected = expectOk(await call(env, 'POST', '/drafts/reject', { id: 'draft-1' }))
+    expect(rejected.ok).toBe(true)
+    expect(env.engine!.rejectDraftCalls).toEqual(['draft-1'])
+  })
+
+  it('/status 暴露只读测试模式（security 与引擎状态），/config 返回 boolean 字段', async () => {
+    const env = await makeEnv()
+    env.config.readOnlyTestMode = true
+    const json = expectOk(await call(env, 'GET', '/status'))
+    expect(json.readOnlyTestMode).toBe(true)
+    expect((json.security as Record<string, unknown>).readOnlyTestMode).toBe(true)
+    expect((json.status as Record<string, unknown>).readOnlyTestMode).toBe(true)
+    const configJson = expectOk(await call(env, 'GET', '/config'))
+    expect((configJson.config as WechatPersonaConfig).readOnlyTestMode).toBe(true)
+  })
+
+  it('只读测试模式关闭时 /test/send 仍走引擎（回归：不是无条件 409）', async () => {
+    const env = await makeEnv()
+    expectOk(await call(env, 'POST', '/test/send', { contactId: 'wxid_alice', text: '正常' }))
+    expect(env.engine!.sent).toHaveLength(1)
+  })
+})

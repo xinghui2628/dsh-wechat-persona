@@ -61,6 +61,7 @@ function makeDesktopHarness(options: {
   whitelist?: boolean
   pollIntervalMs?: number
   store?: MemoryFileStore
+  configPatch?: (cfg: ReturnType<typeof makeConfig>) => void
 }): DesktopHarness {
   const deps = makeDeps(options.store)
   const config = makeConfig((cfg) => {
@@ -73,6 +74,7 @@ function makeDesktopHarness(options: {
     cfg.channels.desktop.driverEnabled = options.driverEnabled ?? true
     cfg.channels.desktop.userActivityIdleMs = 5000
     cfg.channels.desktop.pauseSeconds = 30
+    if (options.configPatch) options.configPatch(cfg)
   })
   const channel = new DesktopChannel({
     config,
@@ -1052,3 +1054,104 @@ describe('可解释置信度 + 脚本诊断（v3.0.0 Phase C，6.5/13.2 回归�
   })
 })
 
+describe('发布前验收：只读测试模式与 OCR 流水线开关（task-16）', () => {
+  const READ_PAYLOAD = JSON.stringify({
+    ok: true,
+    captureId: 'cap-1',
+    messages: [
+      {
+        id: 'pc-1-1-abcd',
+        text: '在吗',
+        captureId: 'cap-1',
+        side: 'left',
+        seq: 1,
+        box: { x: 380, y: 200, width: 160, height: 28 },
+      },
+    ],
+  })
+
+  function readRecorder(readStdout: string) {
+    return recordRunner((script, args) => {
+      if (script === 'user-activity') return USER_IDLE
+      if (args.includes('list')) {
+        return {
+          code: 0,
+          stdout: JSON.stringify({
+            ok: true,
+            rows: [{ name: '张三', found: true, unread: true, preview: '', top: 100, left: 160, height: 80 }],
+          }),
+          stderr: '',
+        }
+      }
+      if (args.includes('read')) return { code: 0, stdout: readStdout, stderr: '' }
+      return UIA_OK
+    })
+  }
+
+  it('只读测试模式：send() 在一切校验/脚本之前直接拒绝，脚本调用数为 0', async () => {
+    const recorder = recordRunner(() => UIA_OK)
+    const harness = makeDesktopHarness({
+      runScript: recorder.runner,
+      configPatch: (cfg) => {
+        cfg.readOnlyTestMode = true
+      },
+    })
+    const result = await harness.channel.send('wxid_zhangsan', { kind: 'text', text: '你好' })
+    expect(result).toMatchObject({ ok: false, delivery: 'not-sent' })
+    expect(String(result.error)).toContain('只读测试模式')
+    expect(recorder.calls).toHaveLength(0)
+    const status = harness.channel.status() as { readOnlyTestMode?: boolean; ocr?: { pipelineMode?: string } }
+    expect(status.readOnlyTestMode).toBe(true)
+    expect(status.ocr?.pipelineMode).toBe('v3')
+  })
+
+  it('只读测试模式：list/read 调用带 -ReadOnly 与 -NoSearch（被动读取，不打开/不搜索会话）', async () => {
+    const recorder = readRecorder(READ_PAYLOAD)
+    const harness = makeDesktopHarness({
+      runScript: recorder.runner,
+      configPatch: (cfg) => {
+        cfg.readOnlyTestMode = true
+      },
+    })
+    harness.channel.handler = (message) => harness.messages.push(message)
+    harness.channel.stopped = false
+    await harness.channel.readInboundOnce()
+    expect(harness.messages.map((message) => message.text)).toEqual(['在吗'])
+    const readCalls = recorder.calls.filter((call) => call.script === 'wechat-uia' && call.args.includes('read'))
+    expect(readCalls.length).toBeGreaterThan(0)
+    for (const call of readCalls) {
+      expect(call.args).toContain('-ReadOnly')
+      expect(call.args).toContain('-NoSearch')
+    }
+  })
+
+  it('OCR 流水线开关：legacy 接受 uncertain 消息（v0.2.8 行为），v3 保持拒绝', async () => {
+    const uncertainPayload = JSON.stringify({
+      ok: true,
+      captureId: 'cap-1',
+      messages: [{ id: 'pc-1-1-abcd', text: '在吗', captureId: 'cap-1', status: 'uncertain' }],
+    })
+
+    const legacyRecorder = readRecorder(uncertainPayload)
+    const legacy = makeDesktopHarness({
+      runScript: legacyRecorder.runner,
+      configPatch: (cfg) => {
+        cfg.ocrPipelineMode = 'legacy'
+      },
+    })
+    legacy.channel.handler = (message) => legacy.messages.push(message)
+    legacy.channel.stopped = false
+    await legacy.channel.readInboundOnce()
+    expect(legacy.messages.map((message) => message.text)).toEqual(['在吗'])
+    const legacyStatus = legacy.channel.status() as { ocr?: { pipelineMode?: string } }
+    expect(legacyStatus.ocr?.pipelineMode).toBe('legacy')
+
+    const v3Recorder = readRecorder(uncertainPayload)
+    const v3 = makeDesktopHarness({ runScript: v3Recorder.runner })
+    v3.channel.handler = (message) => v3.messages.push(message)
+    v3.channel.stopped = false
+    await v3.channel.readInboundOnce()
+    expect(v3.messages).toHaveLength(0)
+    expect(v3.channel.uncertainCount).toBeGreaterThan(0)
+  })
+})
