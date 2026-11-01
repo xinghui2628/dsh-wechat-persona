@@ -1346,6 +1346,28 @@ export function createPersonaApi(deps: PersonaApiDeps): PersonaApi {
           if (validation.config.apiToken.trim() === '') {
             validation.config.apiToken = deps.getConfig().apiToken
           }
+          // 安全字段防护（发布前最小修复）：`betaSafeMode` 决定是否允许真实发送，
+          // `apiToken` 决定后续请求是否需要 Bearer 鉴权。兼容模式（未配置 apiToken）
+          // 下 L1–L5 只校验回环地址与请求头，本机任意进程都能伪造这两个头，因此
+          // 不能允许 HTTP 请求修改这两个字段——否则本机未授权进程可先关闭
+          // betaSafeMode 再调 /test/send 触发真实发送。这类修改只能落到本地
+          // 插件配置文件（DSH profile）并重启插件完成。
+          // 注意：只拦截「请求体显式携带且值发生变化」的情况；设置页提交完整配置时
+          // 携带的是当前值，不触发拦截；省略字段的部分更新也不触发（由默认值补齐）。
+          const currentConfig = deps.getConfig()
+          const rawConfig = obj.config as Record<string, unknown>
+          const ownsBetaSafeMode = Object.prototype.hasOwnProperty.call(rawConfig, 'betaSafeMode')
+          const ownsApiToken = Object.prototype.hasOwnProperty.call(rawConfig, 'apiToken')
+          const attemptsSafetyChange =
+            (ownsBetaSafeMode && validation.config.betaSafeMode !== currentConfig.betaSafeMode) ||
+            (ownsApiToken && validation.config.apiToken !== currentConfig.apiToken)
+          if (attemptsSafetyChange && apiToken === '') {
+            return failJson(
+              403,
+              '兼容模式（未配置 apiToken）下不能通过 HTTP 修改安全字段（betaSafeMode / apiToken）；请在插件配置文件里修改后重启插件',
+              'safety-fields-require-auth',
+            )
+          }
           let saved: { ok: boolean; error?: string }
           try {
             saved = await deps.saveConfig(validation.config)

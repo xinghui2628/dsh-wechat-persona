@@ -795,6 +795,46 @@ describe('Host HTTP API：配置读写', () => {
     expect('__unknown' in (saved as unknown as Record<string, unknown>)).toBe(false)
   })
 
+  it('兼容模式下 POST /config 不能关闭 betaSafeMode（403，安全字段需鉴权）', async () => {
+    const env = await makeEnv()
+    env.config.betaSafeMode = true
+    const input = structuredClone(env.config)
+    input.betaSafeMode = false
+    const json = expectFail(await call(env, 'POST', '/config', { config: input }), 403, /betaSafeMode/)
+    expect(json.detail).toBe('safety-fields-require-auth')
+    expect(env.savedConfigs).toHaveLength(0)
+    expect(env.config.betaSafeMode).toBe(true)
+  })
+
+  it('兼容模式下 POST /config 不能写入 apiToken（防止本地进程改鉴权配置）', async () => {
+    const env = await makeEnv()
+    const input = structuredClone(env.config)
+    input.apiToken = 'attacker-controlled-token'
+    const json = expectFail(await call(env, 'POST', '/config', { config: input }), 403, /apiToken/)
+    expect(json.detail).toBe('safety-fields-require-auth')
+    expect(env.savedConfigs).toHaveLength(0)
+  })
+
+  it('兼容模式下保存未改动安全字段的配置仍可用（设置页保存不中断）', async () => {
+    const env = await makeEnv()
+    const input = structuredClone(env.config)
+    input.reply.maxChars = 321
+    expectOk(await call(env, 'POST', '/config', { config: input }), 202)
+    expect(env.savedConfigs[0]!.reply.maxChars).toBe(321)
+    expect(env.savedConfigs[0]!.betaSafeMode).toBe(false)
+  })
+
+  it('配置了 apiToken 且携带有效 Bearer 时允许修改 betaSafeMode（维护者显式操作）', async () => {
+    const localToken = 'cfg-token-0123456789abcdef'
+    const env = await makeEnv({ apiToken: localToken })
+    env.config.apiToken = localToken
+    const input = structuredClone(env.config)
+    input.betaSafeMode = true
+    const headers: Record<string, string> = { ...AUTH_HEADERS, authorization: `Bearer ${localToken}` }
+    expectOk(await call(env, 'POST', '/config', { config: input }, '', headers), 202)
+    expect(env.savedConfigs[0]!.betaSafeMode).toBe(true)
+  })
+
   it('POST /config 在 typingMinMs 大于 typingMaxMs 时交换', async () => {
     const env = await makeEnv()
     const input = structuredClone(env.config)
