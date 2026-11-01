@@ -90,7 +90,7 @@ function makeIdHarness(options: {
   const config = makeConfig((cfg) => {
     cfg.enabled = true
     cfg.activeChannel = 'desktop'
-    cfg.whitelist = [{ id: 'wxid_contact_a', name: contact, aliases: [], note: '' }]
+    cfg.whitelist = [{ id: 'wxid_a', name: contact, aliases: [], note: '' }]
     cfg.channels.desktop.enabled = true
     cfg.channels.desktop.driverEnabled = true
     cfg.channels.desktop.userActivityIdleMs = 5000

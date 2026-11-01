@@ -27,7 +27,7 @@
 
 | 要求 | 状态 | 证据 |
 | --- | --- | --- |
-| 2.1 敏感信息排查（真名/昵称/wxid/路径/token 等） | ✅ | `docs/ACCEPTANCE.md` 真名→测试占位；`docs/HANDOFF-0.3.0.md` 14 处指纹泛化；`scripts/check-sensitive.mjs` 157 个受跟踪文本文件 0 命中 |
+| 2.1 敏感信息排查（真名/昵称/wxid/路径/token 等） | ✅ | `docs/ACCEPTANCE.md` 真名→测试占位；`docs/HANDOFF-0.3.0.md` 14 处指纹泛化；`scripts/check-sensitive.mjs` 212 个受跟踪文本文件 0 命中 |
 | 2.2 Privacy by Default | ✅ | 日志不含聊天全文；诊断 15 字段不含聊天内容；草稿/账本只在 dataDir；市场 URL 校验 |
 | 2.3 Git 历史中的敏感信息 | ⏳ 待批准 | `9db6c5b`（已推送 origin/master）文档含真实中文姓名；改写历史不可逆，需维护者明确决定 |
 
@@ -133,7 +133,7 @@
 | 14.2 定位文字避免未验证宣传 | ✅ | README 标注「3.0.0 开发中、private:true 不公开发布」；OCR 结论限定口径 |
 | 14.3 文档清单 | ✅ | ARCHITECTURE/OCR-DESIGN/OCR-BENCHMARK/PRIVACY/SECURITY/MIGRATION-v3/TROUBLESHOOTING/CONTRIBUTING/RELEASE-CHECKLIST 全部存在 |
 | 14.4 CI ≥10 项，不依赖真实账号，不掩盖锁文件问题 | ✅ | `.github/workflows/ci.yml` verify-windows 14 步：typecheck/单测/集成/Windows 兼容（含 .ps1 BOM 断言）/build/API 验证/npm audit/敏感扫描/发布包检查/OCR 冒烟（marked skip）+ linux-guard；`npm ci` 无回退；YAML 校验通过 |
-| 14.5 Release 准备（更新日志/兼容/安装/迁移/已知限制/可复现构建/SHA256/干净包/回退；private:true 不得改公开；需批准） | ✅ 文档 | `docs/RELEASE-CHECKLIST.md` §6（发布说明/可复现构建+dist-SHA256SUMS/SHA256 命令/干净发布包流程+禁 npm pack/回退 v0.2.8/批准边界）；`scripts/check-package.mjs` 167 候选 0 违规；仅文档与 dry-run，未实际发布 |
+| 14.5 Release 准备（更新日志/兼容/安装/迁移/已知限制/可复现构建/SHA256/干净包/回退；private:true 不得改公开；需批准） | ✅ 文档 | `docs/RELEASE-CHECKLIST.md` §6（发布说明/可复现构建+dist-SHA256SUMS/SHA256 命令/干净发布包流程+禁 npm pack/回退 v0.2.8/批准边界）；`scripts/check-package.mjs` 189 候选 0 违规；仅文档与 dry-run，未实际发布 |
 
 ## 15. 第十五部分：执行顺序 A–G（每阶段独立提交 + 测试）
 
@@ -176,3 +176,17 @@
 1. 是否 `git push` `feat/v3.0.0`（18 个本地提交，未推送）。
 2. 是否打 tag / 发 Release（`private: true` 不改公开；Release 需明确批准）。
 3. 是否改写 git 历史清除 `9db6c5b` 的真实姓名残留（不可逆，需明确授权）。
+
+
+## 附录 B：发布前独立复核轮次（2026-11-01）
+
+发布前按《DSH_v3.0.0_发布前独立复核与只读验收_完整提示词》做了独立复核，结论与证据见 `docs/V3-PRE-RELEASE-REVIEW.md`（A–G 全节）。与本清单相关的增量状态：
+
+| 项 | 状态 | 说明 |
+| --- | --- | --- |
+| 4.3 先核查后替换 / 受控 Feature Flag | ✅ | `config.ocrPipelineMode: 'v3'｜'legacy'`（默认 v3），legacy 保持 v0.2.8 行为，切换不影响发送门禁 |
+| 5 只读测试模式（发布前验收） | ✅ 代码层 | `readOnlyTestMode` 四层硬阻断 + 22 条以上回归；真实微信未验证（方案 `docs/OCR-REAL-DEVICE-TEST-PLAN.md` 待批准） |
+| 4.1/8.2 消息 ID 稳定性 | ✅ mock 回归 | `test/channels/desktop-id-stability.test.ts` 6 条（含重启不重发）；已投递 id 持久化到 `desktop-delivered.json` |
+| 独立复核门禁 | ✅ | `typecheck` 0；`test:sandbox` 41 文件/678 用例；`check-sensitive` 212 文件 0；`check-package` 189 候选 0；`verify:api` 25/25；`build` 通过 |
+| 生产接线诚实标注 | ✅ | `fusion/align/tracker` 仍「仅测试/未集成」；`pipeline/confidence/vote` 生产使用（`docs/V3-PRE-RELEASE-REVIEW.md` §B） |
+| 发布决策 | ⏳ 待维护者 | push / tag+Release / 历史改名 / 真实设备只读验证 / 本地未跟踪 PII 目录处置（见复核报告 §G） |

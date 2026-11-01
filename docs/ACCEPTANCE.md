@@ -144,7 +144,7 @@ npm run test:sandbox
 | 类型检查 | `npm run typecheck` | 0 错误 |
 | 全量测试 | `npm run test:sandbox` | **30 个测试文件 / 399 个用例全部通过**（受限沙箱可用；普通环境 `npm test`） |
 | 构建 | `npm run build` | `dist/` 78 个文件；`node -e "import('./dist/index.js')"` → `Config/apply/inject/name/provide` |
-| 离线接口验收 | `npm run verify:api` | **24/24 通过**（见下） |
+| 离线接口验收 | `npm run verify:api` | **25/25 通过**（v3.0.0 复核，2026-11-01；见下） |
 
 ### 11.2 离线接口验收（`scripts/verify-api.mjs`）
 
@@ -192,7 +192,7 @@ npm run test:sandbox
 | 桌面脚本语法 | `[System.Management.Automation.Language.Parser]::ParseFile(...)` | PARSE-OK；UTF-8 BOM 保留 |
 | 会话列表识别 | `wechat-uia.ps1 -Action list`（4 位联系人） | 4/4 found，约 1.9–2.3 秒 |
 | 一键自检 | `scripts/pwsh/selfcheck.ps1 -Port 53905` | fail 0 / warn 1（多微信窗口提示）；插件 API 0.2.1 正常 |
-| 宿主 API 离线验收 | `npm run verify:api` | 24/24 通过 |
+| 宿主 API 离线验收 | `npm run verify:api` | 25/25 通过（v3.0.0 复核，2026-11-01） |
 | 沙箱测试 | `npm run test:sandbox` | 30 个测试文件 / 399 个用例全部通过 |
 
 ### 12.2 脚本层压测（`scripts/dev/stress-script.py`，文件传输助手）

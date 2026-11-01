@@ -34,11 +34,13 @@ DSH（DeepSeek Harness）插件。它不接管你的主号，只针对**小号**
 | 防误发 | 桌面通道发消息必须拿到会话行坐标，无坐标直接拒发；投递结果三态，`unknown` 不重试 |
 | 发送可靠性（v3.0.0） | 10 态发送状态机 + `send-ledger.json` 幂等账本：同一 `sendOperationId` / `partIndex` 只执行一次，`unknown` 永不自动重放；多段拆条逐段记账 |
 | 发送模式（v3.0.0） | `sendMode`：`auto`（默认自动发送）/ `draft` / `confirm`。后两者只生成草稿到 `dataDir/drafts.json`（上限 50 条、24 小时 TTL），在设置页「待发送草稿」人工批准；`safeMode` 优先级最高 |
-| OCR 融合与置信度（v3.0.0） | 双引擎几何匹配（`fusion.ts`）与序列对齐（`align.ts`）；`confidence.ts` 给每帧可信度（accept / verify / reject），低置信不投递且不推进 ack；`tracker.ts` 用加权 LCS 判定跨帧 replay / insert / scroll |
+| OCR 融合与置信度（v3.0.0） | 生产读取路径使用 `pipeline.ts`（分层拒绝/稳定 id/ack）与 `confidence.ts`（每帧可信度 accept / verify / reject，低置信不投递且不推进 ack）；`fusion.ts`（几何匹配）、`align.ts`（序列对齐）、`tracker.ts`（跨帧 LCS 判定）目前是**离线实验能力 + 单测，尚未接入生产读取路径**，不得当作线上收益 |
 | 记忆 | 每联系人最近消息 + 长期摘要 + 偏好（称呼/忌讳/话题），文件按 contactId 哈希命名 |
 | 设置页 | Web 设置页 10 个标签页；所有改动写入宿主 profile 配置，重启不丢 |
 | 运维工具 | 6 个 `wechat_persona_*` 工具：status / pause / resume / send_test / clear_memory / clear_audit |
 | 安全运行模式 | `safeMode` 开启后，所有真实通道的发送在门禁层被拒绝（仅 mock 空转）；默认关闭，首次配置向导默认建议开启 |
+| 只读测试模式（发布前验收） | `readOnlyTestMode` 开启后四层硬阻断真实发送与键鼠模拟：engine 门禁（`read-only-mode`）、`desktop.send` 首行拒绝、API `/test/send` 与 `/drafts/approve` 409、PS1 `-ReadOnly`；默认关闭，详见 [docs/READ-ONLY-MODES.md](docs/READ-ONLY-MODES.md) |
+| OCR 流水线开关 | `ocrPipelineMode`：`v3`（默认，分层拒绝+置信度+稳定 id）/ `legacy`（回退 v0.2.8 读法，跳过置信度门禁）；切换不影响发送安全门禁；`status().ocr.pipelineMode` 可见 |
 | 诊断与向导 | 设置页首次配置向导、mock 测试入口；`GET /diagnostics/ocr` 只读返回桌面通道最近一次 OCR 读取状态（不截图、不含正文） |
 | 4 通道 | mock（默认空转）、phone-adb、windows-vm、desktop（PC 微信 UIA + OCR，默认关闭） |
 
@@ -170,6 +172,8 @@ powershell -ExecutionPolicy Bypass -File scripts/pwsh/selfcheck.ps1   # Windows/
 | 发送模式 | `sendMode='auto'` | `auto`=生成后自动发送；`draft`/`confirm`=只生成草稿，需在设置页「待发送草稿」人工批准；`safeMode` 优先于本项 |
 | 搜索 | `search.enabled=true`、`maxPerDay=20`、`maxResults=3`、`extraKeywords=[]` | 按需触发，失败降级 |
 | 安全 | `safety.forbiddenKeywords`、`pauseOnForbiddenInbound=true`、`blockTransfers=true`、`blockSuspiciousLinks=true`、`circuitBreakerEnabled=true` | 默认命中禁止词即暂停 |
+| 只读测试模式 | `readOnlyTestMode=false` | true 时禁止一切真实发送与键鼠模拟（四层阻断），只允许 mock 与只读 OCR；真实设备只读验证前应先开启 |
+| OCR 流水线 | `ocrPipelineMode='v3'` | `v3`=新流水线；`legacy`=回退 v0.2.8 读法（受控回退，不改变发送安全判断） |
 | 安全模式/鉴权 | `safeMode=false`、`onboardingDone=false`、`apiToken=''` | `safeMode=true` 时拒绝向真实通道发送；`apiToken` 留空=兼容模式（回环+请求头），显式配置后强制 Bearer（见 [docs/SECURITY.md](docs/SECURITY.md)） |
 | 人格广场 | `market.indexUrl=''`、`market.builtinOnly=false` | 留空只用内置人格，不访问网络 |
 | 通道 | `channels.desktop{enabled=false,windowTitle='微信',userActivityIdleMs=5000,pauseSeconds=30,driverEnabled=false}`；`channels.phoneAdb`/`channels.windowsVm`/`channels.mock` | 桌面通道默认关闭且默认只读 |
@@ -179,6 +183,7 @@ powershell -ExecutionPolicy Bypass -File scripts/pwsh/selfcheck.ps1   # Windows/
 
 - **数据默认在本机**：`state.json`、`memory/`、`audit.jsonl`、`drafts.jsonl`、`alerts.jsonl`、
   `deferred-inbound.json`、`desktop-ack.json`（桌面通道 ack 水位线，含联系人名称）、
+  `desktop-delivered.json`（已投递消息 id 去重表，FIFO 500，含联系人名称与消息 id、不含正文）、
   `drafts.json`（`draft`/`confirm`/`safeMode`/预算草稿的正文，上限 50 条、24 小时 TTL）、
   `send-ledger.json`（发送幂等账本，**只存文本哈希不存正文**，上限 200 条）、`stickers/`、`personas/`，
   以及可选 `api-token` 文件，都在 `dataDir` 下。
@@ -188,6 +193,7 @@ powershell -ExecutionPolicy Bypass -File scripts/pwsh/selfcheck.ps1   # Windows/
   `%TEMP%\wxuia-engine-debug.log`，**含 OCR 识别到的聊天文本片段**，排障后建议删除。
   可用 `WXUIA_SHOT_DIR` 保留截图副本（默认关，排障/校准用）。
 - **剪贴板**：桌面通道发送时临时借用剪贴板粘贴文本，随后恢复原内容（不落盘）。
+- **只读测试模式（发布前验收）**：`readOnlyTestMode=true` 时四层阻断真实发送与键鼠模拟（engine 门禁 / `desktop.send` 首行 / API 409 / PS1 `-ReadOnly`），只允许 mock 空转与只读 OCR；默认关闭，真实设备只读验证前应先开启。
 - **安全运行模式**：`safeMode=true` 时所有非 mock 通道的发送在门禁层被拒，只允许 mock 空转；
   首次配置向导会建议开启。只读 OCR 诊断 `GET /diagnostics/ocr` 不截图、不含正文、不落盘。
 - **发送侧防误发**：桌面通道必须拿到会话列表行坐标并通过标题校验；`unknown` 投递不重试；
@@ -254,10 +260,10 @@ node scripts/check-package.mjs     # 发布包内容检查（clean checkout + di
   HTTP API 鉴权矩阵与草稿接口、安全运行模式拒发与 OCR 诊断只读、10 态发送状态机与幂等账本、
   配置迁移、通道能力降级等。
 - 当前规模（2026-11-01 实测，工作区含未提交的 v3 改动）：`npm run test:sandbox` →
-  **40 个测试文件 / 648 个用例全部通过**（1.59s）；`npm run typecheck` 与 `npm run build` 均 exit 0；
-  `npm run verify:api` → **24/24 通过**；`node scripts/check-sensitive.mjs` → 157 个受跟踪文本文件
-  0 命中；`node scripts/check-package.mjs` → 167 个候选文件 0 违规（7 条 gitignore 垃圾警告，均不进发布包）。
-- 基准语料：`test/fixtures/ocr-corpus/`（20 场景 × 2 变体，全虚构内容），离线 OCR 基准：
+  **41 个测试文件 / 678 个用例全部通过**（1.58s）；`npm run typecheck` 与 `npm run build` 均 exit 0；
+  `npm run verify:api` → **25/25 通过**；`node scripts/check-sensitive.mjs` → 212 个受跟踪文本文件
+  0 命中；`node scripts/check-package.mjs` → 189 个候选文件 0 违规（8 条 gitignore 垃圾警告；发布包 `files` 已排除 `*.bak-*`/`__pycache__`/`*.pyc`）。
+- 基准语料：`test/fixtures/ocr-corpus/`（30 场景 × 2 变体 = 60 张，全虚构内容），离线 OCR 基准：
 
 ```powershell
 node scripts/ocr/bench.mjs --engine=winrt --limit=1 --scenario=clear --pipeline=raw

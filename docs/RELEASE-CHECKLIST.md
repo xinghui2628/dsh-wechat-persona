@@ -10,9 +10,9 @@
 
 | 项 | 状态 | 说明 |
 | --- | --- | --- |
-| §2 的 1–10 条门槛 | **全部满足** | 证据见 §2、§4；工作区基线测试规模 **40 文件 / 648 用例**（2026-11-01 阶段 2 实测，HEAD `28d3a89` + task-12/13/14 未提交改动） |
+| §2 的 1–10 条门槛 | **全部满足** | 证据见 §2、§4；工作区基线测试规模 **41 文件 / 678 用例**（2026-11-01 阶段 2 实测，HEAD `28d3a89` + task-12/13/14 未提交改动） |
 | CI 十项门禁（任务书 §14.4） | **满足** | `.github/workflows/ci.yml` 逐项成步：typecheck / 单测 / 集成 / OCR 冒烟 / Windows 兼容 / build / API 验证 / 依赖审计 / 敏感扫描 / 发布包内容检查；本地逐步复跑见 §4-9，README §10 有映射表 |
-| 发布包干净度 | **满足（本地实测）** | `node scripts/check-package.mjs`：**167** 个候选文件（干净 checkout 受跟踪文件 ∩ `package.json files` + `dist/`），0 违规；7 个被 gitignore 的本地调试垃圾只警告、不入包（§4-7）。`scripts/check-package.mjs` 提交后会变为 168 |
+| 发布包干净度 | **满足（本地实测）** | `node scripts/check-package.mjs`：**189** 个候选文件（干净 checkout 受跟踪文件 ∩ `package.json files` + `dist/`），0 违规；7 个被 gitignore 的本地调试垃圾只警告、不入包（§4-7）。候选数随发布包文件集变化（最终实测 189） |
 | 发送可靠性 / 幂等 / 草稿 | **满足（代码 + 单测）** | `src/core/send-state.ts`（10 态）、`src/core/send-ledger.ts`（`sendOperationId` 幂等、`unknown` 永不自动重发）、`sendMode=draft/confirm` 草稿队列与批准（`engine.ts:800-866`）均有单测；真实故障路径未实机演练（见 §1 末行与门槛 10） |
 | OCR 准确率附加条目 | **达成（限定「合成语料 + 离线等价」）** | 同一独立 eval 集 v3 CER 21.38% / 整句 47.83%，v0.2.8 基线 37.37% / 28.26%；跨口径也满足 CER ≤ 28.09% / 整句 ≥ 32.95%。**真实微信截图未验证**，见 §3 |
 | 真实设备验证 | **未验证（需用户单独授权）** | Phase C（同帧/captureId/ack/气泡归属）、Phase E 鉴权、Phase F `safeMode`/诊断/向导均有单测与离线验收，但真实微信端到端未跑 |
@@ -23,15 +23,15 @@
 
 | # | 门槛（原文） | 状态 | 证据 / 说明 |
 | --- | --- | --- | --- |
-| 1 | 所有核心单元测试通过 | **满足** | `npm run test:sandbox`：**40 文件 / 648 用例全部通过**（2026-11-01 阶段 2 实测，exit 0，1.62s）；含 Phase C 新增 `test/core/ocr-{baseline,bubbles,pipeline,fusion,align,confidence,tracker}.test.ts`、`test/core/{send-state,send-ledger,persona-market}.test.ts`、`test/channels/desktop.test.ts`（39 用例，含 ack 水位线落盘/重放与置信度门禁）、`test/server/api.test.ts`（132 用例，含草稿接口/诊断/鉴权）与 `test/engine/acceptance.test.ts`（safeMode/OCR 诊断/草稿用例）。证据记录见 §4-2 |
+| 1 | 所有核心单元测试通过 | **满足** | `npm run test:sandbox`：**41 文件 / 678 用例全部通过**（2026-11-01 阶段 2 实测，exit 0，1.62s）；含 Phase C 新增 `test/core/ocr-{baseline,bubbles,pipeline,fusion,align,confidence,tracker}.test.ts`、`test/core/{send-state,send-ledger,persona-market}.test.ts`、`test/channels/desktop.test.ts`（39 用例，含 ack 水位线落盘/重放与置信度门禁）、`test/server/api.test.ts`（132 用例，含草稿接口/诊断/鉴权）与 `test/engine/acceptance.test.ts`（safeMode/OCR 诊断/草稿用例）。证据记录见 §4-2 |
 | 2 | OCR 重试不改变消息基线 | **满足（代码 + 单测 + 脚本双向接线）** | 纯逻辑：`src/core/ocr/baseline.ts`（尾对齐/pending 队列/captureId/ack/稳定 id）、`bubbles.ts`（气泡归属）、`pipeline.ts`（可投递决策 + legacy 兼容）；`desktop.ts` 接线：`planInboundDispatch`、`ackArgs` 传 `-Ack`、`planRead`/`commitAck`，ack 水位线持久化到 `<dataDir>/desktop-ack.json`（懒加载 :282-294 / 串行落盘 :297-303，跨进程重启读回）；**置信度门禁**：reject 不投递且**不推进 ack**，pending 下次重放（`desktop.ts:862-877`）；脚本侧：`wechat-uia.ps1` 的 `-Ack` 参数、`captureId` 生成与输出、`Get-BubblePane/Get-BubbleSide`（:747-788）、稳定 id `pc-<captureSeq>-<messageSeq>-<几何哈希>`、`Save-State` 原子写（:1207-1230）、同帧 `-KeepImage`/分层 `-SecondOcr`；测试：`test/core/ocr-{baseline,bubbles,pipeline}.test.ts`、`test/channels/desktop.test.ts` Phase C describe（长气泡越线拒投、captureId 记录、`-Ack` 重放 id 稳定、12 条不截断、ack 落盘与重启读回）。残余：真实微信环境端到端未验证（由门槛 10 与 §1 覆盖） |
 | 3 | 不存在已知的跨联系人错误发送路径 | **满足**（代码 + 回归测试层面） | 桌面发送必须拿会话列表行坐标，无坐标直接拒发：`src/channels/pc/desktop.ts:815-822`（`缺少聊天定位信息…已拒绝发送以避免发错人`）；不再信任 `lastActiveContact`（`REL-P0-3` 注释 `desktop.ts:815`，原 180s 兜底已删）；发送参数不传 `-CurrentContact`（`desktop.ts:852`，避免脚本 trustedOpen 跳过标题 OCR）；回归测试 `test/channels/desktop.test.ts:225`（无行拒发）与 `:274`（P0-3：最近活跃恰好是目标但无行坐标也拒发）。残余：脚本内 `trustedOpen` 分支仍存在（`wechat-uia.ps1:1691` 起），仅当显式传 `RowTop≤0` 且 `CurrentContact` 与 `Contact` 一致才触发，桌面通道不构造该条件；真实微信环境未验证（由门槛 10 覆盖） |
 | 4 | 暂停后不能启动新的发送 | **满足** | 统一门禁 `src/engine/engine.ts:466`（含 `checkSafeMode`；paused/abort/breaker/budget/safeMode 全部拦截，safeMode 拦截在 :480）；`engine.start()` 在暂停/熔断时保持不启动通道（`engine.ts:180-211`）；发送循环每个 part、每次重试前都重新门禁（`engine.ts:1316-1391`）；草稿批准也重走同一 `canSend`（`engine.ts:800-866`）；API 层 `/test/send` 暂停返回 409（`test/server/api.test.ts:1343`）；聊天内 `/stop` 暂停后 0 次 LLM（`test/engine/acceptance.test.ts:479`） |
 | 5 | 发送结果 unknown 时不能盲目重发 | **满足** | `resolveSendDelivery`（`engine.ts:97-102`）缺省/非法一律保守 `unknown`；`canRetrySend`（`engine.ts:105-110`）只有 `not-sent` 才允许重试；发送循环最多 2 次尝试且 `unknown` 不重试、任一 part 失败中止整批；**幂等账本** `src/core/send-ledger.ts`：`shouldSend` 对 confirmed/cancelled/unknown 返回 false，failed 仅在 `delivery='not-sent'` 且 attempts<3 时允许；账本落 `dataDir/send-ledger.json`（只存文本哈希、上限 200），主回复与 `sendTest` 均接线（`engine.ts:1316-1391`、`:383-434`）。测试：`test/core/send-ledger.test.ts`、`test/core/send-state.test.ts`、`test/engine/acceptance.test.ts:653`（三态工具函数）、`:738`（unknown 只发一次、审计 `send-fail/unknown`）；通道层 `test/channels/desktop.test.ts:258`；脚本层 `Fail-With` 输出 `delivery`，气泡未确认返回 `unknown` |
 | 6 | 非授权 API 请求不能触发真实发送 | **满足** | 鉴权链：仅回环 socket + `x-dsh-wechat-persona: 1` + Host/Origin/Sec-Fetch-Site 防跨站 + 可选 apiToken + 进程内限速 429（`src/server/api.ts`；文档 [SECURITY.md](SECURITY.md)）。测试：`test/server/api.test.ts:487-660`（缺头/错值/非回环 → 403；错误 token → 401；跨站 Host/Origin/Sec-Fetch → 403；429）；`:689` 起 `/status` 暴露 `safeMode/sendMode/pendingDrafts/sendState`；`:1343` 暂停 409、`:1358` mockOnly 非 mock 通道 409；`:1372` 起逐端点「未授权不得触发」矩阵；`:1424-1474` `/diagnostics/ocr` 白名单字段/降级；`/drafts` 与 `/drafts/approve|reject` 走同一鉴权与门禁（批准重走 `canSend`）；safeMode 拒发：`test/engine/acceptance.test.ts:935-983`（真实通道 0 次 `channel.send`）；SSRF 防护另有 `test/core/persona-market.test.ts`（见 SECURITY §七） |
 | 7 | 旧版本配置可以正确迁移 | **满足** | `migrateConfig`（`src/config.ts:519-523`）幂等；测试 `test/core/config-migration.test.ts`：空配置补安全默认值、旧 onlineStart/End → 工作日/周末时段、幂等、保留显式开关、非法输入回落、旧 `reply.personaDir` 提示不丢人格库默认、**旧配置缺 `sendMode` 补默认 `auto`（保持旧行为）**。新增字段 `safeMode/onboardingDone/sendMode/apiToken` 均有默认值（`false/false/'auto'/''`），旧配置无需手改。升级/回滚步骤见 [MIGRATION-v3.md](MIGRATION-v3.md) |
-| 8 | 发布包不存在已知敏感数据 | **满足**（本次实测） | `node scripts/check-sensitive.mjs` 扫描 **157 个 git 受跟踪文本文件，0 命中，exit 0**（2026-11-01 阶段 2 复核，10:07 实测）；规则覆盖 wxid/本机路径/手机号/真实邮箱/密钥/疑似真实姓名，输出打码。发布维度另有 `node scripts/check-package.mjs`：只扫会进入发布包的 **167** 个文件（受跟踪 ∩ `files` + `dist/`），0 命中（§4-7）。说明：`dist/`、dataDir 不入库；`drafts.json`/`send-ledger.json`/`desktop-ack.json` 属运行时数据（gitignore 且被 check-package 黑名单覆盖），不会进包；OCR 语料截图为脚本合成的虚构内容（`scripts/ocr/gen_corpus.py`，seed 固定） |
-| 9 | README 能正确指导 mock 安装 | **满足**（本地可复现） | README §5 安装（链接进 profile / plugin_manager 两种）与 §6 mock 快速开始（默认 mock、虚构白名单、`POST /test/inbound` 注入、`/status` 校验）；离线验收 `node scripts/verify-api.mjs`：**24/24 PASS**（§4-4），其中 mock 通道 `/test/inbound` 202、`/test/send` 200 且 `delivery:'sent'`。未在「全新干净机器」实测，宿主版本差异属门槛 10 的未验证范围 |
+| 8 | 发布包不存在已知敏感数据 | **满足**（本次实测） | `node scripts/check-sensitive.mjs` 扫描 **212 个 git 受跟踪文本文件，0 命中，exit 0**（2026-11-01 阶段 2 复核，10:07 实测）；规则覆盖 wxid/本机路径/手机号/真实邮箱/密钥/疑似真实姓名，输出打码。发布维度另有 `node scripts/check-package.mjs`：只扫会进入发布包的 **189** 个文件（受跟踪 ∩ `files` + `dist/`），0 命中（§4-7）。说明：`dist/`、dataDir 不入库；`drafts.json`/`send-ledger.json`/`desktop-ack.json` 属运行时数据（gitignore 且被 check-package 黑名单覆盖），不会进包；OCR 语料截图为脚本合成的虚构内容（`scripts/ocr/gen_corpus.py`，seed 固定） |
+| 9 | README 能正确指导 mock 安装 | **满足**（本地可复现） | README §5 安装（链接进 profile / plugin_manager 两种）与 §6 mock 快速开始（默认 mock、虚构白名单、`POST /test/inbound` 注入、`/status` 校验）；离线验收 `node scripts/verify-api.mjs`：**25/25 PASS**（§4-4），其中 mock 通道 `/test/inbound` 202、`/test/send` 200 且 `delivery:'sent'`。未在「全新干净机器」实测，宿主版本差异属门槛 10 的未验证范围 |
 | 10 | 真实环境未验证的功能有明确说明 | **满足** | 未验证项在 README §3/§9/§10、ARCHITECTURE §14、本清单 §1/§3 与 [MIGRATION-v3.md](MIGRATION-v3.md)、[TROUBLESHOOTING.md](TROUBLESHOOTING.md)、[PRIVACY.md](PRIVACY.md)、[OCR-DESIGN.md](OCR-DESIGN.md) §11 中逐项标注；Phase C（同帧/captureId/ack/气泡归属/置信度门禁）、Phase E（鉴权 + SSRF 加固）、Phase F（`safeMode`、`GET /diagnostics/ocr`、首次配置向导、mock 测试入口）、发送状态机/幂等账本/草稿模式**已实现并有单测**，但统一标注「真实微信环境未验证」；`fusion/align/tracker` 明确标注「已实现+单测、未接入生产读取路径」；OCR 准确率结论限定「合成语料 + 离线等价」并注明真实截图需授权复测；真实微信端到端测试明确要求用户单独授权 |
 
 ## 3. OCR 准确率专项（附加发布条件）
@@ -61,15 +61,15 @@
 | # | 命令 | 结果 |
 | --- | --- | --- |
 | 1 | `npm run typecheck` | exit 0，无报错（阶段 2 复核同） |
-| 2 | `npm run test:sandbox` | 阶段 2：**40 文件 / 648 用例通过**，1.62s，exit 0（`test/server/api.test.ts` 132、`test/channels/desktop.test.ts` 39 等；新增 send-state/send-ledger/fusion/align/confidence/tracker/persona-market 测试） |
-| 3 | `node scripts/check-sensitive.mjs` | 扫描 **157** 个受跟踪文本文件，**0 命中**，exit 0（2026-11-01 阶段 2 复核，10:07 实测；新增未跟踪文件需 `git add` 后再跑） |
-| 4 | `node scripts/verify-api.mjs` | **24/24 PASS**，exit 0（mock 通道收/发、暂停/恢复、鉴权 403、`/diagnostics/ocr`、config/personas/market/stickers/help；需先 `npm run build`，旧 dist 会报 `/health` 0.2.8） |
+| 2 | `npm run test:sandbox` | 阶段 2：**41 文件 / 678 用例通过**，1.62s，exit 0（`test/server/api.test.ts` 132、`test/channels/desktop.test.ts` 39 等；新增 send-state/send-ledger/fusion/align/confidence/tracker/persona-market 测试） |
+| 3 | `node scripts/check-sensitive.mjs` | 扫描 **212** 个受跟踪文本文件，**0 命中**，exit 0（2026-11-01 阶段 2 复核，10:07 实测；新增未跟踪文件需 `git add` 后再跑） |
+| 4 | `node scripts/verify-api.mjs` | **25/25 PASS**，exit 0（mock 通道收/发、暂停/恢复、鉴权 403、`/diagnostics/ocr`、config/personas/market/stickers/help；需先 `npm run build`，旧 dist 会报 `/health` 0.2.8） |
 | 5 | `node scripts/ocr/bench.mjs --engine=winrt --limit=1 --scenario=clear --pipeline=raw` | exit 0，总耗时 1.2s；winrt orig 单图 CER 10.53% / 行 F1 1.000 / P50 26ms（仅冒烟） |
 | 6 | `npm run build` | exit 0；重建后 `GET /health` 返回 `version=3.0.0`（重建前旧 `dist/` 仍报 0.2.8 —— 发版前必须重新 build 并重载插件） |
-| 7 | `node scripts/check-package.mjs` | exit 0：候选 **167** 个文件（受跟踪 ∩ `files` + `dist/`），**0 违规**；警告 7 条（`scripts/pwsh/wechat-uia.ps1.bak-*` ×3、`scripts/**/__pycache__/*.pyc` ×4，均被 gitignore，不进发布包） |
+| 7 | `node scripts/check-package.mjs` | exit 0：候选 **189** 个文件（受跟踪 ∩ `files` + `dist/`），**0 违规**；警告 8 条（`scripts/pwsh/wechat-uia.ps1.bak-*` ×4、`scripts/**/__pycache__/*.pyc` ×4，均被 gitignore 且已被 `package.json files` 排除，不进发布包） |
 | 8 | `npm audit --omit=dev --audit-level=high` | exit 0，**found 0 vulnerabilities**（生产依赖仅 `@deepseek-ai/schemastery`；peer `cordis` 由宿主提供） |
 | 9 | CI 十项本地等价复跑 | typecheck、单测子集、集成子集（engine+server+channels）、Windows 兼容（4 个 .ps1 均带 UTF-8 BOM）、build、verify-api、audit、check-sensitive、check-package、OCR 冒烟逐项通过 |
-| 10 | 阶段 2 全量门禁 | `typecheck` exit 0；`test:sandbox` **40 文件 / 648 用例全过**（1.59s）；`check-sensitive` **157 文件 0 命中**；`check-package` **167 候选 0 违规**（7 条 gitignore 垃圾警告）；文档相对链接 0 缺失；`ci.yml` YAML 解析通过（2026-11-01，工作区含未提交改动，最终数字以提交后重跑为准） |
+| 10 | 阶段 2 全量门禁 | `typecheck` exit 0；`test:sandbox` **41 文件 / 678 用例全过**（1.59s）；`check-sensitive` **157 文件 0 命中**；`check-package` **189 候选 0 违规**（8 条 gitignore 垃圾警告；发布包 files 已排除本地垃圾）；文档相对链接 0 缺失；`ci.yml` YAML 解析通过（2026-11-01，工作区含未提交改动，最终数字以提交后重跑为准） |
 
 复现命令（发布前完整跑一遍，顺序建议）：
 
@@ -104,7 +104,7 @@ OCR 冒烟（WinRT/Pillow 不可用时显式 marked skip）。`linux-guard` 覆�
 - [ ] 重新 `npm run build` 并用新 `dist` 重启/重载插件后 `/health` 返回 3.0.0
 - [ ] 确认 `git status` 不含个人数据目录、调试截图、`dev-notes/`、`.dsh-tmp/`、`backups/`（这些均不入库）
 - [ ] 维护者确认本仓库 `private: true`，无公开发布动作
-- [x] 发布包内容检查通过（`node scripts/check-package.mjs`：167 个候选 0 违规，§4-7）
+- [x] 发布包内容检查通过（`node scripts/check-package.mjs`：189 个候选 0 违规，§4-7）
 - [x] 生产依赖安全审计通过（`npm audit --omit=dev --audit-level=high`：0 漏洞，§4-8）
 - [ ] 按 §6.2 在同一环境重复构建并比对 `dist-SHA256SUMS.txt`（可复现构建复核，未做）
 - [ ] 按 §6.4 生成干净发布包与 SHA256SUMS 并归档；`Get-FileHash` 复核发布包哈希（未做）
@@ -183,9 +183,10 @@ node scripts/check-package.mjs
 npm audit --omit=dev --audit-level=high
 ```
 
-> **不要用 `npm pack` 直接从开发工作区打包**：实测 `npm pack` 会把 `files` 目录（如 `scripts/`）下
-> 被 `.gitignore` 忽略的调试垃圾（`*.bak-*`、`__pycache__/*.pyc`）一起打进 tarball。
-> 发布包必须基于「git 受跟踪文件 + 本次 dist 构建产物」。
+> **发布包优先基于「git 受跟踪文件 + 本次 dist 构建产物」制作**（可复现、可逐文件清单校验）。
+> 此前实测 `npm pack` 会把 `files` 目录（如 `scripts/`）下被 `.gitignore` 忽略的调试垃圾
+> （`*.bak-*`、`__pycache__/*.pyc`）一起打进 tarball；v3.0.0 已在 `package.json files` 中排除
+> `!**/*.bak-*`、`!**/__pycache__`、`!**/*.pyc`，复测 189 文件 0 残留（仍建议用受跟踪文件制包）。
 
 ```powershell
 $ver = (Get-Content package.json -Raw | ConvertFrom-Json).version
@@ -212,14 +213,14 @@ foreach ($rel in $included) {
 Copy-Item dist (Join-Path $stage 'dist') -Recurse
 ```
 
-> 期望文件数：**167**（= `check-package.mjs` 的候选集，§4-7；`check-package.mjs` 提交后会变为 168）。
+> 期望文件数：**189**（= `check-package.mjs` 的候选集，§4-7；候选数随发布包文件集变化，最终以实测 189 为准）。
 > 若想连测试/文档一起归档，可用「整仓归档」变体：`git archive --format=tar --prefix="dsh-wechat-persona-$ver/" HEAD | tar -x -C $stageRoot`
 > 再复制 `dist/`——同样只含受跟踪文件，不含任何忽略垃圾。
 
 ```powershell
 # 3) 发布包垃圾复核（黑名单命中即中止）
 $banned = Get-ChildItem $stage -Recurse -File | Where-Object {
-  $_.Name -match '(\.bak($|-)|\.bak-\d+|\.log$|\.pyc$|\.tmp$|\.zip$|^state\.json$|^audit.*\.jsonl$|^alerts\.jsonl$|^drafts\.jsonl$|^outbox\.jsonl$|^inbound\.jsonl$|^deferred-inbound\.json$|^desktop-ack\.json$|^api-token$|^uia-state\.json$|^list-preview\.json$)'
+  $_.Name -match '(\.bak($|-)|\.bak-\d+|\.log$|\.pyc$|\.tmp$|\.zip$|^state\.json$|^audit.*\.jsonl$|^alerts\.jsonl$|^drafts\.jsonl$|^outbox\.jsonl$|^inbound\.jsonl$|^deferred-inbound\.json$|^(desktop-ack|desktop-delivered)\.json$|^api-token$|^uia-state\.json$|^list-preview\.json$)'
 }
 if ($banned.Count -gt 0) { throw "发布包含垃圾/数据文件：$($banned.FullName -join '、')" }
 

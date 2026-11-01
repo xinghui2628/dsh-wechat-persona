@@ -216,6 +216,13 @@ v0.2.8 把 OCR 文本处理都写在 `desktop.ts` 里（带 `@ts-nocheck`）。v
 
 > 状态（Phase C 已实现，真实环境未验证）：`baseline/bubbles/pipeline` 有单测（`test/core/ocr-{baseline,bubbles,pipeline}.test.ts`），`desktop.ts` 与 `scripts/pwsh/wechat-uia.ps1` 已双向接线——read 时脚本输出 `captureId/pane/lines[].side/box/messages[]`，调用方下次读取回传 `-Ack <上次成功投递的 captureId>`，脚本只丢弃 ≤ 水位线的 pending 行并对未确认行重放（id 稳定，TS 侧按 id 去重）；`desktop.ts` 用 `planInboundDispatch` 拒绝 `uncertain/outbound` 并 `commitAck`。旧脚本输出（无这些字段）走 legacy 兼容分支全部接受。**真实微信窗口下的端到端效果仍需用户授权后验证**（见 [RELEASE-CHECKLIST.md](RELEASE-CHECKLIST.md) 门槛 2）。
 
+### 8.1 只读测试模式与 OCR 流水线开关（发布前验收）
+
+- 
+eadOnlyTestMode（配置，默认 false）四层阻断真实发送：engine.canSend 返回 
+ead-only-mode（自动回复/重试/sendTest/approveDraft 共用）、desktop.send() 首行直接拒绝（不调用脚本）、POST /test/send 与 POST /drafts/approve 返回 409、PS1 -ReadOnly（send 在定位窗口前失败；read 强制 -NoSearch；不恢复/移动/置顶/切前台窗口）。只读模式不阻断 LLM 调用与只读 OCR。
+- ocrPipelineMode：3（默认）走 planInboundDispatch + 置信度门禁；legacy 走 planReadLegacy（接受全部非空文本、跳过归属/置信度门禁），用于受控回退；两者共用同一发送安全门禁，不会因切算法放开自动发送。
+
 ### 8.2 桌面通道读写路径
 
 ```mermaid
@@ -232,7 +239,7 @@ flowchart LR
 - 引擎：Windows 自带 WinRT OCR（`scripts/pwsh/ocr-winrt.ps1`，zh-Hans-CN，只读图片、不启动微信）。截图先按 `WXUIA_UPSCALE`（默认 2 倍）最近邻放大再 OCR；单帧约 70–120ms（见 [OCR-BENCHMARK.md](OCR-BENCHMARK.md)）。
 - 同帧约束：一次 read 只拍一帧（`-KeepImage` 保留该 PNG），WinRT 与第二引擎都识别**同一个文件**，不再另拍一帧（`wechat-uia.ps1` 的 `LastSnapshotImage` / `readImage`）；输出所有行共享同一 `captureId`。
 - 气泡归属：脚本按聊天面板几何（上方 10% 标题/工具栏、下方 15% 输入框）提取候选行，`Get-BubblePane/Get-BubbleSide` 判 `left/right/unknown`；明确为右侧（自己）的行直接跳过，`unknown`（长气泡越线、两侧都不贴、越出面板）随 `box/pane` 输出，TS 侧 `planInboundDispatch` 拒投并计数。
-- 基线不丢：脚本先保存（临时文件 + rename 原子写）再输出；新行进入 pending 队列，输出含本次新行与上次未确认行的重放；ack 水位线只丢弃 ≤ 已确认帧的行；消息 id = `pc-<captureSeq>-<messageSeq>-<几何哈希>`（**不含 OCR 文本**，跨帧稳定；连发两条相同文本因 `messageSeq` 不同仍是两条），TS 侧 `inFlight` 按 id 去重。ack 水位线落在 `dataDir/desktop-ack.json`，重启后读回。
+- 基线不丢：脚本先保存（临时文件 + rename 原子写）再输出；新行进入 pending 队列，输出含本次新行与上次未确认行的重放；ack 水位线只丢弃 ≤ 已确认帧的行；消息 id = `pc-<captureSeq>-<messageSeq>-<几何哈希>`（**不含 OCR 文本**，跨帧稳定；连发两条相同文本因 `messageSeq` 不同仍是两条），TS 侧 `inFlight` 按 id 去重；`desktop.ts` 另将成功投递的 id 持久化到 `dataDir/desktop-delivered.json`（FIFO 500、串行原子写、启动时懒加载），`wasDelivered` = 内存 `inFlight` ∪ 持久化 `deliveredIds`，修复「重启后脚本重放 pending 导致重复投递」。ack 水位线落在 `dataDir/desktop-ack.json`，重启后读回。
 - 置信度门禁（v3.0.0）：`desktop.ts` 对每条候选调用 `evaluateConfidence`，`accept` 放行；`verify` 用同一帧再跑一次第二引擎（`-SecondOcr`，不二次截图）后重新评估；仍不可信则 `markRejected` 并**不推进 ack**，脚本 pending 下次重放（绝不永久吞消息）；脚本/引擎都无法给出可解释证据时不臆断，直接不投递。`/diagnostics/ocr` 暴露 reject/uncertain/conflict 等计数。
 - 双引擎分层决策：`wechat-uia.ps1` 的 `-SecondOcr` 只对同一帧的第二引擎结果做几何匹配：重叠 ≥0.90 判 `agree`（取第二引擎分数为 confidence）；0.35–0.90 判 `conflict`（`conflictCount++`），仅当第二引擎分数 ≥0.85 才替换文本；无匹配判 `single`。**不再使用“谁更长谁赢”**；`vote.ts` 的旧规则只用于 A/B 基线与回退路径。
 - 跨帧差分（`tracker.ts`）：已实现加权 LCS（replay/ocr-changed/insert/scroll/duplicate/reset 分类）并有单测，**尚未接入生产读取路径**；当前生产去重依赖脚本稳定 id + TS `inFlight` 集合。
@@ -273,11 +280,13 @@ flowchart LR
 ├─ outbox.jsonl            mock 通道输出
 ├─ api-token               API 运维参考 token（0600，非强制）
 ├─ desktop-ack.json        桌面通道 ack 水位线（每联系人最近已确认的 captureId，跨进程重启读回）
+├─ desktop-delivered.json  桌面通道已投递消息 id 去重表（FIFO 500，跨进程重启不重放）
 ├─ stickers/               上传的表情
 └─ personas/               自定义人格包
 ```
 
 - `FileStoreLike` 是注入的文件抽象（相对 dataDir），单测用内存 store；写入串行，失败只 warn 不阻塞主流程。
+- `desktop-delivered.json` 记录已成功投递的消息 id（每联系人 FIFO 500 条），懒加载并在每次投递成功后串行落盘；删除它会让重启后可能重复投递一次，已投递判定的第一道仍是内存 `inFlight`。
 - `desktop-ack.json` 由桌面通道懒加载（首次 read 前）并在每次 `commitAck` 后串行落盘；写失败只记 debug，不阻塞读取。删除它只会让下一次 read 从 0 水位线开始（脚本按稳定 id 去重，不会重复投递已处理消息）。
 - `drafts.json` 保存 `draft/confirm/safeMode/预算` 模式下的待发送草稿（含回复正文，24h TTL，上限 50 条）；批准/拒绝后状态流转并复用同一 `opId`。删除等于放弃所有未批准草稿（不会发送）。
 - `send-ledger.json` 是幂等账本：键为 `opId` + `partIndex`，记录 `{state, attempts, delivery, textHash}`（**不落正文**），上限 200 条，终态不重发；删除只会让后续发送失去“防重放”记忆（不建议在发送中途删除）。

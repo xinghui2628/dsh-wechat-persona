@@ -65,8 +65,17 @@
 
 ### 测试与基准
 
-- `npm run typecheck` 0 错；`npm run test:sandbox` **40 个文件 / 648 个用例**全部通过；`node scripts/check-sensitive.mjs` 157 个受跟踪文件 0 命中；`node scripts/check-package.mjs` 167 候选 0 违规；`npm run build` 通过；`npm run verify:api` 24/24。
+- `npm run typecheck` 0 错；`npm run test:sandbox` **41 个文件 / 678 个用例**全部通过；`node scripts/check-sensitive.mjs` 212 个受跟踪文件 0 命中；`node scripts/check-package.mjs` 189 候选 0 违规；`npm run build` 通过；`npm run verify:api` 25/25。
 - OCR 基准（60 图合成语料、离线等价口径）：A–H 中 `upscale3x` 最优（tune 集 CER 17.66%/整句 53.85%，eval 集 25.68%/51.52%）；A/B 六组 eval 集：A v0.2.8 35.59%→B 预处理 22.82%→C 换引擎 2.25%→D 新对齐 24.47%→E 新融合 12.91%→F 完整 v3 **22.07%**（整句 30.30%→51.52%，CER −13.52pp、整句 +21.22pp）；两轮 eval 结论一致（相对 v0.2.8 有可测量改善），达成任务书 12.4 门槛第 2 条（**限定「合成语料 + 离线等价」**）。真实微信窗口未验证（需真机授权后按 `docs/TEST-PLAN.md` 复测）。
+
+### 发布前独立复核（2026-11-01，任务书《发布前独立复核与只读验收》）
+
+- **只读测试模式（`readOnlyTestMode`，默认 false）**：四层硬阻断真实发送与键鼠模拟——`engine.canSend` 门禁（自动回复/重试/sendTest/approveDraft 共用）、`desktop.send` 首行直接拒绝（不调用脚本）、`POST /test/send` 与 `POST /drafts/approve` 返回 409、PS1 `-ReadOnly`（send 在定位窗口前失败；read 强制 `-NoSearch`；不恢复/移动/置顶/切前台、遮挡不抢前台）；UI 顶部只读 Banner/Badge、草稿批准禁用；新增 22 条以上回归用例。详见 `docs/READ-ONLY-MODES.md`。
+- **重启去重（8.2/9.3 补强）**：`desktop.ts` 新增 `dataDir/desktop-delivered.json`（FIFO 500、串行原子写、启动加载），`wasDelivered = inFlight || deliveredIds`，修复重启后 pending 重放重复投递；`test/channels/desktop-id-stability.test.ts` 6 条端到端 mock 用例（同帧不重投/同文两条/OCR 改字不算新消息/滚动不重触发/重启不重发/多联系人不串）。
+- **OCR 流水线受控回退**：`config.ocrPipelineMode: 'v3' | 'legacy'`（默认 v3）；legacy 保持 v0.2.8 行为（接受全部非空文本、跳过置信度门禁），切换不触碰自动发送门禁；`status().ocr.pipelineMode` 暴露当前模式。
+- **verify:api 门禁修复**：`/test/send` 用例重排 + 新增「最小回复间隔内被拒绝（not-sent）」正期望，25/25 通过（原 24/25 失败，根因是 sendTest 已接频控）。
+- **发布包清理**：`package.json files` 排除 `*.bak-*` / `__pycache__` / `*.pyc`，`npm pack` 实测 0 残留。
+- **隔离范围说明**：只读模式仅阻断真实发送，不阻断 LLM 调用与只读 OCR；PS1/desktop 的真实微信行为仍未验证，本轮零发送、零真实聊天读取。
 
 ### 未做 / 风险
 
@@ -76,6 +85,7 @@
 - 市场 SSRF 防护基于主机名字符串判定，未做 DNS 解析后二次校验（DNS rebinding 仍有残余面），已在 `docs/SECURITY.md` 标注。
 - 未推送远程、未打 tag、未创建 Release（需维护者明确批准）；`private: true` 保持不变。
 - v0.2.8 历史提交中残留的实名（已在当前工作树修复）是否改写 git 历史由维护者决定（公开仓库不可逆）。
+- 只读测试模式已实现并有 mock/单测证据，但**未在真实微信窗口验证**；真实设备只读验证方案见 `docs/OCR-REAL-DEVICE-TEST-PLAN.md`（待维护者批准后执行）。
 
 ## [0.2.8] - 2026-10-31
 
