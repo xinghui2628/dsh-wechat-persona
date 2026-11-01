@@ -1,11 +1,22 @@
-# CI：离线门禁 + 质量检查
+# CI：离线门禁 + 质量检查（任务书 §14.4 十项）
 #
 # 设计原则（v3.0.0）：
 # - 全部步骤离线可跑：不访问真实微信、不调用任何外部 LLM / 搜索服务、不操作桌面窗口。
-# - 主链路（Windows）：依赖安装 → 类型检查 → 沙箱测试 → 敏感信息扫描 → 构建 → OCR bench 冒烟。
-# - OCR bench 冒烟只读 test/fixtures/ocr-corpus 下的合成图；WinRT 引擎或 Python/Pillow
-#   在本机不可用时显式打印 ::notice:: 并跳过（marked skip），不让 CI 因环境缺失而红。
-# - Linux runner 上 WinRT OCR 不可能可用，bench 冒烟步骤显式 marked skip（见 linux-guard job）。
+#   （唯一的网络访问是 `npm ci` 拉依赖和 `npm audit` 查询公开漏洞库。）
+# - 十项门禁映射（都在 verify-windows job 里显式成步）：
+#   1. TypeScript 类型检查        → Typecheck
+#   2. 单元测试                  → Unit tests（test/core、test/client）
+#   3. 集成测试                  → Integration tests（test/engine、test/server、test/channels）
+#   4. OCR 离线基准               → OCR bench smoke（只读合成语料；环境不满足时显式 marked skip）
+#   5. Windows 兼容性             → Windows compatibility check（OS/Node/PowerShell 5.1 + .ps1 UTF-8 BOM）
+#   6. 构建                      → Build (tsc emit)
+#   7. API 验证                  → API verification（scripts/verify-api.mjs，离线假宿主）
+#   8. 依赖安全检查               → Dependency security audit（npm audit --omit=dev）
+#   9. 敏感信息扫描               → Sensitive data scan（scripts/check-sensitive.mjs）
+#  10. 发布包内容检查             → Package content check（scripts/check-package.mjs）
+# - 不使用「npm ci 失败就 npm install」之类回退：锁文件问题必须直接暴露。
+# - linux-guard job 跑与平台无关的子集（类型检查/测试/敏感扫描），OCR bench 在 Linux 上
+#   不可能可用，显式 marked skip（见该 job 内 ::notice::）。
 # - 本仓库 private:true，CI 不负责发布；发布由维护者手动执行（见 docs/RELEASE-CHECKLIST.md）。
 name: CI
 
@@ -31,7 +42,7 @@ jobs:
   verify-windows:
     name: verify (windows-latest, Node 22)
     runs-on: windows-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -42,21 +53,67 @@ jobs:
           node-version: '22'
           cache: npm
 
-      - name: Install dependencies
+      # 锁文件必须可用；安装失败不回退，直接让 CI 红
+      - name: Install dependencies (npm ci, no fallback)
         run: npm ci --ignore-scripts --no-audit --no-fund
 
+      # 14.4-1 TypeScript 类型检查
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Sandbox tests
-        run: npm run test:sandbox
+      # 14.4-2 单元测试（纯逻辑/核心模块，不依赖平台）
+      - name: Unit tests (core + client)
+        run: node --import ./test/core/sandbox-preload.mjs ./node_modules/vitest/vitest.mjs run --pool=threads test/core test/client
 
-      - name: Sensitive data scan
-        run: node scripts/check-sensitive.mjs
+      # 14.4-3 集成测试（引擎/服务端/通道，使用 fake 通道与假宿主，不碰真实微信）
+      - name: Integration tests (engine + server + channels)
+        run: node --import ./test/core/sandbox-preload.mjs ./node_modules/vitest/vitest.mjs run --pool=threads test/engine test/server test/channels
 
+      # 14.4-5 Windows 兼容性：打印版本并断言 PowerShell 脚本为 UTF-8 BOM（仓库硬约束）
+      - name: Windows compatibility check
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Write-Host "OS: $([System.Environment]::OSVersion.VersionString)"
+          Write-Host "Node: $(node --version)"
+          Write-Host "PowerShell 7: $($PSVersionTable.PSVersion)"
+          $ps51 = & powershell -NoProfile -Command '$PSVersionTable.PSVersion.ToString()'
+          if ($LASTEXITCODE -ne 0) { throw 'Windows PowerShell 5.1 不可用' }
+          Write-Host "Windows PowerShell: $ps51"
+
+          $bad = @()
+          $scripts = Get-ChildItem -Path 'scripts/pwsh' -Filter '*.ps1' -File
+          foreach ($file in $scripts) {
+            $bytes = [System.IO.File]::ReadAllBytes($file.FullName)
+            $hasBom = ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF)
+            if (-not $hasBom) { $bad += $file.Name }
+          }
+          if ($bad.Count -gt 0) { throw "以下 PowerShell 脚本缺少 UTF-8 BOM：$($bad -join '、')" }
+          Write-Host "PowerShell UTF-8 BOM 检查通过（$($scripts.Count) 个脚本）"
+          $nonAscii = $scripts | Where-Object { $_.Name -match '[^\x00-\x7F]' }
+          if ($nonAscii) { throw "PowerShell 脚本文件名含非 ASCII 字符：$($nonAscii.Name -join '、')" }
+
+      # 14.4-6 构建（tsc 输出 dist/；发布包检查与 API 验证都依赖它）
       - name: Build (tsc emit)
         run: npm run build
 
+      # 14.4-7 API 验证（离线假宿主 + 真实 HTTP 端口，不连 DSH、不联网）
+      - name: API verification (offline fake host)
+        run: node scripts/verify-api.mjs
+
+      # 14.4-8 依赖安全检查（只查生产依赖；发现 high/critical 直接失败）
+      - name: Dependency security audit (production deps)
+        run: npm audit --omit=dev --audit-level=high
+
+      # 14.4-9 敏感信息扫描（受跟踪文件：wxid/手机号/邮箱/本机路径/密钥/疑似姓名）
+      - name: Sensitive data scan
+        run: node scripts/check-sensitive.mjs
+
+      # 14.4-10 发布包内容检查（private 未改、无运行时数据/备份/截图/敏感串）
+      - name: Package content check
+        run: node scripts/check-package.mjs
+
+      # 14.4-4 OCR 离线基准冒烟（只读合成语料；WinRT 或 Pillow 不可用时显式 marked skip）
       - name: OCR bench smoke (offline, WinRT; marked skip when unavailable)
         shell: pwsh
         run: |
@@ -104,9 +161,10 @@ jobs:
         if: always()
         shell: pwsh
         run: |
-          Write-Host "## CI 结果" >> $env:GITHUB_STEP_SUMMARY
-          Write-Host "- 类型检查 / 沙箱测试 / 敏感信息扫描 / 构建：见上方各步骤" >> $env:GITHUB_STEP_SUMMARY
-          Write-Host "- OCR bench 冒烟为离线、只读合成语料；环境不满足时以 marked skip 方式跳过" >> $env:GITHUB_STEP_SUMMARY
+          Write-Host "## CI 结果（任务书 §14.4 十项）" >> $env:GITHUB_STEP_SUMMARY
+          Write-Host "- 1 类型检查 / 2 单元测试 / 3 集成测试 / 5 Windows 兼容 / 6 构建 / 7 API 验证 / 8 依赖安全 / 9 敏感扫描 / 10 发布包内容：见上方各步骤" >> $env:GITHUB_STEP_SUMMARY
+          Write-Host "- 4 OCR 离线基准冒烟：只读合成语料；WinRT/Pillow 不可用时以 marked skip 方式跳过" >> $env:GITHUB_STEP_SUMMARY
+          Write-Host "- 本仓库 private:true，CI 不发布、不创建 Release" >> $env:GITHUB_STEP_SUMMARY
 
   linux-guard:
     name: guard (ubuntu-latest, Node 22)
@@ -122,11 +180,14 @@ jobs:
           node-version: '22'
           cache: npm
 
-      - name: Install dependencies
+      - name: Install dependencies (npm ci, no fallback)
         run: npm ci --ignore-scripts --no-audit --no-fund
 
       - name: Typecheck
         run: npm run typecheck
+
+      - name: Sandbox tests (cross-platform units + fakes)
+        run: npm run test:sandbox
 
       - name: Sensitive data scan
         run: node scripts/check-sensitive.mjs

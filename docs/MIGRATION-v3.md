@@ -13,6 +13,8 @@
 | 脚本 | ✅ 兼容：`scripts/pwsh/*.ps1` 对 v0.2.8 的调用方式保持兼容；v3.0.0 的 `-Ack`/captureId 协议已双向接线（`desktop.ts` ↔ `wechat-uia.ps1`），旧调用不传 `-Ack` 时按 0 水位线处理（见 §7） |
 | HTTP API | ⚠️ 默认仍兼容；但鉴权更严（回环 + 请求头 + Host/Origin/Sec-Fetch-Site 校验），填了 `apiToken` 则必须带 token |
 | 桌面通道发送 | ⚠️ 行为收紧：不再把“最近活跃会话”当发送目标，必须能在会话列表定位到该联系人；`unknown` 不自动重试 |
+| 发送模式 / 草稿 | ⚠️ 新增 `sendMode`（默认 `auto`，保持旧行为）；`draft`/`confirm` 会生成待批准草稿 `drafts.json`，人工批准后才发送 |
+| 发送幂等 | ⚠️ 新增发送账本 `send-ledger.json`：同一 `sendOperationId + partIndex` 只执行一次，`unknown` 永不自动重发；删除账本会失去该记忆 |
 | 公开 API/数据格式 | ⚠️ 仓库 `private: true`，不对外承诺兼容；以本文和 [RELEASE-CHECKLIST.md](RELEASE-CHECKLIST.md) 为准 |
 
 ## 1. 升级前准备（5 分钟）
@@ -64,7 +66,7 @@ curl.exe -H "x-dsh-wechat-persona: 1" "http://127.0.0.1:<DSH端口>/dsh-wechat-p
 
 - **自动迁移**：插件启动时 `migrateConfig(raw)` 会补默认值、迁移旧版 `schedule.onlineStart/onlineEnd` 到工作日/周末字段、给 `persona.activeId` 补 `builtin-small`、`whitelistOnly` 补 `true` 等（实现见 `src/config.ts` 的 `migrateConfig`）。迁移是**幂等**的：第二次启动不会重复改。迁移结果会写日志，方便核对。
 - **旧字段仍生效**：`reply.personaDir` / `reply.personaName` 仍可用，但会在迁移提示里建议改用人格库（`persona.*`）以支持多套人格。
-- **新增可选字段**：`apiToken`（默认空字符串 = 兼容模式）、`safeMode`（默认 `false`，开启后拒绝向真实通道发送）、`onboardingDone`（默认 `false`，首次配置向导完成后写 `true`）。填写 `apiToken` 后所有 API 请求必须额外带 `Authorization: Bearer <token>`（或 `x-dsh-persona-token: <token>`），否则 401。插件启动时会自动把生成的参考 token 写到 `<dataDir>/api-token`（权限尽量收紧），但**只有你在配置里填了 `apiToken` 才会强制校验**。
+- **新增可选字段**：`apiToken`（默认空字符串 = 兼容模式）、`safeMode`（默认 `false`，开启后拒绝向真实通道发送）、`onboardingDone`（默认 `false`，首次配置向导完成后写 `true`）、**`sendMode`（默认 `auto`；`draft`/`confirm` 只生成待批准草稿）**。填写 `apiToken` 后所有 API 请求必须额外带 `Authorization: Bearer <token>`（或 `x-dsh-persona-token: <token>`），否则 401。插件启动时会自动把生成的参考 token 写到 `<dataDir>/api-token`（权限尽量收紧），但**只有你在配置里填了 `apiToken` 才会强制校验**。旧配置没有 `sendMode` 时 `migrateConfig` 会补 `auto`（保持 v0.2.8 的“生成后自动发送”行为），迁移日志会记录这一步。
 - **建议顺手核对的配置**：
   - `dataDir`：v3.0.0 下保持“留空 = 工作区 `.dsh-wechat-persona`”的语义；如果 v0.2.8 时用的绝对路径，继续保留即可。
   - `channels.desktop.enabled`：默认 `false`，升级不会自动打开。
@@ -83,6 +85,8 @@ curl.exe -H "x-dsh-wechat-persona: 1" "http://127.0.0.1:<DSH端口>/dsh-wechat-p
 | API 鉴权 | 回环 + 请求头 | 回环 + 请求头 + Host/Origin/Sec-Fetch-Site 校验；可选 `apiToken`；进程内限速 240 次/分钟/来源（超出 429） | 用浏览器从非本机页面调 API 会被拒（预期行为）；本机设置页不受影响 |
 | OCR 处理 | 读取/纠错逻辑混在 `desktop.ts` | 纯逻辑抽到 `src/core/ocr/`（`normalize/correction/vote/geometry` + Phase C 的 `baseline/bubbles/pipeline`），`desktop.ts` 强类型化 | 行为不变；同帧读取、气泡归属、ack 水位线生效（真实环境未验证） |
 | 安全模式 | 无 | 新增 `safeMode`（默认 `false`）：开启后所有非 mock 通道发送被门禁拒绝（`safe-mode`）；设置页「预算与安全」可切换，首次配置向导默认建议开启 | 升级不会自动打开；建议在第一次接真实微信前手动开启并做 mock 冒烟 |
+| 发送模式与草稿 | 生成后直接发送 | 新增 `sendMode`（默认 `auto`）；`draft`/`confirm` 只生成草稿，写入 `drafts.json`（上限 50、24h TTL），到设置页「待发送草稿」或 `POST /drafts/approve` 人工批准后才发送；`safeMode` 优先级最高 | 升级后默认行为不变；想先观察效果可切到 `draft` 或开 `safeMode` |
+| 发送幂等 | 失败可能重试 | 每次发送有 `sendOperationId`，引擎在发送前查 `send-ledger.json`：同一 `opId+partIndex` 只执行一次；`confirmed/cancelled/unknown` 终态不再发送；`failed` 仅在确认 `not-sent` 且尝试 <3 时重试 | 不会再因为“结果未知”自动重发；账本只存文本哈希不存正文 |
 | 诊断/向导 | 无 | 新增只读 `GET /diagnostics/ocr`（不截图、不含正文）与设置页首次配置向导、mock 测试入口 | 升级后按向导确认配置；诊断用于排查 OCR 读取状态 |
 
 ## 6. 数据文件变化
@@ -96,6 +100,8 @@ curl.exe -H "x-dsh-wechat-persona: 1" "http://127.0.0.1:<DSH端口>/dsh-wechat-p
 | `api-token` | v3.0.0 新增，运维参考 token 文件 | 回滚后可删除；旧版不会读 |
 | `desktop-ack.json` | v3.0.0 新增，桌面通道每个联系人最近已确认的 ack 水位线（形如 `cap-12`，含联系人名称，不含正文） | 回滚到 v0.2.8 时旧版不读，可保留也可删除；删除后首次读取从 0 水位线开始（脚本按稳定 id 去重） |
 | `drafts.jsonl` | 预算草稿模式输出（v0.2.8 已有则不变） | 无需动作 |
+| `drafts.json` | v3.0.0 新增，`sendMode=draft/confirm`、`safeMode` 或预算草稿模式的待批准队列（正文、24h TTL、上限 50） | 回滚到 v0.2.8 时旧版不读；可删除（等于放弃未批准草稿，不会发送） |
+| `send-ledger.json` | v3.0.0 新增，发送幂等账本（opId/partIndex、状态、尝试次数、文本哈希；不存正文、上限 200） | 回滚时旧版不读；可删除（只失去防重放记忆，不会发送任何内容） |
 | `uia-state.json`（不在 `dataDir`，位于 `%USERPROFILE%\.dsh\profiles\desktop\.dsh-wechat-persona\`） | v3.0.0 起除窗口基线外还保存 pending 队列（含聊天文本片段）、`captureId`/ack 水位线、`side/box`；属于敏感落盘，见 [PRIVACY.md](PRIVACY.md) | 升级后首次读取会重建基线；回滚到 v0.2.8 时该文件会被旧脚本忽略，可保留也可删除 |
 
 ## 7. 尚未完成 / 未验证（升级时不要按“已在真机生效”理解）
@@ -105,6 +111,8 @@ curl.exe -H "x-dsh-wechat-persona: 1" "http://127.0.0.1:<DSH端口>/dsh-wechat-p
 - **Phase C 的 captureId/ack 协议**：`src/core/ocr/{baseline,bubbles,pipeline}.ts` 已实现并单测覆盖（pending 队列 + ack 水位线 + 稳定消息 id + 气泡几何归属）；`desktop.ts` 与 `wechat-uia.ps1` 已双向接线——read 传 `-Ack` 水位线，脚本回传 `captureId/pane/lines[].side/box/messages[]` 并对未确认行重放，TS 侧 `planInboundDispatch` 拒投 `uncertain` 行；脚本旧输出走 legacy 兼容分支。**真实微信窗口下的端到端效果未验证**，见 [RELEASE-CHECKLIST.md](RELEASE-CHECKLIST.md) 门槛 2。
 - **OCR 准确率**：v3.0.0 管线相对 v0.2.8 的离线等价 A/B 已在独立 eval 集上出结论（CER 21.38% / 整句 47.83%，同集 v0.2.8 为 37.37% / 28.26%，跨口径满足发布门槛）；但结论限定**合成语料 + 离线等价**，第二引擎融合/受控纠错几乎未触发，**真实微信截图未验证**。详见 [OCR-BENCHMARK.md](OCR-BENCHMARK.md) §6.5 与 [RELEASE-CHECKLIST.md](RELEASE-CHECKLIST.md) §3。
 - **安全运行模式与诊断（Phase F）**：`safeMode`、`GET /diagnostics/ocr`、首次配置向导、mock 测试入口均已实现并有单测（`test/engine/acceptance.test.ts`、`test/server/api.test.ts`），但**未在真实 DSH + 真实微信环境做端到端验证**；升级后建议先开 `safeMode` 跑 mock 冒烟。
+- **发送状态机 / 幂等账本 / 草稿模式（v3.0.0）**：`src/core/send-state.ts`（10 态）、`src/core/send-ledger.ts`（`sendOperationId` 幂等）与 `sendMode=draft/confirm` 均已实现并有单测（同一 opId 只发一次、`unknown` 不自动重发、批准重走门禁并复用 opId），但 **DSH 重启、脚本超时、子进程异常等真实故障路径未实机演练**，不能理解为“绝不重复发送”。
+- **OCR 融合/对齐/跨帧差分**：`src/core/ocr/{fusion,align,tracker}.ts` 已实现并有单测，但**尚未接入生产读取路径**；真实读取走的是 `pipeline/confidence` 与 PS1 分层第二引擎决策，离线融合收益未在真实截图验证。
 - **真实微信环境验证**：桌面通道的发送可靠性与跨联系人安全改进有单测与离线验收，但**真实设备测试需要你单独授权**，未授权前不应视为已验证。
 
 ## 8. 回滚步骤（v3.0.0 → 返回 v0.2.8）
@@ -129,7 +137,7 @@ curl.exe -H "x-dsh-wechat-persona: 1" "http://127.0.0.1:<DSH端口>/dsh-wechat-p
 6. **验证**：mock 通道注入一条入站测试消息；用 desktop 的“只读”模式确认能 `list/read`；确认设置页可打开。
 7. **保留现场**：确认稳定后再删除 `.v3-bak-*` 目录；遇到问题请连同脱敏日志一起反馈。
 
-> 回滚注意：v3.0.0 写入过的 `state.json`/`audit.jsonl` 含新增字段，旧版本读取这些文件的兼容性**未验证**。因此回滚数据时优先整目录替换为升级前备份，而不是“只换代码不换数据”。`api-token`、`deferred-inbound.json` 可以直接删除。
+> 回滚注意：v3.0.0 写入过的 `state.json`/`audit.jsonl` 含新增字段，旧版本读取这些文件的兼容性**未验证**。因此回滚数据时优先整目录替换为升级前备份，而不是“只换代码不换数据”。`api-token`、`deferred-inbound.json`、`drafts.json`、`send-ledger.json` 可以直接删除。若 v0.2.8 启动时对 profile 里新增的 `sendMode`/`safeMode`/`onboardingDone`/`apiToken` 字段报 schema 错误，用 §1 备份的 profile 段落恢复配置（或删除这几个字段）即可；旧版忽略未知字段时则无需处理。
 
 ## 9. 常见升级问题
 
@@ -143,5 +151,9 @@ curl.exe -H "x-dsh-wechat-persona: 1" "http://127.0.0.1:<DSH端口>/dsh-wechat-p
 | desktop 发送被拒「缺少聊天定位信息」 | 会话列表里找不到该联系人 | 让对方发一条消息/刷新会话列表，或调大列表可见范围 |
 | desktop 连续失败 6 次停摆 | 连续异常触发保护 | 看 `%TEMP%\wxuia-engine-debug.log`，修复后重载插件恢复 |
 | 恢复后收到“积压”回复 | v3.0.0 暂停暂存了入站消息 | 预期行为；可在 `deferred-inbound.json` 查看，或清理该文件后重载 |
+| 有回复但不发送、`pendingDrafts` 增加 | `sendMode=draft/confirm`、`safeMode` 或预算草稿模式 | 到设置页「待发送草稿」批准，或改回 `sendMode=auto`；详见 [TROUBLESHOOTING.md](TROUBLESHOOTING.md) §5.4 |
+| `POST /drafts/approve` 返回 409 | 草稿已处理/过期，或批准时门禁拒绝（暂停/熔断/预算/白名单/频控/safeMode） | 看响应 message 的 reason；处理门禁后重新生成草稿 |
+| 审计出现 `skip-duplicate`（send-state） | 幂等账本判定该 `opId+partIndex` 已终结 | 预期保护；到微信客户端人工确认是否已发出，不要重复点击批准 |
+| 升级后仍自动发送 | `sendMode` 迁移为 `auto` 是默认兼容行为 | 想先观察效果：设置页把 `sendMode` 改为 `draft`，或开启 `safeMode` |
 
 更多排查见 [TROUBLESHOOTING.md](TROUBLESHOOTING.md)。

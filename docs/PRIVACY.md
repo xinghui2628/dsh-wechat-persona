@@ -26,7 +26,9 @@
 | 每联系人记忆 | `memory/<sha1(contactId) 前 16 位>.json` | 最近消息（`memory.recentKeep`，默认 30 条）、长期摘要（`memory.maxSummaryChars`，默认 400 字）、累计轮数、最近表情 id、偏好记忆（称呼、忌讳、最近话题） | 每联系人一个文件，持续更新；删除对应文件即清除该联系人 |
 | 运行状态 | `state.json` | 是否暂停及原因、熔断状态、当日 token 消耗、频控计数、消息去重指纹（`contactId:msgId`，最多 2000 条、6 小时 TTL）、统计计数 | 持续更新；`clear_memory` 不清此项 |
 | 审计日志 | `audit.jsonl`、滚动文件 `audit.1.jsonl` | 事件类型、联系人 id/昵称、消息 id、跳过原因、LLM/搜索/发送的**元数据**（token 数、耗时、字符数、投递三态） | 默认单文件上限 `logging.maxAuditMb=10`，超出时主文件搬为 `audit.1.jsonl` 再清空主文件 |
-| 草稿 | `drafts.jsonl` | 预算进入草稿模式后**生成但未发送**的回复正文 | 持续追加，直到手动清理数据目录 |
+| 草稿（历史） | `drafts.jsonl` | 预算进入草稿模式后**生成但未发送**的回复正文（旧追加格式，保留兼容） | 持续追加，直到手动清理数据目录 |
+| 草稿队列（v3） | `drafts.json` | `sendMode=draft/confirm`、`safeMode` 或预算草稿模式下生成的回复正文，含联系人 id、生成时间、过期时间（24h TTL）、状态（pending/approved/rejected/expired）、原因；上限 50 条 | 批准/拒绝后保留一段时间以便追溯；过期或超过 24h 的非待处理草稿会被清理；删除文件即放弃所有未批准草稿（**不会发送**） |
+| 发送幂等账本 | `send-ledger.json` | `sendOperationId` + `partIndex` 对应的发送状态、尝试次数、投递三态、**文本哈希（不存正文）**；上限 200 条 | 终态记录保留到被上限挤出；删除会失去“防重放/防重复发送”的历史（不建议在发送中途删除） |
 | 通知记录 | `alerts.jsonl` | 熔断/异常/预算等通知文本（可能含联系人昵称） | 持续追加 |
 | mock 通道记录 | `outbox.jsonl` | mock 通道“发出”的假消息，便于离线调试 | 持续追加 |
 | 暂停期间积压 | `deferred-inbound.json` | 暂停期间收到、恢复后待处理的入站消息（最多 50 条） | 处理完即清空 |
@@ -35,7 +37,9 @@
 | API token | `api-token` | 插件启动时自动生成、供运维参考的共享 token 原文（`config.apiToken` 留空时也会写，供本机参考；不强制使用） | 直到手动删除；建议限制文件权限 |
 | 桌面通道 ack 水位线 | `desktop-ack.json` | 每个联系人最近一次成功投递的帧号（形如 `cap-12`），用于跨进程重启后不重放已处理帧；**含联系人名称**，不含聊天正文 | 每次成功读取后更新；删除只会让下一轮从 0 水位线重读（脚本按稳定 id 去重） |
 
-**配置**保存在 DSH profile 的 `cordis.patch.yml`（由宿主管理），包括：白名单备注/别名、人格设置、在线时段、回复策略、预算与安全设置、`market.indexUrl`、以及可选的 `apiToken`。`GET /config` 不会回显 `apiToken` 明文。API 设置页与配置不会写入微信账号密码。
+**配置**保存在 DSH profile 的 `cordis.patch.yml`（由宿主管理），包括：白名单备注/别名、人格设置、在线时段、回复策略、预算与安全设置、`sendMode`、`market.indexUrl`、以及可选的 `apiToken`。`GET /config` 不会回显 `apiToken` 明文。API 设置页与配置不会写入微信账号密码。
+
+**OCR 诊断不落盘**：`GET /diagnostics/ocr` 与 `desktop.status().ocr` 只返回最近一次读取的**元数据**（frame/captureId、引擎名、行数、uncertain/reject/conflict 计数、耗时、最后错误、DPI/scale、截图方式、引擎版本、是否二次识别、质量状态），**不含聊天正文、不含截图路径、不保存截图**，也不会触发新的截图。
 
 **桌面通道脚本（`scripts/pwsh/wechat-uia.ps1`）自己的数据**不在 `<dataDir>` 里：
 
@@ -56,7 +60,7 @@
 | --- | --- | --- | --- |
 | 你配置的 LLM 服务商（经 DSH 宿主 `ctx.llm` 调用，默认走宿主当前默认模型） | 每次要生成回复时 | 人格系统提示词（人格名、性格、风格、口头禅、示例、禁忌与拒绝规则）、最近对话上下文（`memory.contextMessages`，默认 10 条）、长期聊天摘要、联系人称呼/偏好记忆、当次触发的搜索结果（如有）、以及待回复的消息文本 | 暂停/停止插件、把 `persona.activeId` 置空（本地拦截不调模型）、或用宿主配置换成本地模型服务 |
 | 搜索服务商（经 DSH 宿主 `ctx.web.search`） | `search.enabled=true` 且判定该消息需要联网时 | 搜索查询词（由消息内容生成）；返回结果会进入同一次 LLM 请求 | `search.enabled=false` |
-| 人格广场 URL | `market.indexUrl` 非空且拉取/安装人格时 | 该 URL 的 GET 请求（仅索引与人格包） | 保持 `market.indexUrl` 为空（默认），只用内置人格 |
+| 人格广场 URL | `market.indexUrl` 非空且拉取/安装人格时 | 该 URL 的 GET 请求（仅索引与人格包）。插件只允许 `http/https`，拒绝回环/内网/链路本地主机与内嵌凭据，重定向最多 2 跳且每跳重新校验，响应必须是 JSON 且 ≤2MB（详见 [SECURITY.md](SECURITY.md)） | 保持 `market.indexUrl` 为空（默认），只用内置人格 |
 | 微信 / 腾讯服务器 | 插件操作真实微信时 | 你本来就会通过微信发出的内容与登录行为；插件不额外注入流量 | 不用真实通道（保持 `mock`） |
 
 明确**不会**外发的内容：截图和 OCR 图像、`audit.jsonl`/`alerts.jsonl`/`memory/`/`state.json`、本机路径、API token、以及任何遥测/统计。
@@ -76,7 +80,7 @@
 | 查看/导出某联系人记忆 | 打开 `<dataDir>/memory/` 下对应 JSON（文件名是联系人 id 的哈希，不是明文） |
 | 清空全部记忆 | 工具 `wechat_persona_clear_memory`，或设置页「日志与测试」里的清空入口，或删除 `<dataDir>/memory/` |
 | 清空审计 | 工具 `wechat_persona_clear_audit`，或 `POST /audit/clear`，或删除 `audit*.jsonl` |
-| 清掉草稿/积压/通知 | 删除 `drafts.jsonl`、`deferred-inbound.json`、`alerts.jsonl` |
+| 清掉草稿/积压/通知 | 删除 `drafts.jsonl`、`drafts.json`、`send-ledger.json`、`deferred-inbound.json`、`alerts.jsonl`（删除 `send-ledger.json` 只是丢失去重记忆，不会发送任何内容） |
 | 彻底清空本插件数据 | 先暂停插件，再删除整个 `<dataDir>`（以及桌面通道的 `uia-state.json`/`list-preview.json`） |
 | 删除临时截图/日志 | 删除 `%TEMP%\wxuia-*.png`、`%TEMP%\wxuia-*.log`、`%TEMP%\dsh-wechat-persona-debug.log`；关闭 `WXUIA_SHOT_DIR` 后重删该目录 |
 | 卸载 | 从 profile 的 `package.json` dependencies 与 `dsh.profile.bundles` 移除插件，重启 DSH；再按需删除数据目录 |
@@ -95,7 +99,7 @@
 - **LLM 服务商**：消息内容一旦发给 LLM，就受该服务商的隐私政策与数据保留策略约束；请自行选择可信服务商，不要把验证码/密码/身份证等敏感信息交给它（插件的本地拦截不能覆盖所有情况）。
 - **共用电脑**：数据以你的 Windows 用户身份保存在本机磁盘，未加密。同一台电脑的其他账户/管理员、以及恶意软件仍可能读取；请自行做好账户与磁盘保护。
 - **备份与排查材料**：提交 issue / 发给他人日志前，请先删除联系人昵称、wxid、手机号、截图与 token（`scripts/check-sensitive.mjs` 的思路可参考）。
-- **未经真实验证的功能**：v3.0.0 中 Phase C（同帧/基线去重/captureId/ack/气泡归属）已双向接线并有单测，但真实微信环境未端到端验证；Phase E 的鉴权加固已落地并有单测但未在真实环境验证；Phase F 的 safeMode/OCR 诊断/首次配置向导已落地并有单测，同样未在真实环境验证。`GET /diagnostics/ocr` 只返回帧号/引擎/行数/耗时等元数据，不截图、不含聊天正文、不落盘。真实环境行为以 [RELEASE-CHECKLIST.md](RELEASE-CHECKLIST.md) 的标注为准。
+- **未经真实验证的功能**：v3.0.0 中 Phase C（同帧/基线去重/captureId/ack/气泡归属）已双向接线并有单测，但真实微信环境未端到端验证；Phase E 的鉴权加固已落地并有单测但未在真实环境验证；Phase F 的 safeMode/OCR 诊断/首次配置向导已落地并有单测，同样未在真实环境验证；发送状态机/幂等账本/`draft`/`confirm` 模式已实现并有单测（同一 `opId` 只发一次、`unknown` 不自动重发、草稿批准重走门禁），但 DSH 重启/脚本超时等真实故障路径未实机演练；`fusion/align/tracker` 有单测但未接入生产读取路径。`GET /diagnostics/ocr` 只返回帧号/引擎/行数等元数据，不截图、不含聊天正文、不落盘。真实环境行为以 [RELEASE-CHECKLIST.md](RELEASE-CHECKLIST.md) 的标注为准。
 
 ## 8. 变更与联系
 

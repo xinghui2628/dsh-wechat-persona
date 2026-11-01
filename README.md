@@ -25,12 +25,16 @@ DSH（DeepSeek Harness）插件。它不接管你的主号，只针对**小号**
 | 能力 | 说明 |
 | --- | --- |
 | 多人格 | 4 个内置人格（小号 / 大肥鱼 / 老周 / 阿码），支持导入自定义人格包（JSON、SillyTavern 卡映射） |
+| AI 身份透明 | 被**直接问**「你是不是 AI / 机器人 / 模型」时如实说明是 AI；不冒充真人、不伪装成某个真实联系人；平时聊天不主动强调 |
 | 被动回复 | 只回复白名单单聊；群聊默认关闭；`whitelistOnly` 默认开 |
 | 拟人节奏 | 「正在输入」延时、按概率拆成多条、表情包不连续重复 |
 | 按需联网 | 命中天气/新闻/价格等意图才搜索，失败自动降级为不搜 |
 | 预算与草稿 | 日 token 预算；超过草稿线只生成不发送；超过预算硬停 |
 | 风控熔断 | 验证码/异常登录/限制提示 → 熔断 + 暂停 + 通知；聊天内 `/stop` 紧急停 |
 | 防误发 | 桌面通道发消息必须拿到会话行坐标，无坐标直接拒发；投递结果三态，`unknown` 不重试 |
+| 发送可靠性（v3.0.0） | 10 态发送状态机 + `send-ledger.json` 幂等账本：同一 `sendOperationId` / `partIndex` 只执行一次，`unknown` 永不自动重放；多段拆条逐段记账 |
+| 发送模式（v3.0.0） | `sendMode`：`auto`（默认自动发送）/ `draft` / `confirm`。后两者只生成草稿到 `dataDir/drafts.json`（上限 50 条、24 小时 TTL），在设置页「待发送草稿」人工批准；`safeMode` 优先级最高 |
+| OCR 融合与置信度（v3.0.0） | 双引擎几何匹配（`fusion.ts`）与序列对齐（`align.ts`）；`confidence.ts` 给每帧可信度（accept / verify / reject），低置信不投递且不推进 ack；`tracker.ts` 用加权 LCS 判定跨帧 replay / insert / scroll |
 | 记忆 | 每联系人最近消息 + 长期摘要 + 偏好（称呼/忌讳/话题），文件按 contactId 哈希命名 |
 | 设置页 | Web 设置页 10 个标签页；所有改动写入宿主 profile 配置，重启不丢 |
 | 运维工具 | 6 个 `wechat_persona_*` 工具：status / pause / resume / send_test / clear_memory / clear_audit |
@@ -51,10 +55,14 @@ DSH（DeepSeek Harness）插件。它不接管你的主号，只针对**小号**
 
 - ❌ 不接管你的**主号**、不代登录、不扫码、不碰账号态；只面向小号。
 - ❌ 不提供群控、营销、批量加好友、自动通过好友、朋友圈操作。
+- ❌ 不冒充真人：被直接问 AI 身份时如实说明（`src/llm/prompt.ts` 的「AI 身份透明」规则与内置人格提示词一致）；
+  不伪装成某个真实联系人，不通过冒充骗取信任，也不诱导对方提供密码、验证码等敏感信息。
 - ❌ 不读微信本地聊天数据库，不注入进程；桌面通道只做「窗口截图 + OCR + UI 自动化」。
 - ❌ 不绕过腾讯风控；检测到验证码/异常登录会直接熔断并通知你人工处理。
 - ❌ 不做「保证不被封号」的承诺；是否使用、用到什么程度由你决定。
 - ❌ 不向外发遥测；除「回复所需内容发给用户自己配置的 LLM 服务商」外，数据留在本机。
+- ❌ 不承诺「绝不重复发送」：GUI 自动化做不到端到端 exactly-once；插件用发送状态机 + 幂等账本
+  把「未知结果不自动重发、已终结不重发」做成可测试的保证，底层平台仍可能重复或丢失。
 - ❌ 不公开分发。本仓库 `private: true`，禁止转售、禁止打包成对外产品。
 
 已知限制：仅 Windows（桌面通道）；OCR 形近字仍是弱项；桌面通道暂不支持发送表情/图片/语音；
@@ -130,7 +138,11 @@ Invoke-RestMethod -Method Post `
 
 5. 在「日志与测试」页看审计事件；或 GET `/status`（同样带鉴权头）确认 `delivery` 计数、
    预算与暂停状态。mock 通道的入站/出站记录写入数据目录的 `outbox.jsonl` 与 `audit.jsonl`。
-6. 想彻底停掉：设置页关闭插件，或调用 `wechat_persona_pause`。
+6. 模拟「人工确认」：把 `sendMode` 改为 `draft`（或 `confirm`）后再注入一条消息，回复不会直接发出，
+   而是进入草稿队列：`GET /drafts` 查看，`POST /drafts/approve`（body `{"id":"<草稿 id>"}`）批准，
+   `POST /drafts/reject` 拒绝。批准会重新走暂停/熔断/预算/白名单/频控/安全模式全部门禁，
+   且复用生成草稿时同一个 `sendOperationId`——`unknown` 的发送不会被重复批准出去。
+7. 想彻底停掉：设置页关闭插件，或调用 `wechat_persona_pause`。
 
 离线自检（不依赖 DSH 进程、不联网、不碰微信）：
 
@@ -155,6 +167,7 @@ powershell -ExecutionPolicy Bypass -File scripts/pwsh/selfcheck.ps1   # Windows/
 | 表情 | `stickers.enabled=true`、`maxPerReply=1`、`stickerNoRepeatCount=8` | 桌面通道不发表情（能力降级） |
 | 记忆 | `memory.recentKeep=30`、`contextMessages=10`、`summaryEveryTurns=50`、`autoSummary=true`、`maxSummaryChars=400` | 长期摘要受预算与每日摘要次数上限约束 |
 | 预算 | `budget.dailyTokens=50000`、`draftModeRatio=0.85`、`maxSummaryCallsPerDay=4` | 0.85 线后只生成草稿；用尽硬停 |
+| 发送模式 | `sendMode='auto'` | `auto`=生成后自动发送；`draft`/`confirm`=只生成草稿，需在设置页「待发送草稿」人工批准；`safeMode` 优先于本项 |
 | 搜索 | `search.enabled=true`、`maxPerDay=20`、`maxResults=3`、`extraKeywords=[]` | 按需触发，失败降级 |
 | 安全 | `safety.forbiddenKeywords`、`pauseOnForbiddenInbound=true`、`blockTransfers=true`、`blockSuspiciousLinks=true`、`circuitBreakerEnabled=true` | 默认命中禁止词即暂停 |
 | 安全模式/鉴权 | `safeMode=false`、`onboardingDone=false`、`apiToken=''` | `safeMode=true` 时拒绝向真实通道发送；`apiToken` 留空=兼容模式（回环+请求头），显式配置后强制 Bearer（见 [docs/SECURITY.md](docs/SECURITY.md)） |
@@ -165,7 +178,9 @@ powershell -ExecutionPolicy Bypass -File scripts/pwsh/selfcheck.ps1   # Windows/
 ## 8. 隐私与安全
 
 - **数据默认在本机**：`state.json`、`memory/`、`audit.jsonl`、`drafts.jsonl`、`alerts.jsonl`、
-  `deferred-inbound.json`、`desktop-ack.json`（桌面通道 ack 水位线，含联系人名称）、`stickers/`、`personas/`，
+  `deferred-inbound.json`、`desktop-ack.json`（桌面通道 ack 水位线，含联系人名称）、
+  `drafts.json`（`draft`/`confirm`/`safeMode`/预算草稿的正文，上限 50 条、24 小时 TTL）、
+  `send-ledger.json`（发送幂等账本，**只存文本哈希不存正文**，上限 200 条）、`stickers/`、`personas/`，
   以及可选 `api-token` 文件，都在 `dataDir` 下。
 - **会离开本机的只有回复所需内容**：发给**你自己配置的** LLM 服务商的 system prompt（人格定义）与上下文
   （最近对话、长期摘要、联系人偏好、搜索结果）。没有遥测、没有广告 SDK、没有远程日志。
@@ -176,7 +191,19 @@ powershell -ExecutionPolicy Bypass -File scripts/pwsh/selfcheck.ps1   # Windows/
 - **安全运行模式**：`safeMode=true` 时所有非 mock 通道的发送在门禁层被拒，只允许 mock 空转；
   首次配置向导会建议开启。只读 OCR 诊断 `GET /diagnostics/ocr` 不截图、不含正文、不落盘。
 - **发送侧防误发**：桌面通道必须拿到会话列表行坐标并通过标题校验；`unknown` 投递不重试；
-  暂停/熔断/预算耗尽时不启动新发送。
+  暂停/熔断/预算耗尽时不启动新发送。`draft`/`confirm` 草稿必须在设置页人工批准，批准时重新走全部门禁。
+- **远程人格市场（SSRF 加固）**：只允许 `http`/`https`，拒绝本机/内网/链路本地/`.local` 地址，
+  重定向手动跟随且最多 2 跳、每跳重新校验，响应必须是 JSON 且限制 2 MB；残余的 DNS rebinding 风险
+  见 [docs/SECURITY.md](docs/SECURITY.md)。`market.indexUrl` 留空时完全不访问网络。
+- **AI 身份透明（v3.0.0）**：人格提示词与 README 的口径一致——
+  - 被**直接问**「你是不是 AI / 机器人 / 模型」时，如实说明是 AI；
+  - 不冒充真人、不声称是某个具体真实联系人，不通过冒充骗取信任；
+  - 不主动强调「我是 AI」（避免把聊天变成客服腔），但不为此说谎；
+  - 不诱导对方提供密码、验证码、银行卡号等敏感信息；对方提及转账/红包/验证码时直接拒绝。
+  规则实现见 [`src/llm/prompt.ts`](src/llm/prompt.ts)（「AI 身份透明」与边界话题规则）与
+  [`personas/builtin/`](personas/builtin/) 四套内置人格的 `systemPrompt`，示例对话也覆盖「你是 AI 吗」。
+  AI 仍可能说错话：使用者应自行约束使用场景，禁止用本插件冒充真人骗取信任或从事其他欺骗行为
+  （见 [DISCLAIMER.md](DISCLAIMER.md)）。
 - 完整数据流与残余风险：见 [docs/PRIVACY.md](docs/PRIVACY.md) 与 [docs/SECURITY.md](docs/SECURITY.md)。
 - 提交代码前必须通过敏感数据扫描（0 命中）：
 
@@ -189,12 +216,21 @@ node scripts/check-sensitive.mjs
 桌面通道靠「截图 + OCR」读消息，Windows 自带 WinRT OCR 是主引擎：
 
 - **主引擎**：`scripts/pwsh/ocr-winrt.ps1`（Windows OCR，zh-Hans-CN），只读传入的 PNG，不启动微信、不截图；
-- **第二引擎（可选）**：RapidOCR（`scripts/py/rapid_ocr.py`），脚本按需调用做双引擎投票；
+- **第二引擎（可选）**：RapidOCR（`scripts/py/rapid_ocr.py`）。`-SecondOcr` 只复用**同一帧截图**做第二遍识别，
+  按「几何/行位置匹配 → 文本重合度 → 原生置信度」分层决策：重合度 ≥ 0.90 视为一致；0.35–0.90 记为冲突，
+  只有第二引擎原生 score ≥ 0.85 的强证据才替换文本；无匹配则标记 single。**不再用「谁更长谁赢」**；
   需要 Python 3 + `rapidocr_onnxruntime`，缺失时退化为单引擎；
-- **纯逻辑层**：`src/core/ocr/` 把归一化、几何、纠错、投票、气泡归属、基线水位线做成纯函数，
-  便于离线测试；桌面通道负责截图/调用脚本/投递；
+- **纯逻辑层**：`src/core/ocr/` 把归一化、几何、纠错、投票、气泡归属、基线水位线、双引擎几何融合
+  （`fusion.ts`）、序列对齐（`align.ts`）、可信度评估（`confidence.ts`）、跨帧变化判定（`tracker.ts`）
+  做成纯函数，便于离线测试；桌面通道负责截图/调用脚本/投递；
+- **置信度门禁**：每帧按原生置信度/清晰度/双引擎一致性/行合并/纠错等信号打分（HIGH 0.75 / LOW 0.45）：
+  `accept` 正常投递；`verify` 用 `-SecondOcr` 同帧二次验证；仍不达标则**不投递、不推进 ack**，
+  留在脚本 pending 队列下次重放（绝不永久吞消息）。联系人未确认时一票否决；
 - **保守纠错**：只对同长度、至多差一字的高频词做替换；wxid/手机号/金额/日期/邮箱/URL/订单号/验证码等
   敏感区段一律不纠；跨帧重放依靠 `captureId` + `ack` 水位线 + 稳定 id 去重；
+- **诊断字段**：`GET /diagnostics/ocr` 与桌面通道 `status().ocr` 暴露 15 个字段（帧号、引擎、行数、
+  uncertain/reject/冲突计数、耗时、DPI、放大倍数、截图方式、引擎版本、是否二次识别、质量状态等），
+  不触发截图、不含聊天正文、不落盘；
 - **已知弱项**：形近字、长消息截断、极小窗口/遮挡、表情与图片内容（本版本不支持表情消息）。
 
 真实基准数字见 [docs/OCR-BENCHMARK.md](docs/OCR-BENCHMARK.md)，设计见 [docs/OCR-DESIGN.md](docs/OCR-DESIGN.md)。
@@ -209,14 +245,18 @@ npm run test:sandbox     # 沙箱单测（推荐；受限环境也兼容）
 npm test                 # 普通 vitest
 npm run build            # tsc → dist/
 npm run verify:api       # 离线 API 验收（假宿主，不联网）
-node scripts/check-sensitive.mjs   # 敏感数据扫描，0 命中才算过
+node scripts/check-sensitive.mjs   # 敏感数据扫描（受跟踪文件），0 命中才算过
+node scripts/check-package.mjs     # 发布包内容检查（clean checkout + dist，发布阻断项）
 ```
 
 - 单元测试覆盖：本地 0-token 规则、白名单/时段/频控、预算草稿与硬停、熔断、拆条与表情、
-  OCR 纯函数（归一化/纠错/投票/气泡归属/基线水位线）、桌面通道发送三态与防误发、HTTP API 鉴权矩阵、
-  安全运行模式拒发与 OCR 诊断只读、配置迁移、通道能力降级等。
-- 当前规模（2026-10-31 实测）：`npm run test:sandbox` → **34 个测试文件 / 548 个用例全部通过**；
-  `npm run typecheck` 与 `npm run build` 均 exit 0；`npm run verify:api` → **24/24 通过**。
+  OCR 纯函数（归一化/纠错/投票/气泡归属/基线水位线/融合/对齐/置信度/跨帧差分）、桌面通道发送三态与防误发、
+  HTTP API 鉴权矩阵与草稿接口、安全运行模式拒发与 OCR 诊断只读、10 态发送状态机与幂等账本、
+  配置迁移、通道能力降级等。
+- 当前规模（2026-11-01 实测，工作区含未提交的 v3 改动）：`npm run test:sandbox` →
+  **40 个测试文件 / 648 个用例全部通过**（1.59s）；`npm run typecheck` 与 `npm run build` 均 exit 0；
+  `npm run verify:api` → **24/24 通过**；`node scripts/check-sensitive.mjs` → 157 个受跟踪文本文件
+  0 命中；`node scripts/check-package.mjs` → 167 个候选文件 0 违规（7 条 gitignore 垃圾警告，均不进发布包）。
 - 基准语料：`test/fixtures/ocr-corpus/`（20 场景 × 2 变体，全虚构内容），离线 OCR 基准：
 
 ```powershell
@@ -230,8 +270,24 @@ node scripts/ocr/bench.mjs --engine=all --pipeline=all --limit=N   # 全量需�
   「CER ≤ 28.09% / 整句 ≥ 32.95%」的发布门槛（§6.5）。但该结论限定在**合成语料 + 离线等价**口径，
   第二引擎融合/受控纠错在这套语料上几乎未触发（其独立收益未被证明），绝对数字需扩量并在真实微信
   截图（用户授权后）复测，**不能据此宣称真实环境准确率**。
-- CI：`.github/workflows/ci.yml` 在 Windows 跑 `npm ci → typecheck → test:sandbox → check-sensitive → build`
-  与离线 OCR 冒烟（WinRT/Pillow 不可用时**显式 marked skip**，不联网、不碰真实微信）。
+- CI 十项门禁（任务书 §14.4）：`.github/workflows/ci.yml` 的 `verify-windows` job 逐项成步，
+  全部离线（唯一网络访问是 `npm ci` 拉依赖与 `npm audit` 查公开漏洞库），不碰真实微信：
+
+| # | 门禁 | CI 步骤 | 说明 |
+| --- | --- | --- | --- |
+| 1 | TypeScript 类型检查 | `npm run typecheck` | `tsc --noEmit`，0 错误 |
+| 2 | 单元测试 | vitest `test/core` + `test/client` | 纯逻辑/核心模块，不依赖平台 |
+| 3 | 集成测试 | vitest `test/engine` + `test/server` + `test/channels` | fake 通道 + 假宿主，不碰真实微信 |
+| 4 | OCR 离线基准 | `scripts/ocr/bench.mjs`（1 张合成图冒烟） | 只读 `test/fixtures/ocr-corpus`；WinRT/Pillow 缺失时显式 `::notice:: marked skip` |
+| 5 | Windows 兼容性 | PowerShell 步骤 | 打印 OS/Node/PowerShell 5.1 版本；断言 `scripts/pwsh/*.ps1` 均为 UTF-8 BOM |
+| 6 | 构建 | `npm run build` | `tsc` 输出 `dist/` |
+| 7 | API 验证 | `node scripts/verify-api.mjs` | 离线假宿主 + 真实 HTTP 端口，24 项检查 |
+| 8 | 依赖安全检查 | `npm audit --omit=dev --audit-level=high` | 生产依赖 high/critical 直接失败 |
+| 9 | 敏感信息扫描 | `node scripts/check-sensitive.mjs` | wxid/手机号/邮箱/本机路径/密钥/疑似姓名 |
+| 10 | 发布包内容检查 | `node scripts/check-package.mjs` | private:true 未改、无运行时数据/备份/截图/敏感串 |
+
+  Linux job（`linux-guard`）跑与平台无关的子集（typecheck/测试/敏感扫描）；WinRT OCR 在 Linux 上
+  **显式 marked skip**。CI 不发布、不创建 Release。
 
 ## 11. 发版
 
@@ -243,6 +299,8 @@ node scripts/ocr/bench.mjs --engine=all --pipeline=all --limit=N   # 全量需�
   因此不得对外宣称「真实微信环境已可靠」**。
 - 发版流程：更新 `CHANGELOG.md` 与 `package.json`/`src/index.ts` 版本 → 跑完整验证 →
   打 tag → 在受控环境更新安装。禁止在本机未验证的情况下推送或发布。
+- 发布准备（只写文档、不实际发布）：可复现构建、SHA256 校验、干净发布包、回退到 v0.2.8 的步骤
+  见 [docs/RELEASE-CHECKLIST.md](docs/RELEASE-CHECKLIST.md) §6。
 - 升级/回滚：见 [docs/MIGRATION-v3.md](docs/MIGRATION-v3.md)（含回滚到 v0.2.8 的步骤）。
 
 ## 12. 许可

@@ -15,6 +15,7 @@
 | 恶意/损坏的人格包（含 SillyTavern 角色卡） | 从互联网下载的 JSON 含路径穿越文件名、可执行 URL、超深嵌套、超长字段、原型污染键 | API 层 dry-run 结构校验 + 消毒 + 顶层字段白名单；路径穿越/危险 URL/危险键直接 400，未知字段丢弃；校验失败不落盘、不回显原文内容 |
 | 大请求体 / 慢速请求 / 请求风暴 | 本机恶意进程刷 API | 请求体 ≤ 4MB（413）、请求体读取 10s 超时（408）、`POST/PUT/PATCH` 带体时 Content-Type 必须是 `application/json`（415）、进程内限速 240 次/分钟/IP（429） |
 | 密钥泄漏 | 配置文件/状态接口被读取 | `GET /config` 永远返回 `apiToken: ''`（只返回 `apiTokenConfigured` 布尔值）；token 文件权限 `0600` |
+| SSRF（服务端请求伪造） | 人格广场 `indexUrl`/人格包 `url` 被指向内网/本机服务 | `src/core/persona-market.ts` 的 `assertSafeMarketUrl`：仅 `http/https`、拒绝回环/内网/链路本地/`.local`/内嵌凭据；`redirect: 'manual'` 最多 2 跳且每跳重新校验；要求 JSON content-type；响应体 2MB 双限。**残余面见第七节** |
 
 ## 二、鉴权矩阵
 
@@ -91,7 +92,7 @@ dsh-wechat-persona:
 4. **无 token 轮换/撤销 API**：只能改配置 + 重启；已发放 token 在重启前一直有效。
 5. **限速是进程内**：重启即清零，且不是抗 DDoS 方案（本机场景足够）；不区分接口权重。
 6. **slowloris**：只对请求体读取加了 10s 超时，未限制连接建立/头部阶段。
-7. **远程市场安装**：`/market/install` 按 id 交给 `PersonaMarket`，API 层只校验 id 合法性，市场内容本身的信任边界在 `PersonaMarket` 与内置目录；`/personas/install` 的下载分支已做 API 层消毒，但「下载 URL 指向内网」的 SSRF 面仍存在（仅 http/https，无 IP 限制），配置 `market` 时需自行确认 URL 可信。
+7. **远程市场/人格下载的 SSRF 残余面**：人格广场路径（`market.indexUrl` 与索引里的 `entry.url`）已按 `assertSafeMarketUrl` 加固——仅 `http/https`、拒绝回环/内网/链路本地/`.local`/内嵌凭据、重定向手动跟随且每跳重校验、JSON content-type、2MB 双限。但仍有两点未闭环：① `POST /personas/install` 的 `{url}` 下载分支（`downloadPersonaPack`）目前只校验 `http/https`，**未做私网 IP 拒绝**，配置/调用方需自行确认 URL 可信；② **DNS rebinding**：校验发生在请求 URL 字符串层面，域名在解析时仍可能指向内网地址，彻底消除需要自定义 `lookup`/IP 白名单或走代理，当前未做。其余信任边界在 `PersonaMarket` 与内置目录。
 8. **人格包语义校验交给 PersonaLibrary**：API 层只做结构与危险内容校验（dry-run），字段含义/提示词质量仍由 `src/core/persona-library.ts` 的 `normalizePack` 等逻辑负责。
 9. **未做**：token 的按请求头/来源分权（读写分级）、`GET /config` 之外的其它接口脱敏统一封装、CORS 头（当前不需要跨域场景）。
 
@@ -102,3 +103,4 @@ dsh-wechat-persona:
   - 「鉴权加固（token / Host / Origin / 限速）」13 条：token 缺失/错误/正确、`x-dsh-persona-token` 备选头、兼容模式告警一次、Host/Origin/Sec-Fetch-Site 拒绝、回环放行、限速 429、`/config` 脱敏与空 token 回填。
   - 「人格包导入安全（校验 / 消毒 / dry-run）」14 条：非法 JSON、2MB 上限、非对象、`__proto__` 原型污染、路径穿越贴图名、`javascript:` 头像、允许 `https`/`data:image`、8 层嵌套、超长字段、无可识别字段、未知字段丢弃、install 分支同样校验、路径穿越 id 的 activate/export/delete、market id 穿越。
   - 传输层 1 条：非 `application/json` 的 `POST` → 415。
+- SSRF 用例（`test/core/persona-market.test.ts`，v3.0.0 补充）：内网/回环/链路本地/`.local` 地址拒绝、非 http/https 拒绝、内嵌凭据拒绝、重定向到内网拒绝、超过 2 跳拒绝、非 JSON content-type 拒绝、超大响应拒绝、`builtinOnly` 时不发网络请求。全部用注入的 fetch 桩，不访问外网。

@@ -30,7 +30,7 @@ Get-Content "<dataDir>\audit.jsonl" -Tail 20
 curl.exe -s -H "x-dsh-wechat-persona: 1" http://127.0.0.1:<DSH端口>/dsh-wechat-persona/api/diagnostics/ocr
 ```
 
-`wechat_persona_status` 会直接给出：暂停/原因、通道状态与 detail、熔断、预算与今日统计、投递三态计数（`delivery.sent / notSent / unknown`）、暂存条数（`deferredCount`）与安全运行模式（`safeMode`）。**先读它，再做别的。**
+`wechat_persona_status` 会直接给出：暂停/原因、通道状态与 detail、熔断、预算与今日统计、投递三态计数（`delivery.sent / notSent / unknown`）、暂存条数（`deferredCount`）、安全运行模式（`safeMode`）、发送模式（`sendMode`）、待批准草稿数（`pendingDrafts`）与最近一次发送状态（`sendState`）。**先读它，再做别的。**
 
 ## 1. 插件 API 404 / 设置页空白 / 改代码不生效
 
@@ -113,7 +113,10 @@ powershell -ExecutionPolicy Bypass -File scripts/pwsh/ocr-winrt.ps1 -Path .\test
 - **表情包、图片、语音、视频消息**：桌面通道能力声明为 `stickers:false / images:false / voice:false`，不会识别，也不会回复（纯表情默认被 gate 忽略）。
 - **深色主题、缩放、模糊、遮挡、窗口过小**：识别率明显下降。桌面通道连续失败 6 次后会进入 `degraded`（`detail` 会显示「连续失败 N 次，已停摆；请重载插件恢复」）。恢复方法：关掉再开插件（或重启 DSH），并保证微信窗口可见、未被遮挡、分辨率 ≥1366×768。
 - **长消息/多行气泡**：可能被截断。插件会优先用「列表预览 → 读取校验」交叉比对；校验失败时退回预览或不投递，因此可能出现「对方发了长消息，这边没回」。
-- **同一帧的稳定性**：v3.0.0 的读取是「同一次读取的所有行来自同一帧截图」（`captureId`），并配合 `ack` 水位线防止重放/漏读。Phase C 已双向接线：`desktop.ts` 的 read 传 `-Ack`，`wechat-uia.ps1` 回传 `captureId/pane/lines[].side/box/messages[]`，对未确认行重放，TS 侧 `planInboundDispatch` 拒投 `uncertain` 行。**真实微信窗口下尚未端到端验证**（见 [RELEASE-CHECKLIST.md](RELEASE-CHECKLIST.md) 门槛 2）；旧脚本输出按 legacy 分支处理。
+- **同一帧的稳定性**：v3.0.0 的读取是「同一次读取的所有行来自同一帧截图」（`captureId`），并配合 `ack` 水位线防止重放/漏读。Phase C 已双向接线：`desktop.ts` 的 read 传 `-Ack`，`wechat-uia.ps1` 回传 `captureId/pane/lines[].side/box/messages[]`，对未确认行重放；消息 id 是 `pc-<帧号>-<消息序号>-<几何哈希>`（不含 OCR 文本，跨帧稳定），TS 侧 `planInboundDispatch` 拒投 `uncertain` 行并把 ack 落 `desktop-ack.json`。
+- **置信度门禁（v3.0.0）**：每条消息会按置信度评估分三路——`accept` 正常投递；`verify` 会用同一张截图再跑一次第二引擎（`-SecondOcr`）复评；`reject`（含 `contactVerified=false` 硬否决、极低分）**不投递、不推进 ack**，脚本 pending 会在下次读取时重放，不会永久吞消息。你可以在 `GET /diagnostics/ocr` 看到 `rejectCount`、`uncertainCount`、`conflictCount` 与 `secondOcrUsed`。
+- **双引擎分层决策**：第二引擎（RapidOCR）与 WinRT 行重叠 ≥0.90 记为 `agree` 并采用其置信度；0.35–0.90 记为 `conflict`（计入 `conflictCount`），只有第二引擎 score ≥0.85 才替换文本；匹配不到记为 `single`。**不再是「谁更长谁赢」**；第二引擎缺失时静默回退为单引擎。
+- **真实微信窗口下尚未端到端验证**（见 [RELEASE-CHECKLIST.md](RELEASE-CHECKLIST.md) 门槛 2）；旧脚本输出按 legacy 分支处理；`fusion/align/tracker` 目前只在单测中使用，未接入生产读取路径。
 
 ### 4.3 想量化识别质量
 
@@ -130,7 +133,7 @@ node scripts/ocr/bench.mjs --engine=all --out-dir=test/fixtures/ocr-corpus/resul
 
 - `%TEMP%\wxuia-engine-debug.log`：每次自动化调用的 OCR 行、REGION、点击/发送决策。搜索关键词 `OCR`、`REGION`、`send`、`captureId`。
 - `<dataDir>\audit.jsonl`：`type:"skip"`（被判定跳过）、`type:"send"` / `"send-fail"`（发送结果与 `delivery`）。
-- `GET /diagnostics/ocr`：只读返回桌面通道最近一次读取的 `captureId`、引擎、行数、`uncertainCount`、耗时与最后错误；不触发截图、不含正文。
+- `GET /diagnostics/ocr`：只读返回桌面通道最近一次读取的诊断元数据（`captureId`、引擎列表、行数、`uncertainCount`/`rejectCount`/`conflictCount`、耗时、`lastReadAt`、`lastError`、`dpi`/`scale`、`screenshotMode`、`engineVersion`、`secondOcrUsed`、`qualityStatus`）；不触发截图、不含正文、不落盘。
 - 桌面通道 `channelState=degraded` 时看 `channelDetail`。
 
 ## 5. 发送被拒原因表
@@ -173,6 +176,23 @@ node scripts/ocr/bench.mjs --engine=all --out-dir=test/fixtures/ocr-corpus/resul
 
 因此你偶尔会看到「消息可能发重/状态 unknown」的告警，但**不会看到因为结果未知而自动重发**。`wechat_persona_status` 的 `delivery` 计数可直接看到三类结果数量。若 `notSent` 持续增长，按 §5.2 对照文案处理。
 
+**发送幂等账本（v3.0.0）**：每次生成/发送前会创建 `sendOperationId`，引擎在 `canSend` 之后、`channel.send` 之前查 `<dataDir>\send-ledger.json`：同一个 `opId + partIndex` 只执行一次；`confirmed/cancelled/unknown` 是终态，不会再次发送；`failed` 只有在账本证明 `not-sent` 且尝试次数 <3 时才允许重试。账本只存文本哈希、不存正文，上限 200 条。若看到 `send-ledger` 相关的跳过审计（`skip-duplicate`），说明该操作已终结，属预期保护。
+
+### 5.4 草稿模式（`sendMode=draft/confirm`）
+
+`src/config.ts` 的 `sendMode` 有三级：`auto`（默认，生成后自动发送）、`draft`（只生成草稿、需设置页人工批准）、`confirm`（生成草稿、人工确认后发送）。**`safeMode=true` 优先级最高**：无论 `sendMode` 是什么都只生成草稿。
+
+| 现象 | 原因 / 处理 |
+| --- | --- |
+| 有回复但不发送、`pendingDrafts` 增加 | 当前是 `draft`/`confirm`/`safeMode`/预算草稿模式；到设置页「日志与测试 → 待发送草稿」或 `GET /drafts` 查看 |
+| `POST /drafts/approve` 返回 404 | 草稿 id 不存在或已被清理 |
+| `POST /drafts/approve` 返回 409 | 草稿已处理（approved/rejected/expired）、或批准时门禁拒绝（暂停/熔断/预算/白名单/频控/safeMode）、或引擎未启动；响应 message 会给出具体原因 |
+| 批准后返回 `unknown` | 结果无法确认，**不会自动重发**；先到微信客户端人工确认，再决定是否重新生成 |
+| 草稿一直不出现 | `sendMode=auto` 且未触发预算/safeMode；或引擎未启动 |
+| 想直接放弃草稿 | 设置页「拒绝」或 `POST /drafts/reject`；删除 `<dataDir>\drafts.json` 等于放弃全部未批准草稿（不会发送） |
+
+草稿存于 `<dataDir>\drafts.json`（上限 50 条、24 小时 TTL、只保留 pending/已处理记录）；批准会**重新走一遍 `canSend` 全部门禁**并复用同一 `opId`，因此同一草稿不会被批准两次。
+
 ## 6. 预算 / 草稿模式 / 熔断 / 暂停与恢复
 
 ### 6.1 预算三阶段（`src/core/budget.ts`）
@@ -180,7 +200,7 @@ node scripts/ocr/bench.mjs --engine=all --out-dir=test/fixtures/ocr-corpus/resul
 | `budgetPhase` | 条件 | 行为 |
 | --- | --- | --- |
 | `ok` | 已用 < `dailyTokens × draftModeRatio` | 正常生成并发送 |
-| `draft` | 已用 ≥ 85%（默认 `draftModeRatio=0.85`） | 仍生成，但**只写草稿不发送**；草稿在 `<dataDir>\drafts.jsonl`，审计 `reason=budget-draft` |
+| `draft` | 已用 ≥ 85%（默认 `draftModeRatio=0.85`） | 仍生成，但**只写草稿不发送**；草稿写入 `<dataDir>\drafts.json`（审批队列，上限 50、24h TTL）并兼容追加 `<dataDir>\drafts.jsonl`，审计 `reason=budget-draft` |
 | `exhausted` | 已用 ≥ `dailyTokens`（默认 50000） | 硬停：不再调模型、不发送；次日按 `dayKey` 自动清零 |
 
 - `/status` 里 `budget` + `budgetPhase` + `today.llmTokens` 可判断当前阶段。
@@ -201,7 +221,13 @@ node scripts/ocr/bench.mjs --engine=all --out-dir=test/fixtures/ocr-corpus/resul
 - 恢复入口：`wechat_persona_resume` 工具或 `POST /resume`（二者等价：清暂停 + 清熔断 + 重启通道）。
 - 聊天内目前只有 `/stop` 生效；`src/core/stop.ts:17` 定义了 `isResumeCommand`（`/resume`、`/start`）但当前版本**尚未接入引擎**——暂停后发聊天命令不会恢复，请用工具或 API。等该能力接入后本文会更新。
 - 暂停期间白名单入站消息**不丢**：写入 `<dataDir>\deferred-inbound.json`（最多 50 条），恢复后按顺序补处理；恢复中途再次暂停则剩余继续保留。`wechat_persona_status` 的 `deferredCount` 可看暂存数量。
-- 预算草稿模式产生的草稿不会自动补发；需要人工查看 `<dataDir>\drafts.jsonl`。
+- 草稿模式产生的草稿**不会自动补发**：预算草稿与 `sendMode=draft/confirm` 的草稿都在 `<dataDir>\drafts.json`，需要人工在设置页或 `POST /drafts/approve` 批准（批准时重走全部门禁）；`safeMode` 下即使批准也会被拒。历史追加文件 `<dataDir>\drafts.jsonl` 仅作兼容记录，不参与审批。
+
+### 6.4 安全运行模式与发送模式
+
+- `safeMode`（设置页「预算与安全 → 安全运行模式（禁止真实发送）」，默认 `false`）：开启后 `mock` 以外的真实通道一律拒发（`reason=safe-mode`），但草稿仍会生成，适合先观察效果再决定是否放行。
+- `sendMode`（设置页「预算与安全 → 发送模式」）：`auto` 自动发送 / `draft` 只生成草稿 / `confirm` 生成草稿待确认；默认 `auto` 以保持旧行为。
+- 优先级：预算草稿/超限 > `safeMode` > `sendMode`（例如 `safeMode=true` 时即使 `auto` 也只出草稿）。任何模式下都受 §5.1 门禁与 §5.3 幂等账本约束。
 
 ## 7. 通道专项
 
@@ -221,10 +247,13 @@ node scripts/ocr/bench.mjs --engine=all --out-dir=test/fixtures/ocr-corpus/resul
 | `%TEMP%\dsh-wechat-persona-debug.log` | 插件启动、设置页 API 挂载、工具注册、通道启停 |
 | `%TEMP%\wxuia-engine-debug.log` | 自动化脚本 OCR/点击/读取/发送决策 |
 | `<dataDir>\state.json` | 暂停/熔断/预算/频控/去重指纹/统计 |
-| `<dataDir>\audit.jsonl`（历史轮转 `audit.1.jsonl`） | llm / send / send-fail / skip / risk / search 事件与耗时 |
+| `<dataDir>\drafts.json` | v3 草稿队列（正文、24h TTL、上限 50，供人工批准） |
+| `<dataDir>\send-ledger.json` | 发送幂等账本（opId/partIndex、状态、尝试次数、文本哈希；上限 200） |
+| `<dataDir>\desktop-ack.json` | 桌面通道每个联系人的 ack 水位线（captureId），跨重启防重放 |
+| `<dataDir>\audit.jsonl`（历史轮转 `audit.1.jsonl`） | llm / send / send-fail / skip / risk / search / draft / send-state 事件与耗时 |
 | `<dataDir>\alerts.jsonl` | 通知/告警记录 |
 | `<dataDir>\memory\` | 每联系人记忆 |
-| `<dataDir>\drafts.jsonl` | 预算草稿模式下的草稿 |
+| `<dataDir>\drafts.jsonl` | 预算草稿模式下的旧追加记录（兼容格式） |
 | `<dataDir>\deferred-inbound.json` | 暂停期间暂存的入站消息 |
 | `<dataDir>\outbox.jsonl` | mock 通道的模拟出站 |
 
@@ -233,7 +262,7 @@ node scripts/ocr/bench.mjs --engine=all --out-dir=test/fixtures/ocr-corpus/resul
 ## 9. 提问题前请收集（并脱敏）
 
 1. `wechat_persona_status` 输出（可把联系人名替换为 `A/B/C`）。
-2. `channelState` / `channelDetail` / `budgetPhase` / `delivery` / `deferredCount`。
+2. `channelState` / `channelDetail` / `budgetPhase` / `delivery` / `deferredCount` / `safeMode` / `sendMode` / `pendingDrafts` / `sendState`。
 3. 相关时间段的 `audit.jsonl` 片段（**先删除/替换真实联系人名与消息内容**）。
 4. `%TEMP%\wxuia-engine-debug.log` 对应时间片段（同样脱敏；不要附真实聊天截图）。
 5. 版本：`package.json` 版本、DSH 版本、Windows 版本、微信 PC 版本、是否安装中文 OCR 语言包。

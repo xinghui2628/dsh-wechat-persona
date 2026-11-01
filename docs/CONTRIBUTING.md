@@ -130,8 +130,9 @@ node scripts/ocr/bench.mjs --engine=all --limit=40 --out-dir=test/fixtures/ocr-c
 提交 PR 前逐条自查（并在 PR 描述里贴出真实输出，不要只写"已通过"）：
 
 - [ ] `npm run typecheck` 0 错误
-- [ ] `npm run test:sandbox` 全绿，用例数不少于基线（当前基线：34 文件 / 548 用例，2026-10-31 实测）
-- [ ] `node scripts/check-sensitive.mjs` 0 命中（exit 0）
+- [ ] `npm run test:sandbox` 全绿，用例数不少于基线（当前基线：**40 文件 / 648 用例**，2026-11-01 实测；HEAD `28d3a89` 时为 34 文件 / 548 用例，v3 未提交改动会增加，以你本地输出为准）
+- [ ] `node scripts/check-sensitive.mjs` 0 命中（exit 0；2026-11-01 实测扫描 157 个受跟踪文本文件，0 命中）
+- [ ] `node scripts/check-package.mjs` 0 违规（发布相关改动时必跑）
 - [ ] `npm run build` 成功（若改了 `src/`）
 - [ ] 改了 `scripts/pwsh/*.ps1`：UTF-8 BOM、PS 5.1 语法检查通过
 - [ ] 新增/修改的行为有对应用例；修复 bug 时先加失败用例再修
@@ -149,7 +150,10 @@ CI（`.github/workflows/ci.yml`）会在 Windows 上跑上述门禁，并在 Ubu
 | 引擎/OCR/点击调试日志 | `%TEMP%\wxuia-engine-debug.log` |
 | 审计日志（llm / send / skip） | `<dataDir>\audit.jsonl` |
 | 运行时状态（暂停、熔断、预算、频控） | `<dataDir>\state.json` |
-| 草稿（预算草稿模式） | `<dataDir>\drafts.jsonl` |
+| 草稿（v3 待批准队列） | `<dataDir>\drafts.json` |
+| 草稿（旧追加记录，兼容） | `<dataDir>\drafts.jsonl` |
+| 发送幂等账本 | `<dataDir>\send-ledger.json` |
+| 桌面通道 ack 水位线 | `<dataDir>\desktop-ack.json` |
 | 暂停期间暂存的入站消息 | `<dataDir>\deferred-inbound.json` |
 | 设置页 API 基址 | `http://127.0.0.1:<DSH端口>/dsh-wechat-persona/api`（需带请求头 `x-dsh-wechat-persona: 1`） |
 

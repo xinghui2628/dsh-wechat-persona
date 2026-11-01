@@ -57,7 +57,7 @@ git push origin v0.2.3
 三层摆放，越靠近用户越显眼：
 
 1. **README 顶部**（30 秒内能看到）：账号风险 + 只用自己的小号 + 与腾讯无关 + 免费无付费服务
-2. **本仓库 [DISCLAIMER.md](DISCLAIMER.md) / [SECURITY.md](SECURITY.md)**：完整条款、数据流向、安全报告渠道
+2. **本仓库 [DISCLAIMER.md](../DISCLAIMER.md) / [SECURITY.md](SECURITY.md)**：完整条款、数据流向、安全报告渠道
 3. **Release 说明与 Issue 模板**：再次提示先读文档、脱敏日志
 
 > 参考做法：微信自动化项目普遍在 README 顶部写「仅供学习和技术研究、免费开源、作者不承担任何责任」，并用自定义 License 限制非商业用途（如 [wechat-use 的非商业学习许可](https://github.com/leeguooooo/wechat-use/blob/HEAD/LICENSE)）；也有项目被腾讯投诉/下架或作者主动归档（如 [XYBotV2](https://github.com/HenryXiaoYang/XYBotV2) 已归档并停止维护）。**建议你自己先 Fork 一份备份到别的账号/本地。**
@@ -82,7 +82,7 @@ Co-authored-by: 第二作者 <coauthor@example.com>"
 
 ### 方式 B：仅署名（没有代码提交）
 
-在 [CONTRIBUTORS.md](CONTRIBUTORS.md) 与 README「作者与贡献者」中写明：第一作者 / 第二作者及贡献内容；并保留 [CITATION.cff](CITATION.cff) 的作者列表。**注意**：GitHub Contributors 统计不受影响（按 commit 算），所以「第二作者」的身份主要靠 CONTRIBUTORS/README/CITATION 体现。
+在 [CONTRIBUTORS.md](../CONTRIBUTORS.md) 与 README「作者与贡献者」中写明：第一作者 / 第二作者及贡献内容；并保留 [CITATION.cff](../CITATION.cff) 的作者列表。**注意**：GitHub Contributors 统计不受影响（按 commit 算），所以「第二作者」的身份主要靠 CONTRIBUTORS/README/CITATION 体现。
 
 ### 给权限的边界
 
