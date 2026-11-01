@@ -6,15 +6,25 @@ body:
   - type: markdown
     attributes:
       value: |
-        谢谢反馈！报告前请确认：
-        1. 已阅读 [使用说明](docs/使用说明.md) 与 [已知限制](docs/使用说明.md#104-已知限制)；
-        2. **不要**贴真实好友名 / wxid / 手机号 / API Key / 含用户名的完整路径，截图请先脱敏。
+        谢谢反馈！提交前请确认：
+
+        1. 已阅读 [使用说明](docs/使用说明.md)、[beta 限制](docs/BETA-LIMITATIONS.md) 与 [FAQ](docs/BETA-FAQ.md)；
+        2. **不要**贴真实好友名 / wxid / 手机号 / API Key / 含用户名的完整路径 / 真实聊天截图；日志请只保留相关片段并脱敏；
+        3. beta 默认 `betaSafeMode=true`：真实通道发送被拒绝是**预期行为**，不是 bug；请先确认你的问题在 mock 通道可复现。
   - type: input
     id: version
     attributes:
-      label: 版本
-      description: 插件版本（设置页「插件信息」/ `package.json`）与 DSH 版本
-      placeholder: "0.2.3 / DSH 0.2.1-rc.3"
+      label: 插件版本
+      description: 设置页「插件信息」/ package.json / 构建产物中的版本号（beta 构建应为 3.0.0-beta.1；dist 未重建时可能是旧值）
+      placeholder: "3.0.0-beta.1"
+    validations:
+      required: true
+  - type: input
+    id: dsh-version
+    attributes:
+      label: DSH 版本
+      description: 宿主版本（插件页/关于）与 Node.js 版本
+      placeholder: "DSH 0.2.1-rc.3 / Node 22.x"
     validations:
       required: true
   - type: dropdown
@@ -24,20 +34,28 @@ body:
       options: [mock, desktop, phone-adb, windows-vm, 不确定]
     validations:
       required: true
+  - type: dropdown
+    id: mock-repro
+    attributes:
+      label: mock 通道能否复现？
+      description: 只影响真实微信的问题也请注明「仅真实通道」
+      options: [能复现（mock）, 不能复现（仅真实通道）, 未测]
+    validations:
+      required: true
   - type: textarea
     id: what-happened
     attributes:
       label: 现象与复现步骤
-      description: 做了什么、期望什么、实际什么；可附脱敏后的日志片段（WXUIA_DEBUG=1 的日志）
+      description: 做了什么、预期什么、实际什么；请给出最小步骤（1/2/3…）
     validations:
       required: true
   - type: textarea
     id: environment
     attributes:
       label: 环境
-      description: Windows 版本、微信 PC 版本、显示缩放、OCR 语言包、Node 版本
+      description: Windows 版本、显示缩放、OCR 语言包（desktop 通道）、PowerShell 版本、是否干净 profile
   - type: textarea
     id: extra
     attributes:
       label: 其他
-      description: 截图（已脱敏）、审计日志片段、相关配置（去掉 API Key）
+      description: 脱敏后的日志片段、审计事件类型/原因、相关配置（去掉 API Key）

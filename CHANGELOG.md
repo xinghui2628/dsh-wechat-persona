@@ -4,7 +4,25 @@
 
 - 格式参考 [Keep a Changelog（中文）](https://keepachangelog.com/zh-CN/1.1.0/)。
 - 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
-- 最新版本：**3.0.0**（2026-10-31，开发中；未打 tag、未发布 npm、未创建 Release；**GitHub 仓库为 public**，`private: true` 仅表示不发布 npm）。安装/更新/卸载与排障见 [docs/使用说明.md](docs/使用说明.md)，从 0.2.8 升级见 [docs/MIGRATION-v3.md](docs/MIGRATION-v3.md)，发布门槛见 [docs/RELEASE-CHECKLIST.md](docs/RELEASE-CHECKLIST.md)。
+- 最新版本：**3.0.0-beta.1**（2026-11-01，开发者预览；**未打 tag、未发布 npm、未创建正式 Release**；GitHub 仓库为 public，`private: true` 仅表示不发布 npm）。安装/更新/卸载与排障见 [docs/使用说明.md](docs/使用说明.md)，beta 快速开始见 [docs/BETA-QUICKSTART.md](docs/BETA-QUICKSTART.md)，从 0.2.8 升级见 [docs/MIGRATION-v3.md](docs/MIGRATION-v3.md)，发布门槛见 [docs/RELEASE-CHECKLIST.md](docs/RELEASE-CHECKLIST.md)。
+
+## [3.0.0-beta.1] - 2026-11-01
+
+> **开发者预览（Developer Preview）**：功能与文档进入 beta，但**真实微信环境（读取/OCR/发送）未实机验收**。
+> `private: true` 仅表示不发布 npm 包；GitHub 仓库本身是 public。发布动作（tag/Release）尚未执行，发布草稿见 [docs/releases/v3.0.0-beta.1.md](docs/releases/v3.0.0-beta.1.md)。
+
+### 主要变化
+
+- 版本号切换为 `3.0.0-beta.1`（`package.json` + `src/index.ts`）；`dist/` 需在构建后才会同步显示 beta 版本号。
+- **默认安全策略 `betaSafeMode`（默认 `true`）**：beta 构建中真实通道的自动发送在引擎 / 桌面通道 / HTTP API / PowerShell 脚本四层被拒绝，`mock` 通道可完整走通；该保护用于避免用户拿到 beta 包后误对真实联系人发送。
+- 文档改为 beta 定位：README 首屏重写（实验性警示、功能矩阵、5 分钟 mock 快速开始、隐私与费用、已知问题）；DISCLAIMER 按 10 项重写；SECURITY 补受支持版本、token 轮换与私密披露；新增 [docs/BETA-QUICKSTART.md](docs/BETA-QUICKSTART.md)、[docs/BETA-LIMITATIONS.md](docs/BETA-LIMITATIONS.md)、[docs/BETA-FAQ.md](docs/BETA-FAQ.md)、[docs/releases/v3.0.0-beta.1.md](docs/releases/v3.0.0-beta.1.md)；Issue/PR 模板要求环境版本、复现步骤、mock 结果与脱敏自查。
+- 本次发布只准备 GitHub Release **Draft** 与 tag 计划，**不 push、不 tag、不创建 Release、不发布 npm**（需维护者另行批准）。
+
+### 验证与已知限制
+
+- 最终门禁（2026-11-01，含 `betaSafeMode` 四层闸门，顺序执行）：`typecheck` 0 错；`test:sandbox` **43 个测试文件 / 725 个用例全过**（含新增 `test/core/beta-safe.test.ts` 15 条与桌面通道 e2e 的 1 条 beta 门禁用例）；`node scripts/check-sensitive.mjs` **222 个受跟踪文本文件 0 命中**；`node scripts/check-package.mjs` **197 个候选文件 0 违规**（仅本地垃圾警告，不入发布包）；`npm run build` exit 0；`npm run verify:api` **25/25**（该脚本显式 `betaSafeMode:false` 以覆盖发送链路；闸门本身由 `beta-safe.test.ts` 覆盖）。
+- 发布候选包（按 [docs/RELEASE-CHECKLIST.md §6.4](docs/RELEASE-CHECKLIST.md) 从受跟踪文件 + `dist/` 制作）：199 文件 / 731,632 B / 解包 2,289,465 B；干净模拟安装 **19/19 通过**（默认 `betaSafeMode=true`、`activeChannel=mock`、mock 收发成功、真实发送被拒、包内 PS1 带 `-NoRealSend`、回滚演练通过）；真实 DSH profile 安装未做。
+- **以上均为离线/合成数据验证，不等于真实微信可用**。真实微信读取、OCR 准确率、自动发送未实机验收；`fusion/align/tracker` 未接入生产；RapidOCR 新包未实测；phone-adb / windows-vm 通道本轮未验证。完整清单见 [docs/BETA-LIMITATIONS.md](docs/BETA-LIMITATIONS.md)。
 
 ## [3.0.0] - 2026-10-31
 

@@ -11,7 +11,7 @@
 
 | 项 | 状态 | 说明 |
 | --- | --- | --- |
-| §2 的 1–10 条门槛 | **全部满足** | 证据见 §2、§4；工作区基线测试规模 **42 文件 / 709 用例**（2026-11-01 11:40 最终实测；发布前以最终重跑为准） |
+| §2 的 1–10 条门槛 | **全部满足** | 证据见 §2、§4；工作区基线测试规模 **43 文件 / 725 用例**（2026-11-01 12:25 最终实测；发布前以最终重跑为准） |
 | 仓库公开性 / 分发边界 | **已纠正并写清** | GitHub 仓库 **public**；`private: true` 只阻止 `npm publish`；公开历史中的疑似个人信息风险单独披露，不通过 private 隐藏。不得创建 tag/Release/npm 发布（未获维护者批准） |
 | CI 十项门禁（任务书 §14.4） | **满足** | `.github/workflows/ci.yml` 逐项成步：typecheck / 单测 / 集成 / OCR 冒烟 / Windows 兼容 / build / API 验证 / 依赖审计 / 敏感扫描 / 发布包内容检查；本地逐步复跑见 §4-9，README §10 有映射表；CI 无私人微信/聊天图片/OneDrive/外部私人服务依赖 |
 | 发布包干净度 | **满足（本地实测）** | `node scripts/check-package.mjs`：**189** 个候选文件（干净 checkout 受跟踪文件 ∩ `package.json files` + `dist/`），0 违规；**9** 个被 gitignore 的本地调试垃圾只警告、不入包（§4-7）。`npm pack --dry-run`（11:40 最终）：**192 文件 / 749,729 B / 解包 2,233,778 B，垃圾 0**；11:25 实际 pack 为 190 文件 / 705,755 B（SHA256 `64C229…` 仅该次构建）。与候选集的差集是**未跟踪**的 `docs/V3-PRIVACY-AND-DEVICE-READINESS.md`（说明 npm pack 会带上未提交文件，发布包仍按 §6.4 用受跟踪文件制作） |
@@ -81,6 +81,7 @@ HEAD `2823439`（42 个本地提交、领先 `origin/master` 21 个提交）+ ta
 | 10 | 阶段 2 全量门禁 | `typecheck` exit 0；`test:sandbox` **41 文件 / 678 用例全过**（1.59s）；`check-sensitive` **157 文件 0 命中**（阶段 2 时点；task-25 复跑为 **212 文件 0 命中**，见行 11）；`check-package` **189 候选 0 违规**（8 条 gitignore 垃圾警告；发布包 files 已排除本地垃圾）；文档相对链接 0 缺失；`ci.yml` YAML 解析通过（2026-11-01，工作区含未提交改动，最终数字以提交后重跑为准） |
 | 11 | task-25 安装验收全量复跑（2026-11-01 11:25–11:27） | `npm run typecheck` **exit 0**；`npm run test:sandbox` **41 文件 / 678 用例全过**（1.63s）；`node scripts/check-sensitive.mjs` **212 个受跟踪文本文件 0 命中**（exit 0）；`node scripts/check-package.mjs` **189 候选 0 违规**（exit 0，8 条 gitignore 垃圾仅警告）；`npm run verify:api` **25/25 PASS**（exit 0）；`npx vitest run test/core/config-migration.test.ts` **10/10 passed**；`npm pack --dry-run` **190 文件 / 705,755 B / 解包 2,122,201 B**，实际 pack tarball 同尺寸、SHA256 `64C229C1945C8C0646A213EC37F5C98D94D1F4E340D1C6704AD3E88E5015819B`，`tar -tf` 坏文件 0；解包复制到临时 `node_modules`（复用宿主 `@deepseek-ai` 依赖）后 `import dist/index.js` **OK**（name/provide/apply）、`migrateConfig` **OK**（sendMode=auto/readOnlyTestMode=false/ocrPipelineMode=v3/changed=true）、`node --check client/client.js` **exit 0**；只读模式离线 harness **14/14 PASS**（`/test/send`、`/drafts/approve` 均 409 `read-only-mode`，无 `outbox.jsonl`）。详见 [PRE-RELEASE-INSTALL.md](PRE-RELEASE-INSTALL.md) |
 | 12 | task-25 收尾最终门禁（2026-11-01 11:40） | `npm run typecheck` **exit 0**；`npm run test:sandbox` **42 文件 / 709 用例全过**（2.59s，exit 0）；`check-sensitive` **212 文件 0 命中**；`check-package` **189 候选 0 违规**（9 条 gitignore 垃圾警告）；`npm pack --dry-run` **192 文件 / 749,729 B / 解包 2,233,778 B、垃圾 0**；`verify:api` **25/25**；说明：工作区仍有并行未提交改动（`src/**`/`test/**`）与未跟踪文档，最终发布前需按 §6 重建并重跑 |
+| 13 | **beta.1 最终门禁**（2026-11-01 12:15–12:25，含 `betaSafeMode` 四层闸门） | `typecheck` **exit 0**；`test:sandbox` **43 文件 / 725 用例全过**；`check-sensitive` **222 文件 0 命中**；`check-package` **197 候选 0 违规**；`verify:api` **25/25**；`build` exit 0；发布候选包 **199 文件 / 731,632 B / 解包 2,289,465 B**，SHA256 `2a4382d003416e940c6bc20b3b2410b4247c8e6515b01c95d30f85c4dc249512`（提交前候选，提交后重算）；干净模拟安装 19/19、回滚通过；真实 DSH profile 安装与真实微信未验证 |
 
 复现命令（发布前完整跑一遍，顺序建议）：
 

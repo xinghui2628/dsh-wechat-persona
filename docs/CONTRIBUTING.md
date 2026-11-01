@@ -130,8 +130,8 @@ node scripts/ocr/bench.mjs --engine=all --limit=40 --out-dir=test/fixtures/ocr-c
 提交 PR 前逐条自查（并在 PR 描述里贴出真实输出，不要只写"已通过"）：
 
 - [ ] `npm run typecheck` 0 错误
-- [ ] `npm run test:sandbox` 全绿，用例数不少于基线（当前基线：**42 文件 / 709 用例**，2026-11-01 11:40 实测；HEAD `28d3a89` 时为 34 文件 / 548 用例，v3 未提交改动会增加，以你本地输出为准）
-- [ ] `node scripts/check-sensitive.mjs` 0 命中（exit 0；2026-11-01 实测扫描 212 个受跟踪文本文件，0 命中）
+- [ ] `npm run test:sandbox` 全绿，用例数不少于基线（当前基线：**43 文件 / 725 用例**，2026-11-01 实测；以你本地输出为准）
+- [ ] `node scripts/check-sensitive.mjs` 0 命中（exit 0；2026-11-01 实测扫描 222 个受跟踪文本文件，0 命中）
 - [ ] `node scripts/check-package.mjs` 0 违规（发布相关改动时必跑）
 - [ ] `npm run build` 成功（若改了 `src/`）
 - [ ] 改了 `scripts/pwsh/*.ps1`：UTF-8 BOM、PS 5.1 语法检查通过

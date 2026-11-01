@@ -8,6 +8,9 @@
 > 因此本文中「公开发布」的动作（打 tag/Release、开启 Issues、宣传）都已发生在公开视野下；
 > 公开 Git 历史无法通过 private 设置撤回，历史提交中的疑似个人信息见
 > [PRIVACY-REVIEW-PRE-RELEASE.md](PRIVACY-REVIEW-PRE-RELEASE.md)。发布前请按本文清单复核，**未获维护者明确批准不要创建 Release/tag**。
+>
+> **本轮（v3.0.0-beta.1）范围**：只准备发布草稿（[releases/v3.0.0-beta.1.md](releases/v3.0.0-beta.1.md)）与 tag 计划；
+> **不 push、不创建 tag、不创建 GitHub Release、不发布 npm**。所有实际操作须维护者另行批准后执行。
 
 ## 1. GitHub 的「玩法」是什么
 

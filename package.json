@@ -1,6 +1,6 @@
 {
   "name": "dsh-wechat-persona",
-  "version": "3.0.0",
+  "version": "3.0.0-beta.1",
   "private": true,
   "description": "微信小号 AI 人格聊天分身（DSH host 插件）：本地零 token 决策 + 拟人节奏 + 表情包 + 按需搜索 + token 预算 + 风控熔断",
   "license": "MIT",

@@ -1,331 +1,160 @@
 # dsh-wechat-persona
 
-把**你自己的微信小号**变成有「人格」的 AI 聊天分身：被动回复白名单好友、拟人节奏、表情包、按需联网搜索，
-并带严格的 token 预算、风控熔断与防误发保护。
-
-> **版本**：3.0.0（开发中；未打 tag、未发布 npm、未创建 Release）　**上一个已发布版本**：v0.2.8
-> **仓库属性**：GitHub 仓库**公开**（public）；`package.json` 的 `private: true` **仅表示不发布到 npm**，
-> 不改变 Git 仓库公开可见这一事实。历史提交与公开分析见 [docs/PRIVACY-REVIEW-PRE-RELEASE.md](docs/PRIVACY-REVIEW-PRE-RELEASE.md)。
-> 公开使用前请先读 [DISCLAIMER.md](DISCLAIMER.md)：自动化操作微信客户端违反微信协议，封号风险由使用者自担。
+> 一个**个人独立开发、免费开源、实验性**的 [DSH（DeepSeek Harness）](https://github.com/deepseek-ai) 插件：
+> 让它按你配置的人格，在你指定的微信小号**白名单单聊**里，以拟人节奏被动回复消息。
+> **与腾讯 / 微信官方没有任何关系。**
+>
+> **当前版本**：`3.0.0-beta.1`（**开发者预览版 / Developer Preview**，2026-11-01）
+> **上一个已发布版本**：`0.2.8`
+> **仓库属性**：GitHub 仓库是 **public（公开可见）**；`package.json` 的 `private: true` **仅表示不发布到 npm**，不改变仓库公开、也无法撤回公开的历史提交。历史隐私审计见 [docs/PRIVACY-REVIEW-PRE-RELEASE.md](docs/PRIVACY-REVIEW-PRE-RELEASE.md)。
+>
+> ⚠️ 使用前请先读 [DISCLAIMER.md](DISCLAIMER.md)：自动化操作微信客户端**违反《微信软件许可及服务协议》**，可能导致账号被限制或封禁，风险由你自行承担；请只用**你自己注册的小号**，切勿用于主号、冒充真人、群发、营销、诈骗或读取他人数据。
 
 ---
 
-## 1. 简介
+## 1. 简介（beta 是什么、不是什么）
 
-DSH（DeepSeek Harness）插件。它不接管你的主号，只针对**小号**做「被动回复」：
+**是什么**
 
-- 你在设置页配置白名单好友、在线时段、语速与预算；
-- 好友给小号发消息 → 插件按门禁规则判断要不要回 → 调用 DSH 宿主已配置的 LLM 生成回复 →
-  经所选通道发送；全程本地审计，可随时暂停。
+- 一个运行在**你自己电脑上**的 DSH 插件；配置、记忆、审计日志默认只存本机 `dataDir`。
+- 只处理你在白名单里配置的单聊：非白名单、免打扰时段、超频、敏感话题都会在本地规则层被拦截，**不花 token、不发消息**。
+- 回复由你在 DSH 里配置的 LLM 服务生成；插件不绑定任何模型厂商，也不含遥测。
 
-设计取向是**宁可少回、不可发错**：任何无法确认聊天定位、无法确认发送结果、触发风控的场合都选择拒绝或暂停，
-而不是猜。
+**不是什么**
 
-## 2. 功能
+- ❌ 不是微信官方功能，也不是破解/协议逆向/外挂/群控；桌面通道模拟人在 Windows 客户端上的操作。
+- ❌ 不是「稳定可用产品」：`3.0.0-beta.1` 是**开发者预览**，真实微信环境的读取/OCR/发送**尚未实机验收**。
+- ❌ 不保证账号安全、不规避平台风控；本项目只把行为做得更像人、频率压到最低。
+- ❌ 不帮你注册账号、加好友、进群、群发、导流，也不代做扫码/验证码/解封。
 
-| 能力 | 说明 |
-| --- | --- |
-| 多人格 | 4 个内置人格（小号 / 大肥鱼 / 老周 / 阿码），支持导入自定义人格包（JSON、SillyTavern 卡映射） |
-| AI 身份透明 | 被**直接问**「你是不是 AI / 机器人 / 模型」时如实说明是 AI；不冒充真人、不伪装成某个真实联系人；平时聊天不主动强调 |
-| 被动回复 | 只回复白名单单聊；群聊默认关闭；`whitelistOnly` 默认开 |
-| 拟人节奏 | 「正在输入」延时、按概率拆成多条、表情包不连续重复 |
-| 按需联网 | 命中天气/新闻/价格等意图才搜索，失败自动降级为不搜 |
-| 预算与草稿 | 日 token 预算；超过草稿线只生成不发送；超过预算硬停 |
-| 风控熔断 | 验证码/异常登录/限制提示 → 熔断 + 暂停 + 通知；聊天内 `/stop` 紧急停 |
-| 防误发 | 桌面通道发消息必须拿到会话行坐标，无坐标直接拒发；投递结果三态，`unknown` 不重试 |
-| 发送可靠性（v3.0.0） | 10 态发送状态机 + `send-ledger.json` 幂等账本：同一 `sendOperationId` / `partIndex` 只执行一次，`unknown` 永不自动重放；多段拆条逐段记账 |
-| 发送模式（v3.0.0） | `sendMode`：`auto`（默认自动发送）/ `draft` / `confirm`。后两者只生成草稿到 `dataDir/drafts.json`（上限 50 条、24 小时 TTL），在设置页「待发送草稿」人工批准；`safeMode` 优先级最高 |
-| OCR 融合与置信度（v3.0.0） | 生产读取路径使用 `pipeline.ts`（分层拒绝/稳定 id/ack）与 `confidence.ts`（每帧可信度 accept / verify / reject，低置信不投递且不推进 ack）；`fusion.ts`（几何匹配）、`align.ts`（序列对齐）、`tracker.ts`（跨帧 LCS 判定）目前是**离线实验能力 + 单测，尚未接入生产读取路径**，不得当作线上收益 |
-| 记忆 | 每联系人最近消息 + 长期摘要 + 偏好（称呼/忌讳/话题），文件按 contactId 哈希命名 |
-| 设置页 | Web 设置页 10 个标签页；所有改动写入宿主 profile 配置，重启不丢 |
-| 运维工具 | 6 个 `wechat_persona_*` 工具：status / pause / resume / send_test / clear_memory / clear_audit |
-| 安全运行模式 | `safeMode` 开启后，所有真实通道的发送在门禁层被拒绝（仅 mock 空转）；默认关闭，首次配置向导默认建议开启 |
-| 只读测试模式（发布前验收） | `readOnlyTestMode` 开启后四层硬阻断真实发送与键鼠模拟：engine 门禁（`read-only-mode`）、`desktop.send` 首行拒绝、API `/test/send` 与 `/drafts/approve` 409、PS1 `-ReadOnly`；默认关闭，详见 [docs/READ-ONLY-MODES.md](docs/READ-ONLY-MODES.md) |
-| OCR 流水线开关 | `ocrPipelineMode`：`v3`（默认，分层拒绝+置信度+稳定 id）/ `legacy`（回退 v0.2.8 读法，跳过置信度门禁）；切换不影响发送安全门禁；`status().ocr.pipelineMode` 可见 |
-| 诊断与向导 | 设置页首次配置向导、mock 测试入口；`GET /diagnostics/ocr` 只读返回桌面通道最近一次 OCR 读取状态（不截图、不含正文） |
-| 4 通道 | mock（默认空转）、phone-adb、windows-vm、desktop（PC 微信 UIA + OCR，默认关闭） |
+## 2. 实验性警示（beta 必读）
 
-**v3.0.0 的安全默认值**：默认通道是 `mock`（不碰真实微信）、`channels.desktop.enabled` 默认 `false`、
-白名单为空时不回复任何人、聊天内 `/stop` 与 6 个运维工具随时可停。**安全运行模式（`safeMode`，默认 `false`）**
-开启后，引擎统一门禁会拒绝向非 mock 通道发送（拒绝原因 `safe-mode`），设置页「预算与安全」可切换；
-**只读 OCR 诊断** `GET /diagnostics/ocr` 只返回帧号、引擎、行数与「无法判定」行数等元数据，不触发截图、
-不含聊天正文、不落盘；设置页还提供首次配置向导（完成后写 `onboardingDone`）与 mock 测试入口。
-以上能力均有单测，真实微信环境尚未端到端验证。详见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
+1. `3.0.0-beta.1` 的代码、单元测试和离线验收已就绪，但**真实微信窗口未实机验收**：
+   OCR 准确率只有合成语料数据，真实聊天里的字体/DPI/遮挡/多显示器表现未知。
+2. beta 默认安全策略：**真实通道的自动发送被关闭**（`betaSafeMode` 默认 `true`），`mock` 通道可完整走通；
+   真实通道相关能力请视为「预览，未验证」。
+3. 使用 LLM 会产生**费用**（由你的 DSH 模型配置决定），插件本身不收费。
+4. 仓库是公开的：**不要**在 Issue/PR/日志里贴真实好友名、wxid、手机号、聊天截图、API Key、含用户名的完整路径。
 
-## 3. 边界与不做什么
+## 3. 功能矩阵（beta 状态）
 
-明确**不做**的事：
-
-- ❌ 不接管你的**主号**、不代登录、不扫码、不碰账号态；只面向小号。
-- ❌ 不提供群控、营销、批量加好友、自动通过好友、朋友圈操作。
-- ❌ 不冒充真人：被直接问 AI 身份时如实说明（`src/llm/prompt.ts` 的「AI 身份透明」规则与内置人格提示词一致）；
-  不伪装成某个真实联系人，不通过冒充骗取信任，也不诱导对方提供密码、验证码等敏感信息。
-- ❌ 不读微信本地聊天数据库，不注入进程；桌面通道只做「窗口截图 + OCR + UI 自动化」。
-- ❌ 不绕过腾讯风控；检测到验证码/异常登录会直接熔断并通知你人工处理。
-- ❌ 不做「保证不被封号」的承诺；是否使用、用到什么程度由你决定。
-- ❌ 不向外发遥测；除「回复所需内容发给用户自己配置的 LLM 服务商」外，数据留在本机。
-- ❌ 不承诺「绝不重复发送」：GUI 自动化做不到端到端 exactly-once；插件用发送状态机 + 幂等账本
-  把「未知结果不自动重发、已终结不重发」做成可测试的保证，底层平台仍可能重复或丢失。
-- ❌ 不对外销售或包装成商业产品分发；本仓库为公开源码仓库，`private: true` 只表示不发布 npm 包，
-  不构成对使用者的保密承诺或禁止转售的法律约束（许可见 [LICENSE](LICENSE) 与 [DISCLAIMER.md](DISCLAIMER.md)）。
-
-已知限制：仅 Windows（桌面通道）；OCR 形近字仍是弱项；桌面通道暂不支持发送表情/图片/语音；
-真实微信环境需要用户单独授权后才能做端到端验证（见 [docs/TEST-PLAN.md](docs/TEST-PLAN.md)）。
-
-## 4. 架构概览
-
-```mermaid
-flowchart LR
-  WX[微信客户端] -->|桌面通道 UIA+OCR| CH[通道层 channels/*]
-  ADB[手机/VM 通道] --> CH
-  MOCK[mock 通道] --> CH
-  CH -->|InboundMessage| EN[引擎 engine.ts]
-  EN -->|gate 门禁| GT[core/gate.ts]
-  EN -->|预算/熔断/频控| SF[budget / breaker / rate-limit]
-  EN -->|人格+记忆+偏好| LLM[宿主 LLM ctx.llm]
-  EN -->|可选联网| WEB[宿主搜索 ctx.web.search]
-  EN -->|OutboundPart| CH
-  CH -->|SendResult 三态| EN
-  API[设置页/HTTP API] --> EN
-  API --> CFG[config schema]
-  EN --> DATA[(dataDir 本地数据)]
-  API --> DATA
-```
-
-更完整的分层、时序与数据布局见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)（含 Mermaid 图）；
-各通道细节见 [docs/CHANNELS.md](docs/CHANNELS.md)；安装使用细则见 [docs/使用说明.md](docs/使用说明.md)。
-
-## 5. 安装
-
-前置条件：
-
-- DSH 桌面版（含 Web 服务与设置页），插件目标为 DSH 0.2.x；
-- Node.js **≥ 22**；
-- 仅桌面通道需要：Windows 10/11、Windows PowerShell 5.1、微信 PC 4.x、系统「中文（简体）」OCR 语言包、
-  分辨率 ≥ 1366×768；
-- 仅第二 OCR 引擎需要（可选）：Python 3 + `rapidocr_onnxruntime`。
-
-方式 A（链接进 profile，推荐）：
-
-```powershell
-# 1) 拉取并构建插件（不要把 node_modules 提交回仓库）
-npm install --ignore-scripts --no-audit --no-fund
-npm run build
-
-# 2) 在 DSH profile 的 package.json 里加依赖（<插件目录> 换成实际路径）
-#    "dependencies": { "dsh-wechat-persona": "link:<插件目录>" }
-
-# 3) 在 profile 的 dsh.profile.bundles 里加入 "dsh-wechat-persona"
-
-# 4) 重启 DSH 桌面端
-```
-
-方式 B（插件管理器）：调用宿主 `plugin_manager` 的 `action=install_bundle`、`target=<插件目录>`。
-
-安装后：设置 → 「微信分身」，或 Plugins 卡片进入；默认 mock 通道，不会操作真实微信。
-
-## 6. 快速开始（mock，不碰真实微信）
-
-1. 打开设置页，保持 `activeChannel = mock`、`enabled = true`。
-2. 在白名单里加一个**虚构**联系人，例如 `{ "id": "contact-a", "name": "好友 A" }`。
-3. 保存配置，确认概览页显示通道 `mock`、状态 `running`。
-4. 注入一条测试入站消息（本机 HTTP，必须带鉴权头）：
-
-```powershell
-$body = '{"text":"在吗？","contactId":"contact-a"}'
-Invoke-RestMethod -Method Post `
-  -Uri "http://127.0.0.1:<DSH端口>/dsh-wechat-persona/api/test/inbound" `
-  -Headers @{ "x-dsh-wechat-persona" = "1" } `
-  -ContentType "application/json; charset=utf-8" `
-  -Body ([Text.Encoding]::UTF8.GetBytes($body))
-```
-
-5. 在「日志与测试」页看审计事件；或 GET `/status`（同样带鉴权头）确认 `delivery` 计数、
-   预算与暂停状态。mock 通道的入站/出站记录写入数据目录的 `outbox.jsonl` 与 `audit.jsonl`。
-6. 模拟「人工确认」：把 `sendMode` 改为 `draft`（或 `confirm`）后再注入一条消息，回复不会直接发出，
-   而是进入草稿队列：`GET /drafts` 查看，`POST /drafts/approve`（body `{"id":"<草稿 id>"}`）批准，
-   `POST /drafts/reject` 拒绝。批准会重新走暂停/熔断/预算/白名单/频控/安全模式全部门禁，
-   且复用生成草稿时同一个 `sendOperationId`——`unknown` 的发送不会被重复批准出去。
-7. 想彻底停掉：设置页关闭插件，或调用 `wechat_persona_pause`。
-
-离线自检（不依赖 DSH 进程、不联网、不碰微信）：
-
-```powershell
-node scripts/verify-api.mjs        # 假宿主 + 真实 dist 代码 + 真实 HTTP 端口，PASS/FAIL
-powershell -ExecutionPolicy Bypass -File scripts/pwsh/selfcheck.ps1   # Windows/DSH/OCR 环境自检
-```
-
-## 7. 配置
-
-配置保存在宿主 profile（`cordis.patch.yml`）中，改完即时生效；字段定义的唯一事实来源是
-[`src/config.ts`](src/config.ts)（含默认值与说明）。主要分组：
-
-| 分组 | 关键字段（默认值） | 说明 |
+| 功能 | 状态 | 说明 |
 | --- | --- | --- |
-| 基础 | `enabled=true`、`activeChannel='mock'`、`dataDir=''`、`ownerName='主人'` | `dataDir` 留空 = 默认工作区下 `.dsh-wechat-persona/` |
-| 白名单 | `whitelist=[]`、`whitelistOnly=true` | 为空不回复任何人；每项 `{id,name,aliases,note}` |
-| 人格 | `persona.activeId='builtin-small'`、`persona.enabled=true`、`persona.dir=''` | 自定义人格放数据目录 `personas/` |
-| 在线时段 | `schedule.onlineStart='08:30'`、`onlineEnd='23:00'`、`pauseOutsideHours=true`、`lowActivityWeekday=1` | 支持工作日/周末单独时段与低活跃日 |
-| 频控 | `rateLimit.perContactPerHour=10`、`perContactPerDay=60`、`minReplyIntervalSec=30`、`lowActivityDailyLimit=5` | 命中即 skip，不进模型 |
-| 回复 | `reply.maxChars=60`、`maxTokens=160`、`splitProbability=0.35`、`maxSplitParts=2`、`stickerProbability=0.25`、`typingMinMs=800`/`typingMaxMs=5000`、`groupChatEnabled=false`、`privateChatEnabled=true` | 拟人与拆分策略 |
-| 表情 | `stickers.enabled=true`、`maxPerReply=1`、`stickerNoRepeatCount=8` | 桌面通道不发表情（能力降级） |
-| 记忆 | `memory.recentKeep=30`、`contextMessages=10`、`summaryEveryTurns=50`、`autoSummary=true`、`maxSummaryChars=400` | 长期摘要受预算与每日摘要次数上限约束 |
-| 预算 | `budget.dailyTokens=50000`、`draftModeRatio=0.85`、`maxSummaryCallsPerDay=4` | 0.85 线后只生成草稿；用尽硬停 |
-| 发送模式 | `sendMode='auto'` | `auto`=生成后自动发送；`draft`/`confirm`=只生成草稿，需在设置页「待发送草稿」人工批准；`safeMode` 优先于本项 |
-| 搜索 | `search.enabled=true`、`maxPerDay=20`、`maxResults=3`、`extraKeywords=[]` | 按需触发，失败降级 |
-| 安全 | `safety.forbiddenKeywords`、`pauseOnForbiddenInbound=true`、`blockTransfers=true`、`blockSuspiciousLinks=true`、`circuitBreakerEnabled=true` | 默认命中禁止词即暂停 |
-| 只读测试模式 | `readOnlyTestMode=false` | true 时禁止一切真实发送与键鼠模拟（四层阻断），只允许 mock 与只读 OCR；真实设备只读验证前应先开启 |
-| OCR 流水线 | `ocrPipelineMode='v3'` | `v3`=新流水线；`legacy`=回退 v0.2.8 读法（受控回退，不改变发送安全判断） |
-| 安全模式/鉴权 | `safeMode=false`、`onboardingDone=false`、`apiToken=''` | `safeMode=true` 时拒绝向真实通道发送；`apiToken` 留空=兼容模式（回环+请求头），显式配置后强制 Bearer（见 [docs/SECURITY.md](docs/SECURITY.md)） |
-| 人格广场 | `market.indexUrl=''`、`market.builtinOnly=false` | 留空只用内置人格，不访问网络 |
-| 通道 | `channels.desktop{enabled=false,windowTitle='微信',userActivityIdleMs=5000,pauseSeconds=30,driverEnabled=false}`；`channels.phoneAdb`/`channels.windowsVm`/`channels.mock` | 桌面通道默认关闭且默认只读 |
-| 日志 | `logging.auditEnabled=true`、`maxAuditMb=10`、`recentLimit=50`、`level='info'` | 审计可一键清空 |
+| mock 通道（入站模拟 / 草稿 / 审计） | ✅ 可用 | 不接触真实微信，适合体验与开发 |
+| DSH LLM 生成回复 | ✅ 可用（需你配置模型） | 费用由你的模型/服务商决定 |
+| 人格库（4 个内置 + 自定义/导入） | ✅ 可用 | 内置人格含「AI 身份透明」规则 |
+| 白名单 / 在线时段 / 频控 / 预算 / 熔断 | ✅ 可用 | 本地规则先拦截，再决定是否调用模型 |
+| 发送可靠性（10 态状态机 + `sendOperationId` 幂等账本） | ✅ 已实现 | 真实故障路径（重启/超时）未实机演练 |
+| `sendMode`（`auto` / `draft` / `confirm`，草稿人工批准） | ✅ 可用 | beta 默认受安全模式限制 |
+| OCR 流水线（WinRT 主引擎 + 同帧约束 + 基线/ack + 置信度门禁） | ⚠️ 离线验证 | 真实微信窗口未实机验收 |
+| RapidOCR 第二引擎（可选） | ⚠️ 未实测新包 | 缺失时静默跳过，不阻断主流程 |
+| desktop 桌面通道自动发送 | ⛔ beta 默认禁用 | `betaSafeMode` / `safeMode` 之下拒绝真实发送 |
+| phone-adb / windows-vm 通道 | 🧪 代码保留 | 本轮未实机验证，按「实验」对待 |
+| 表情包 / 人格广场 / 记忆摘要 | ✅ 可用 | 表情仅部分通道支持，见 [docs/BETA-LIMITATIONS.md](docs/BETA-LIMITATIONS.md) |
+| 融合/对齐/跨帧差分（fusion/align/tracker） | 🧪 离线实验 | 已实现+单测，**未接入生产读取路径** |
+| 插件市场 / 长期记忆 / 视觉模型 | ⚠️ 未来规划 | **不是** beta 功能 |
 
-## 8. 隐私与安全
+完整矩阵与已知问题见 [docs/BETA-LIMITATIONS.md](docs/BETA-LIMITATIONS.md)。
 
-- **数据默认在本机**：`state.json`、`memory/`、`audit.jsonl`、`drafts.jsonl`、`alerts.jsonl`、
-  `deferred-inbound.json`、`desktop-ack.json`（桌面通道 ack 水位线，含联系人名称）、
-  `desktop-delivered.json`（已投递消息 id 去重表，FIFO 500，含联系人名称与消息 id、不含正文）、
-  `drafts.json`（`draft`/`confirm`/`safeMode`/预算草稿的正文，上限 50 条、24 小时 TTL）、
-  `send-ledger.json`（发送幂等账本，**只存文本哈希不存正文**，上限 200 条）、`stickers/`、`personas/`，
-  以及可选 `api-token` 文件，都在 `dataDir` 下。
-- **会离开本机的只有回复所需内容**：发给**你自己配置的** LLM 服务商的 system prompt（人格定义）与上下文
-  （最近对话、长期摘要、联系人偏好、搜索结果）。没有遥测、没有广告 SDK、没有远程日志。
-- **截图与日志**：桌面通道截图写系统临时目录并在 OCR 后删除；调试日志默认写
-  `%TEMP%\wxuia-engine-debug.log`，**含 OCR 识别到的聊天文本片段**，排障后建议删除。
-  可用 `WXUIA_SHOT_DIR` 保留截图副本（默认关，排障/校准用）。
-- **剪贴板**：桌面通道发送时临时借用剪贴板粘贴文本，随后恢复原内容（不落盘）。
-- **只读测试模式（发布前验收）**：`readOnlyTestMode=true` 时四层阻断真实发送与键鼠模拟（engine 门禁 / `desktop.send` 首行 / API 409 / PS1 `-ReadOnly`），只允许 mock 空转与只读 OCR；默认关闭，真实设备只读验证前应先开启。
-- **安全运行模式**：`safeMode=true` 时所有非 mock 通道的发送在门禁层被拒，只允许 mock 空转；
-  首次配置向导会建议开启。只读 OCR 诊断 `GET /diagnostics/ocr` 不截图、不含正文、不落盘。
-- **发送侧防误发**：桌面通道必须拿到会话列表行坐标并通过标题校验；`unknown` 投递不重试；
-  暂停/熔断/预算耗尽时不启动新发送。`draft`/`confirm` 草稿必须在设置页人工批准，批准时重新走全部门禁。
-- **远程人格市场（SSRF 加固）**：只允许 `http`/`https`，拒绝本机/内网/链路本地/`.local` 地址，
-  重定向手动跟随且最多 2 跳、每跳重新校验，响应必须是 JSON 且限制 2 MB；残余的 DNS rebinding 风险
-  见 [docs/SECURITY.md](docs/SECURITY.md)。`market.indexUrl` 留空时完全不访问网络。
-- **AI 身份透明（v3.0.0）**：人格提示词与 README 的口径一致——
-  - 被**直接问**「你是不是 AI / 机器人 / 模型」时，如实说明是 AI；
-  - 不冒充真人、不声称是某个具体真实联系人，不通过冒充骗取信任；
-  - 不主动强调「我是 AI」（避免把聊天变成客服腔），但不为此说谎；
-  - 不诱导对方提供密码、验证码、银行卡号等敏感信息；对方提及转账/红包/验证码时直接拒绝。
-  规则实现见 [`src/llm/prompt.ts`](src/llm/prompt.ts)（「AI 身份透明」与边界话题规则）与
-  [`personas/builtin/`](personas/builtin/) 四套内置人格的 `systemPrompt`，示例对话也覆盖「你是 AI 吗」。
-  AI 仍可能说错话：使用者应自行约束使用场景，禁止用本插件冒充真人骗取信任或从事其他欺骗行为
-  （见 [DISCLAIMER.md](DISCLAIMER.md)）。
-- 完整数据流与残余风险：见 [docs/PRIVACY.md](docs/PRIVACY.md) 与 [docs/SECURITY.md](docs/SECURITY.md)。
-- 提交代码前必须通过敏感数据扫描（0 命中）：
+## 4. 环境要求
+
+| 项目 | 要求 |
+| --- | --- |
+| 操作系统 | Windows 10/11（desktop 通道）；mock 验证在任何平台均可 |
+| Node.js | **22 及以上**（构建与测试） |
+| DSH 桌面版 | 0.2.1-rc.3 及以上 |
+| 微信 PC | 仅 desktop 通道需要，4.x（未验证更早版本） |
+| 中文 OCR | Windows「中文（简体）」OCR 语言包 + 分辨率 ≥ 1366×768（desktop） |
+| PowerShell | Windows PowerShell 5.1（脚本用 `-NoProfile` 调用） |
+| Python | 可选，仅 RapidOCR 第二引擎与 OCR 基准需要 |
+
+## 5. 五分钟 mock 快速开始（不碰真实微信）
 
 ```powershell
-node scripts/check-sensitive.mjs
+git clone https://github.com/xinghui2628/dsh-wechat-persona.git
+cd dsh-wechat-persona
+npm ci --ignore-scripts --no-audit --no-fund
+npm run build
+npm run verify:api        # 离线 harness：鉴权 / 配置 / mock / 草稿 / 暂停恢复
 ```
 
-## 9. OCR 说明
+把插件以开发方式链接进 DSH profile（详见 [docs/BETA-QUICKSTART.md](docs/BETA-QUICKSTART.md)），启动后：
 
-桌面通道靠「截图 + OCR」读消息，Windows 自带 WinRT OCR 是主引擎：
+1. 设置页 → 微信分身 → 通道选 `mock`、白名单加一个**虚构**联系人（如 `张三`）。
+2. 注入一条消息：
 
-- **主引擎**：`scripts/pwsh/ocr-winrt.ps1`（Windows OCR，zh-Hans-CN），只读传入的 PNG，不启动微信、不截图；
-- **第二引擎（可选）**：RapidOCR（`scripts/py/rapid_ocr.py`）。`-SecondOcr` 只复用**同一帧截图**做第二遍识别，
-  按「几何/行位置匹配 → 文本重合度 → 原生置信度」分层决策：重合度 ≥ 0.90 视为一致；0.35–0.90 记为冲突，
-  只有第二引擎原生 score ≥ 0.85 的强证据才替换文本；无匹配则标记 single。**不再用「谁更长谁赢」**；
-  需要 Python 3 + `rapidocr_onnxruntime`，缺失时退化为单引擎；
-- **纯逻辑层**：`src/core/ocr/` 把归一化、几何、纠错、投票、气泡归属、基线水位线、双引擎几何融合
-  （`fusion.ts`）、序列对齐（`align.ts`）、可信度评估（`confidence.ts`）、跨帧变化判定（`tracker.ts`）
-  做成纯函数，便于离线测试；桌面通道负责截图/调用脚本/投递；
-- **置信度门禁**：每帧按原生置信度/清晰度/双引擎一致性/行合并/纠错等信号打分（HIGH 0.75 / LOW 0.45）：
-  `accept` 正常投递；`verify` 用 `-SecondOcr` 同帧二次验证；仍不达标则**不投递、不推进 ack**，
-  留在脚本 pending 队列下次重放（绝不永久吞消息）。联系人未确认时一票否决；
-- **保守纠错**：只对同长度、至多差一字的高频词做替换；wxid/手机号/金额/日期/邮箱/URL/订单号/验证码等
-  敏感区段一律不纠；跨帧重放依靠 `captureId` + `ack` 水位线 + 稳定 id 去重；
-- **诊断字段**：`GET /diagnostics/ocr` 与桌面通道 `status().ocr` 暴露 15 个字段（帧号、引擎、行数、
-  uncertain/reject/冲突计数、耗时、DPI、放大倍数、截图方式、引擎版本、是否二次识别、质量状态等），
-  不触发截图、不含聊天正文、不落盘；
-- **已知弱项**：形近字、长消息截断、极小窗口/遮挡、表情与图片内容（本版本不支持表情消息）。
-
-真实基准数字见 [docs/OCR-BENCHMARK.md](docs/OCR-BENCHMARK.md)，设计见 [docs/OCR-DESIGN.md](docs/OCR-DESIGN.md)。
-
-## 10. 测试与基准
-
-常用命令：
-
-```powershell
-npm run typecheck        # tsc --noEmit
-npm run test:sandbox     # 沙箱单测（推荐；受限环境也兼容）
-npm test                 # 普通 vitest
-npm run build            # tsc → dist/
-npm run verify:api       # 离线 API 验收（假宿主，不联网）
-node scripts/check-sensitive.mjs   # 敏感数据扫描（受跟踪文件），0 命中才算过
-node scripts/check-package.mjs     # 发布包内容检查（clean checkout + dist，发布阻断项）
+```bash
+curl -X POST http://127.0.0.1:<DSH端口>/dsh-wechat-persona/api/test/inbound \
+  -H "x-dsh-wechat-persona: 1" -H "Content-Type: application/json" \
+  -d "{\"text\":\"在吗\",\"contactId\":\"张三\"}"
 ```
 
-- 单元测试覆盖：本地 0-token 规则、白名单/时段/频控、预算草稿与硬停、熔断、拆条与表情、
-  OCR 纯函数（归一化/纠错/投票/气泡归属/基线水位线/融合/对齐/置信度/跨帧差分）、桌面通道发送三态与防误发、
-  HTTP API 鉴权矩阵与草稿接口、安全运行模式拒发与 OCR 诊断只读、10 态发送状态机与幂等账本、
-  配置迁移、通道能力降级等。
-- 当前规模（2026-11-01 11:40 实测，工作区含未提交的 v3 改动）：`npm run test:sandbox` →
-  **42 个测试文件 / 709 个用例全部通过**（2.59s）；`npm run typecheck` 与 `npm run build` 均 exit 0；
-  `npm run verify:api` → **25/25 通过**；`node scripts/check-sensitive.mjs` → 212 个受跟踪文本文件
-  0 命中；`node scripts/check-package.mjs` → 189 个候选文件 0 违规（9 条 gitignore 垃圾警告；发布包 `files` 已排除 `*.bak-*`/`__pycache__`/`*.pyc`；`npm pack --dry-run` 192 文件、垃圾 0）。
-- 基准语料：`test/fixtures/ocr-corpus/`（30 场景 × 2 变体 = 60 张，全虚构内容），离线 OCR 基准：
+3. 查看结果：`GET /status`、`<dataDir>/outbox.jsonl`（mock 发送记录）、`<dataDir>/audit.jsonl`（审计）。
+4. 草稿模式：设置 `sendMode=draft`，重复第 2 步 → `GET /drafts` 查看草稿 → `POST /drafts/approve` 人工批准后再发送。
 
-```powershell
-node scripts/ocr/bench.mjs --engine=winrt --limit=1 --scenario=clear --pipeline=raw
-node scripts/ocr/bench.mjs --engine=all --pipeline=all --limit=N   # 全量需要 Python 环境
-```
+> 没有真实 LLM 也能完成 mock 验证（默认回复只走本地规则/persona 流程可选）；需要模型时使用你 DSH 里已配置的模型，并自行承担费用。
 
-- **基准结论**：v0.2.8 后处理基线为 CER 28.09%、整句准确率 32.95%（40 图全量，详见
-  [docs/OCR-BENCHMARK.md](docs/OCR-BENCHMARK.md) §6）。v3.0.0 完整方案的离线等价 A/B（tune/eval
-  不重叠，只报 eval）：**CER 21.38%、整句 47.83%**，同集 v0.2.8 为 37.37% / 28.26%，跨口径也满足
-  「CER ≤ 28.09% / 整句 ≥ 32.95%」的发布门槛（§6.5）。但该结论限定在**合成语料 + 离线等价**口径，
-  第二引擎融合/受控纠错在这套语料上几乎未触发（其独立收益未被证明），绝对数字需扩量并在真实微信
-  截图（用户授权后）复测，**不能据此宣称真实环境准确率**。
-- CI 十项门禁（任务书 §14.4）：`.github/workflows/ci.yml` 的 `verify-windows` job 逐项成步，
-  全部离线（唯一网络访问是 `npm ci` 拉依赖与 `npm audit` 查公开漏洞库），不碰真实微信：
+## 6. 安装、配置与运行
 
-| # | 门禁 | CI 步骤 | 说明 |
-| --- | --- | --- | --- |
-| 1 | TypeScript 类型检查 | `npm run typecheck` | `tsc --noEmit`，0 错误 |
-| 2 | 单元测试 | vitest `test/core` + `test/client` | 纯逻辑/核心模块，不依赖平台 |
-| 3 | 集成测试 | vitest `test/engine` + `test/server` + `test/channels` | fake 通道 + 假宿主，不碰真实微信 |
-| 4 | OCR 离线基准 | `scripts/ocr/bench.mjs`（1 张合成图冒烟） | 只读 `test/fixtures/ocr-corpus`；WinRT/Pillow 缺失时显式 `::notice:: marked skip` |
-| 5 | Windows 兼容性 | PowerShell 步骤 | 打印 OS/Node/PowerShell 5.1 版本；断言 `scripts/pwsh/*.ps1` 均为 UTF-8 BOM |
-| 6 | 构建 | `npm run build` | `tsc` 输出 `dist/` |
-| 7 | API 验证 | `node scripts/verify-api.mjs` | 离线假宿主 + 真实 HTTP 端口，25 项检查 |
-| 8 | 依赖安全检查 | `npm audit --omit=dev --audit-level=high` | 生产依赖 high/critical 直接失败 |
-| 9 | 敏感信息扫描 | `node scripts/check-sensitive.mjs` | wxid/手机号/邮箱/本机路径/密钥/疑似姓名 |
-| 10 | 发布包内容检查 | `node scripts/check-package.mjs` | private:true 仅 npm 语义（GitHub 仓库 public）、无运行时数据/备份/截图/敏感串 |
+- 安装/更新/卸载/首次配置：见 [docs/使用说明.md](docs/使用说明.md) 与 [docs/BETA-QUICKSTART.md](docs/BETA-QUICKSTART.md)。
+- 配置项、10 个设置标签页、6 个运维工具（`wechat_persona_status/pause/resume/send_test/clear_memory/clear_audit`）：见使用说明。
+- 安全模式（`safeMode`）与只读测试模式（`readOnlyTestMode`）：设置页可切换；只读模式下发送在 **引擎 / 桌面通道 / HTTP API / PowerShell 脚本** 四层被拒，mock 不受影响。详见 [docs/READ-ONLY-MODES.md](docs/READ-ONLY-MODES.md)。
+- 从 `0.2.8` 升级：见 [docs/MIGRATION-v3.md](docs/MIGRATION-v3.md)。
+- 排障：见 [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)。
 
-  Linux job（`linux-guard`）跑与平台无关的子集（typecheck/测试/敏感扫描）；WinRT OCR 在 Linux 上
-  **显式 marked skip**。CI 不发布、不创建 Release。
+## 7. 隐私与费用
 
-## 11. 发版
+- **本机数据**：`<dataDir>`（默认 `<工作区>/.dsh-wechat-persona/`）保存 `state.json`、`memory/`、`audit.jsonl`、`drafts.json`、`send-ledger.json`、`desktop-ack.json` 等；
+  详细清单与保留期见 [docs/PRIVACY.md](docs/PRIVACY.md) 与 [docs/PII-INVENTORY.md](docs/PII-INVENTORY.md)。
+- **会离开本机的数据**：只有「生成回复所需的消息内容 + 最近上下文 + 联系人偏好」会发给你自己配置的 LLM 服务商（以及可选的搜索服务）；不发送完整聊天历史、不发送截图。
+- **无遥测**：项目不包含统计上报/跟踪。
+- **费用**：插件免费；LLM 调用按你的模型服务商计费。
+- **不要**用本项目处理验证码、密码、支付、他人隐私等敏感信息；敏感话题会被本地规则拦截。
 
-- **仓库公开、npm 不发布**：GitHub 仓库为 public；`package.json` 的 `private: true` 仅阻止 `npm publish`，
-  不代表仓库私有。公开 Git 历史中可能残留早期提交的疑似个人信息（如旧版验收文档中的姓名占位处理），
-  当前文件已脱敏但**历史提交无法通过 private 设置隐藏**；发布/分享前请阅读
-  [docs/PRIVACY-REVIEW-PRE-RELEASE.md](docs/PRIVACY-REVIEW-PRE-RELEASE.md) 的公开历史风险分析。
-- 版本语义：修 bug → patch；行为/配置变更 → minor；破坏兼容 → major。
-- 发版前必须逐条通过 [docs/RELEASE-CHECKLIST.md](docs/RELEASE-CHECKLIST.md) 的发布门槛
-  （10 条质量门槛 + OCR 准确率专项），并记录证据；**当前 3.0.0 的 10 条门槛全部满足，
-  OCR 专项达成（限定「合成语料 + 离线等价」）；唯一未完成项是真实设备验证未获授权，
-  因此不得对外宣称「真实微信环境已可靠」**。
-- 发版流程：更新 `CHANGELOG.md` 与 `package.json`/`src/index.ts` 版本 → 跑完整验证 →
-  打 tag → 在受控环境更新安装。禁止在本机未验证的情况下推送或发布。
-- 发布准备（只写文档、不实际发布）：可复现构建、SHA256 校验、干净发布包、回退到 v0.2.8 的步骤
-  见 [docs/RELEASE-CHECKLIST.md](docs/RELEASE-CHECKLIST.md) §6。
-- 升级/回滚：见 [docs/MIGRATION-v3.md](docs/MIGRATION-v3.md)（含回滚到 v0.2.8 的步骤）。
+## 8. 已知问题与限制
 
-## 12. 许可
+- 真实微信环境（读取/OCR/发送）**未实机验收**；OCR 数字来自**合成语料 + 离线等价**，不代表真实聊天准确率。
+- `betaSafeMode` 默认开启：真实通道发送被拒；mock 正常。
+- `fusion/align/tracker` 未接入生产路径；`rapidocr` 新包未实测。
+- 4 个通道中仅 mock 在本轮做过完整离线验收；phone-adb / windows-vm 未验证。
+- 完整列表见 [docs/BETA-LIMITATIONS.md](docs/BETA-LIMITATIONS.md) 与 [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)。
 
-MIT，见 [LICENSE](LICENSE)。使用前请阅读 [DISCLAIMER.md](DISCLAIMER.md)。
+## 9. 发布说明
 
-- 本项目与腾讯无关，未获得腾讯授权；
-- 自动化操作微信客户端可能违反其服务条款，封号/限制风险由使用者自行承担；
-- 仅限本人在自己的小号上、在遵守当地法律的前提下使用；禁止用于诈骗、营销骚扰、操作他人账号或绕过风控。
+- 当前为 **v3.0.0-beta.1 开发者预览**：**未打 tag、未在 npm 发布、未创建正式 Release**（发布动作需维护者批准，见发布草稿 [docs/releases/v3.0.0-beta.1.md](docs/releases/v3.0.0-beta.1.md)）。
+- 版本语义：修 bug → patch；行为/配置变化 → minor；破坏兼容 → major。
+- 发布门槛与四类状态（已验证 / 待验证 / 需用户授权 / 不得发布）：见 [docs/RELEASE-CHECKLIST.md](docs/RELEASE-CHECKLIST.md)。
+- 变更记录：见 [CHANGELOG.md](CHANGELOG.md)。
+
+## 10. 贡献与安全反馈
+
+- 欢迎 Issue / PR；提交前请先看 [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md)。
+- **安全漏洞请勿公开披露**：使用 GitHub 的 Private vulnerability reporting（仓库 Security 页），说明见 [SECURITY.md](SECURITY.md)。
+- 反馈时请遵守模板：不要贴真实好友名/wxid/手机号/聊天截图/API Key/含用户名的完整路径。
+
+## 11. 许可与免责
+
+- 代码以 **MIT** 许可证开源（见 [LICENSE](LICENSE)）。
+- 使用即表示你已阅读 [DISCLAIMER.md](DISCLAIMER.md)：非官方、账号风险自担、AS IS 无担保、禁止诈骗/冒充/群控/营销等用途。
 
 ---
 
-文档导航：[docs/使用说明.md](docs/使用说明.md)（安装使用）· [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)（架构）·
-[docs/PRIVACY.md](docs/PRIVACY.md)（隐私）· [docs/SECURITY.md](docs/SECURITY.md)（安全）·
-[docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)（排障）· [docs/CHANNELS.md](docs/CHANNELS.md)（通道）·
-[docs/TEST-PLAN.md](docs/TEST-PLAN.md)（测试计划）· [docs/RELEASE-CHECKLIST.md](docs/RELEASE-CHECKLIST.md)（发布检查）·
-[CHANGELOG.md](CHANGELOG.md)（变更记录）· [CONTRIBUTING.md](CONTRIBUTING.md) / [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md)（贡献指南）
+### 文档导航
+
+| 文档 | 内容 |
+| --- | --- |
+| [docs/使用说明.md](docs/使用说明.md) | 安装、配置、登录、白名单、通道选择、卸载 |
+| [docs/BETA-QUICKSTART.md](docs/BETA-QUICKSTART.md) | beta 五分钟快速开始（mock / 干净 profile 演练） |
+| [docs/BETA-LIMITATIONS.md](docs/BETA-LIMITATIONS.md) | beta 功能矩阵、已知限制、公开问题 |
+| [docs/BETA-FAQ.md](docs/BETA-FAQ.md) | 常见问题（封号/费用/数据/卸载） |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 架构、模块、数据布局、HTTP API |
+| [docs/OCR-DESIGN.md](docs/OCR-DESIGN.md) | OCR 设计、融合/置信度、纠错边界 |
+| [docs/OCR-BENCHMARK.md](docs/OCR-BENCHMARK.md) | OCR 合成语料基准数字与限定 |
+| [docs/PRIVACY.md](docs/PRIVACY.md) | 数据流、存储、删除 |
+| [docs/SECURITY.md](docs/SECURITY.md) | 威胁模型、鉴权、SSRF、残余风险 |
+| [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | 排障手册 |
+| [docs/MIGRATION-v3.md](docs/MIGRATION-v3.md) | 从 0.2.8 升级与回滚 |
+| [docs/RELEASE-CHECKLIST.md](docs/RELEASE-CHECKLIST.md) | 发布门槛与状态表 |
+| [docs/releases/v3.0.0-beta.1.md](docs/releases/v3.0.0-beta.1.md) | beta 发布草稿 |
+| [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) | 开发与 PR 规范 |
+| [CHANGELOG.md](CHANGELOG.md) | 版本变更记录 |
