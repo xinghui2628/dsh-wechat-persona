@@ -4,11 +4,11 @@
 
 - 格式参考 [Keep a Changelog（中文）](https://keepachangelog.com/zh-CN/1.1.0/)。
 - 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
-- 最新版本：**3.0.0**（2026-10-31，开发中/未公开发布）。安装/更新/卸载与排障见 [docs/使用说明.md](docs/使用说明.md)，从 0.2.8 升级见 [docs/MIGRATION-v3.md](docs/MIGRATION-v3.md)，发布门槛见 [docs/RELEASE-CHECKLIST.md](docs/RELEASE-CHECKLIST.md)。
+- 最新版本：**3.0.0**（2026-10-31，开发中；未打 tag、未发布 npm、未创建 Release；**GitHub 仓库为 public**，`private: true` 仅表示不发布 npm）。安装/更新/卸载与排障见 [docs/使用说明.md](docs/使用说明.md)，从 0.2.8 升级见 [docs/MIGRATION-v3.md](docs/MIGRATION-v3.md)，发布门槛见 [docs/RELEASE-CHECKLIST.md](docs/RELEASE-CHECKLIST.md)。
 
 ## [3.0.0] - 2026-10-31
 
-> 开发版本：代码、测试与文档已完成，**未推送远程、未打 tag、未发布 Release**（`private: true` 保持不变）。
+> 开发版本：代码、测试与文档已完成，**未推送远程、未打 tag、未发布 Release**。`private: true` 仅表示不发布 npm 包；**GitHub 仓库本身是 public（公开可见，含历史提交）**。
 
 ### 隐私与合规（阶段 A/E）
 
@@ -65,7 +65,7 @@
 
 ### 测试与基准
 
-- `npm run typecheck` 0 错；`npm run test:sandbox` **41 个文件 / 678 个用例**全部通过；`node scripts/check-sensitive.mjs` 212 个受跟踪文件 0 命中；`node scripts/check-package.mjs` 189 候选 0 违规；`npm run build` 通过；`npm run verify:api` 25/25。
+- `npm run typecheck` 0 错；`npm run test:sandbox` **42 个文件 / 709 个用例**全部通过（2026-11-01 11:40 最终实测）；`node scripts/check-sensitive.mjs` 212 个受跟踪文件 0 命中；`node scripts/check-package.mjs` 189 候选 0 违规；`npm pack --dry-run` 192 文件、垃圾 0；`npm run build` 通过；`npm run verify:api` 25/25。
 - OCR 基准（60 图合成语料、离线等价口径）：A–H 中 `upscale3x` 最优（tune 集 CER 17.66%/整句 53.85%，eval 集 25.68%/51.52%）；A/B 六组 eval 集：A v0.2.8 35.59%→B 预处理 22.82%→C 换引擎 2.25%→D 新对齐 24.47%→E 新融合 12.91%→F 完整 v3 **22.07%**（整句 30.30%→51.52%，CER −13.52pp、整句 +21.22pp）；两轮 eval 结论一致（相对 v0.2.8 有可测量改善），达成任务书 12.4 门槛第 2 条（**限定「合成语料 + 离线等价」**）。真实微信窗口未验证（需真机授权后按 `docs/TEST-PLAN.md` 复测）。
 
 ### 发布前独立复核（2026-11-01，任务书《发布前独立复核与只读验收》）

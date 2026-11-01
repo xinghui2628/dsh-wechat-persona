@@ -39,6 +39,21 @@
 （A 237 / B 152 / C 15 / F 147，GT 666 字符 → CER 35.59% / 22.82% / 2.25% / 22.07%），
 说明归因口径与 `docs/OCR-BENCHMARK.md` §6.6 的发布门槛数字同源。
 
+### 1.1 task-24 口径复核（manifest 全量口径）
+
+| 项目 | tune | eval | 说明 |
+|---|---|---|---|
+| 场景模板数 | 15 | 15 | 按 `manifest.scenarios` 顺序 0-based 奇偶拆分，**场景零重叠**（`bench.mjs` 的 `scenarioSplitOf`） |
+| 图数 | 30 | 30 | 每模板 2 变体 |
+| GT 消息数（manifest 全量） | 78 | 66 | 合计 144；§1 表中 tune 的「42 条（AB）」是历史 AB tune run 里**分组后可见的消息数**，与 manifest 78 条不一致，属旧 run 口径，未逐条复核 |
+| GT 行数（A–H 用） | 83 | 70 | 合计 153 |
+| 空 GT 图 | 2 | 0 | `empty_error` 只在 tune |
+
+- **样本独立性**：29/30 个场景的两张变体 GT 文本不同（`empty_error` 无消息视为相同）；全语料唯一 GT 文本 137 条 / 144 条消息；tune 与 eval 共享文本只有 `收到`、`明天见` 两条。
+- **有效样本量**：每个 split 只有 15 个独立模板 / 30 图 / 66-78 条消息；eval 的 CER 分母为 66 条消息的 666 GT 字符，整句准确率单条消息约 1.5pp。**本报告的归因结论只对 ≥5pp 的差异下判断**（与 §11 第 6 条一致）。
+- **选型/评估分离**：`upscale3x` 只在 tune 选；本报告的 eval 数字只报告一次，未按 eval 回头改 pipeline 参数。
+- **口径与 benchmark 文档一致**：A/B 六组 A–F 的 editDistance（237/152/15/163/86/147）与 GT 666 字符可复算；详见 `docs/OCR-BENCHMARK.md` §2.1 与 §6.6.1。
+
 ## 2. 九类误差分类（F = 完整 v3 配置；分母逐个注明）
 
 | # | 类别 | 计数（F） | 占比 | 分母口径 | 典型样本（虚构） |
@@ -183,6 +198,11 @@ vs 51.52%）→ 判定为 tune 集噪声/过拟合，**不采纳**。默认仍�
 `crop_pane_upscale3x` 在两种情况都差于全窗 3x，说明「裁剪后再放大」没有额外收益
 （损失的是气泡左右留白上下文，而不是裁掉了干扰）。
 
+**task-24 代码口径复核（补充）**：§8 的 A/B 是「预处理组合变体」实验，与 §8 表无关的
+A/B **六组消融**在 `docs/OCR-BENCHMARK.md` §6.6，其执行代码逐组核对见 §6.6.1：E = D + 消息级
+融合（累计），F = B + 投票/纠错（不含 align 过滤），报告正文若称「仅新融合 / 完整 v3」需按
+该口径理解。
+
 ## 9. RapidOCR 统一包适配复核（5.2）
 
 ### 9.1 适配代码（scripts/py/rapid_ocr.py，187 行）
@@ -237,6 +257,18 @@ $env:RAPIDOCR_IMPL='unified'
 是否联网下载模型、冷启动时间与内存。**本机离线且按要求不安装任何包，以上均未实测**；
 文档中不写具体版本号/体积，避免编造。
 
+### 9.4 许可证与依赖核验（task-24，本机 dist-info 元数据）
+
+| 包 | 版本（本机） | 许可证 | 运行依赖（Requires-Dist） | 核验方式 |
+|---|---|---|---|---|
+| `rapidocr_onnxruntime` | 1.2.3 | Apache-2.0 | pyclipper>=1.2.1、onnxruntime>=1.7.0、opencv-python>=4.5.1.48、numpy>=1.19.3、six>=1.15.0、Shapely>=1.7.1、PyYAML、Pillow | site-packages 的 `rapidocr_onnxruntime-1.2.3.dist-info/METADATA` |
+| `onnxruntime` | 1.31.1 | MIT License | flatbuffers、numpy>=1.21.6、packaging、protobuf>=4.25.8（sympy/ml_dtypes 为 extras） | `onnxruntime-1.31.1.dist-info/METADATA` |
+| `rapidocr`（新包） | **未知（未安装）** | **未知** | **未知** | 本机无该包、未联网 → 不做任何断言 |
+
+体积参考（仅旧包，实测）：`rapidocr_onnxruntime` 目录 13.2MB（含 det 2.3MB + rec 10.2MB +
+cls 0.6MB 模型）、`onnxruntime` 目录 45.8MB。新包的模型是否随包分发/首次下载**未验证**。
+安装许可请求流程见 `docs/OCR-BENCHMARK.md` §4.6。
+
 ## 10. RapidOCR 常驻 Worker 量化评估（5.3）
 
 数据源：`results/2026-11-01_02-00-24-worker-eval.json`（`scripts/ocr/worker-eval.mjs --repeat=2`，
@@ -276,6 +308,18 @@ $env:RAPIDOCR_IMPL='unified'
    真实「整段气泡被裁」场景需要更强构造或真实数据。
 6. **测试时长约束**：eval 只有 66 条消息、tune 42 条，占比 1–2 条消息的指标波动可能达数 pp；
    本报告只对 ≥5pp 的差异下结论。
+7. **PS1 新门槛只有离线复算、没有生产实测**：任务书 §6 关注的「候选不一致」处理，当前 PS1 是
+   0.90 agree / 0.35–0.90 conflict + rapid 原生分 ≥0.85 才替换；用真实 OCR 行离线复算得到
+   eval「替换 11 条 / CER 22.07%→19.82% / 整句 51.52%→63.64%」，这是**近似复算**（无 4x 帧、
+   GT bbox 分组、rapid 行到消息的对应是近似），不能当成生产提升（详见
+   `docs/OCR-BENCHMARK.md` §6.9）。
+8. **「单行替换整条消息」风险**：上述 11 条替换里 3 条变差（numbers/ai_disclaimer），原因是
+   RapidOCR 的一行只覆盖多行消息的一部分，替换后丢失尾部文本；当前门槛只挡分数、不挡覆盖度。
+9. **TS 0.75/0.45 与 PS1 0.90/0.85 均未标定**：量纲不同、都非概率，无真实标签数据可做阈值扫描
+   （标定实验设计见 `docs/OCR-BENCHMARK.md` §6.9，本轮未执行）。
+10. **跨气泡/跨会话/错误联系人**：语料每图单会话、无引用/多会话，任务书九类里的「跨气泡错误」
+    与「错误联系人关联」只能标**未知**；`attribution` 的 uncertain 34/144（23.6%）仅反映
+    左右气泡归属的近似判断，不等于错误投递率。
 
 ## 12. 复现命令（仓库根目录执行）
 
@@ -302,7 +346,37 @@ node scripts/ocr/worker-eval.mjs --repeat=2
 
 # 5) 全量测试（本任务改动只涉及 scripts/ocr 与 docs，测试应保持全绿）
 npm run test:sandbox
+
+# 6) task-24：取 winrt 3x 行 + rapid 原生 score，复算 PS1 新门槛（结果写 %TEMP%，不改仓库）
+node scripts/ocr/bench.mjs --engine=all --variants=upscale2x,upscale3x `
+  --pipeline=v3 --split=eval --out-dir=%TEMP%/ocr-task24-gate
+#    复算脚本本次放在 %TEMP%/simulate-gate.mjs（不提交，入库价值低）；明细写
+#    %TEMP%/ocr-task24-gate-sim.json；数字见 docs/OCR-BENCHMARK.md §6.9
 ```
 
 结果文件命名：`results/<时间戳>-worker-eval.json`；A/B 组合结果只在 `%TEMP%/ocr-task20-ab/`
 （默认不入库，避免污染发布用证据目录）。
+
+---
+
+## 13. 任务书九类误差再分类（task-24 追加）
+
+任务书 §6 要求把剩余误差按九类统计。下表全部来自现有离线结果（eval 30 图 / 66 条 GT 消息 / 666 GT 字符；行级口径见 `docs/OCR-BENCHMARK.md` §3），**不新增任何真实微信数据**；每类都标了来源，无法测量的标「未知」而不估算。
+
+| # | 类别 | 数字（eval） | 来源 / 说明 |
+|---|---|---|---|
+| 1 | 截图失真（模糊/拉伸/低对比） | `gaussian_blur` CER 88.89%、`stretched` 90.00%、`truncated_bubble` 25.86%（A–H upscale3x 行级）；v2 全量 winrt-orig 上 `gaussian_blur` 100%、`stretched` 87.5%、`occluded` 60% | `results/2026-11-01_01-55-38-eval-winrt-upscale3x.json` 的 `byScenario`；v2 为 `2026-11-01_02-01-45-all-winrt-orig.json` |
+| 2 | 错误裁剪 | `truncated_bubble` 2 张图都有 GT bbox 越界（`x+w=513 > 480`，约裁掉 2 字符）；「裁剪窗格」A/B：tune `crop_pane` 31.00% vs orig 30.62%，组合变体 tune best 17.28% 但 eval 26.43%（未采纳） | `manifest.json` 的 `bbox`；组合变体见本文件 §8 / `docs/OCR-BENCHMARK.md` §4.5 |
+| 3 | 漏行（行级 fn） | 11/70 = 15.71%；逐图：`gaussian_blur-00` fn1、`gaussian_blur-01` fn2、`multi_message-00` fn1、`stretched-00` fn2、`stretched-01` fn1、`engine_conflict-00/01` 各 fn2 | `2026-11-01_01-55-38-eval-winrt-upscale3x.json` 的 `images[].metrics.fn` |
+| 4 | 形近字 | `homophone` 4 条消息：2 条全对；`未来`→`耒来`（1 替换）；`辫子`→`子`（1 删除）；整体 CER 4.76% | AB eval 逐消息（`2026-11-01_01-57-37-eval-ab-six-groups.json`）；v2 winrt-orig `homophone` 9.52% |
+| 5 | 行合并 / 错误分行 | eval 3x 切行率 0、fragment 0；tune 切行率 1.23%（frag1）；A/B 对齐过滤在 30 图里丢弃 7 行（`droppedWinrtLines=7`） | `2026-11-01_02-01-45`/`01-55-38` JSON；AB `images[].droppedWinrtLines` |
+| 6 | 跨气泡错误 | **未知**：合成语料每张图只有一个会话/一组左右气泡，无跨气泡对照（见 `docs/OCR-BENCHMARK.md` §8 第 27 条） | `manifest.json` 场景表 |
+| 7 | 消息位置不匹配 | 归属判定 110/144（76.39%）；uncertain 34（no-margin-contact 18 / empty 14 / spans-both-margins 2）；**错误联系人关联未知**（每图单会话） | `2026-11-01_02-01-45-all-v3-*.json` 的 `attribution` |
+| 8 | 词典误改 | 37 词受控纠错在 AB eval 改动 3 条、误改 0；v3 全量 corrected 1 条、protectedSkipped 0 | AB `events.correctedCount/misCorrectedCount`；v3 JSON `totals.correctedMessages` |
+| 9 | 候选不一致（双引擎冲突） | AB `conflictCount=28/66（42.42%）`；离线旧门槛替换 0 条；`vote-all` 替换 19 条（CER 16.86%）；按当前 PS1 门槛离线复算：agree 42 / single 1 / conflict 18（11 条替换，CER 22.07%→19.82%） | AB `events`；`docs/OCR-BENCHMARK.md` §6.9 的 `%TEMP%\ocr-task24-gate-sim.json` |
+
+**结论**：
+
+- 误差大头仍是 **OCR 引擎本身**（字符级 63.27%）与**整条漏读**（26.87%，见本文件 §5）；九类里可量化的主要是「截图失真」「漏行」「形近字」「候选不一致」，且都集中在 `gaussian_blur`/`stretched`/`engine_conflict` 等压力场景。
+- 「错误裁剪」不能靠「裁窗格+放大」修（§8 未采纳）；「候选不一致」有可测空间（§6.9：−2.25pp / +12.12pp），但会引入「单行覆盖整条消息」风险，且这是离线复算，**不能当生产收益**。
+- 「跨气泡错误」「错误联系人关联」「真实数据分布」全部**未知**，必须在用户授权的真实只读设备上另建标注集才能测量；在此之前，发布门槛只按合成语料陈述并标注限定（`docs/OCR-BENCHMARK.md` §6.6 / §8）。

@@ -3,8 +3,9 @@
 把**你自己的微信小号**变成有「人格」的 AI 聊天分身：被动回复白名单好友、拟人节奏、表情包、按需联网搜索，
 并带严格的 token 预算、风控熔断与防误发保护。
 
-> **版本**：3.0.0（开发中，未公开发布）　**上一个已发布版本**：v0.2.8
-> **仓库属性**：`private: true`，**不公开发布**，也不发布到 npm。仅供本机/受控环境自用。
+> **版本**：3.0.0（开发中；未打 tag、未发布 npm、未创建 Release）　**上一个已发布版本**：v0.2.8
+> **仓库属性**：GitHub 仓库**公开**（public）；`package.json` 的 `private: true` **仅表示不发布到 npm**，
+> 不改变 Git 仓库公开可见这一事实。历史提交与公开分析见 [docs/PRIVACY-REVIEW-PRE-RELEASE.md](docs/PRIVACY-REVIEW-PRE-RELEASE.md)。
 > 公开使用前请先读 [DISCLAIMER.md](DISCLAIMER.md)：自动化操作微信客户端违反微信协议，封号风险由使用者自担。
 
 ---
@@ -65,7 +66,8 @@ DSH（DeepSeek Harness）插件。它不接管你的主号，只针对**小号**
 - ❌ 不向外发遥测；除「回复所需内容发给用户自己配置的 LLM 服务商」外，数据留在本机。
 - ❌ 不承诺「绝不重复发送」：GUI 自动化做不到端到端 exactly-once；插件用发送状态机 + 幂等账本
   把「未知结果不自动重发、已终结不重发」做成可测试的保证，底层平台仍可能重复或丢失。
-- ❌ 不公开分发。本仓库 `private: true`，禁止转售、禁止打包成对外产品。
+- ❌ 不对外销售或包装成商业产品分发；本仓库为公开源码仓库，`private: true` 只表示不发布 npm 包，
+  不构成对使用者的保密承诺或禁止转售的法律约束（许可见 [LICENSE](LICENSE) 与 [DISCLAIMER.md](DISCLAIMER.md)）。
 
 已知限制：仅 Windows（桌面通道）；OCR 形近字仍是弱项；桌面通道暂不支持发送表情/图片/语音；
 真实微信环境需要用户单独授权后才能做端到端验证（见 [docs/TEST-PLAN.md](docs/TEST-PLAN.md)）。
@@ -259,10 +261,10 @@ node scripts/check-package.mjs     # 发布包内容检查（clean checkout + di
   OCR 纯函数（归一化/纠错/投票/气泡归属/基线水位线/融合/对齐/置信度/跨帧差分）、桌面通道发送三态与防误发、
   HTTP API 鉴权矩阵与草稿接口、安全运行模式拒发与 OCR 诊断只读、10 态发送状态机与幂等账本、
   配置迁移、通道能力降级等。
-- 当前规模（2026-11-01 实测，工作区含未提交的 v3 改动）：`npm run test:sandbox` →
-  **41 个测试文件 / 678 个用例全部通过**（1.58s）；`npm run typecheck` 与 `npm run build` 均 exit 0；
+- 当前规模（2026-11-01 11:40 实测，工作区含未提交的 v3 改动）：`npm run test:sandbox` →
+  **42 个测试文件 / 709 个用例全部通过**（2.59s）；`npm run typecheck` 与 `npm run build` 均 exit 0；
   `npm run verify:api` → **25/25 通过**；`node scripts/check-sensitive.mjs` → 212 个受跟踪文本文件
-  0 命中；`node scripts/check-package.mjs` → 189 个候选文件 0 违规（8 条 gitignore 垃圾警告；发布包 `files` 已排除 `*.bak-*`/`__pycache__`/`*.pyc`）。
+  0 命中；`node scripts/check-package.mjs` → 189 个候选文件 0 违规（9 条 gitignore 垃圾警告；发布包 `files` 已排除 `*.bak-*`/`__pycache__`/`*.pyc`；`npm pack --dry-run` 192 文件、垃圾 0）。
 - 基准语料：`test/fixtures/ocr-corpus/`（30 场景 × 2 变体 = 60 张，全虚构内容），离线 OCR 基准：
 
 ```powershell
@@ -287,17 +289,20 @@ node scripts/ocr/bench.mjs --engine=all --pipeline=all --limit=N   # 全量需�
 | 4 | OCR 离线基准 | `scripts/ocr/bench.mjs`（1 张合成图冒烟） | 只读 `test/fixtures/ocr-corpus`；WinRT/Pillow 缺失时显式 `::notice:: marked skip` |
 | 5 | Windows 兼容性 | PowerShell 步骤 | 打印 OS/Node/PowerShell 5.1 版本；断言 `scripts/pwsh/*.ps1` 均为 UTF-8 BOM |
 | 6 | 构建 | `npm run build` | `tsc` 输出 `dist/` |
-| 7 | API 验证 | `node scripts/verify-api.mjs` | 离线假宿主 + 真实 HTTP 端口，24 项检查 |
+| 7 | API 验证 | `node scripts/verify-api.mjs` | 离线假宿主 + 真实 HTTP 端口，25 项检查 |
 | 8 | 依赖安全检查 | `npm audit --omit=dev --audit-level=high` | 生产依赖 high/critical 直接失败 |
 | 9 | 敏感信息扫描 | `node scripts/check-sensitive.mjs` | wxid/手机号/邮箱/本机路径/密钥/疑似姓名 |
-| 10 | 发布包内容检查 | `node scripts/check-package.mjs` | private:true 未改、无运行时数据/备份/截图/敏感串 |
+| 10 | 发布包内容检查 | `node scripts/check-package.mjs` | private:true 仅 npm 语义（GitHub 仓库 public）、无运行时数据/备份/截图/敏感串 |
 
   Linux job（`linux-guard`）跑与平台无关的子集（typecheck/测试/敏感扫描）；WinRT OCR 在 Linux 上
   **显式 marked skip**。CI 不发布、不创建 Release。
 
 ## 11. 发版
 
-- 本仓库 `private: true`，**不公开发布、不发 npm**；由维护者手动在受控环境更新版本与分发。
+- **仓库公开、npm 不发布**：GitHub 仓库为 public；`package.json` 的 `private: true` 仅阻止 `npm publish`，
+  不代表仓库私有。公开 Git 历史中可能残留早期提交的疑似个人信息（如旧版验收文档中的姓名占位处理），
+  当前文件已脱敏但**历史提交无法通过 private 设置隐藏**；发布/分享前请阅读
+  [docs/PRIVACY-REVIEW-PRE-RELEASE.md](docs/PRIVACY-REVIEW-PRE-RELEASE.md) 的公开历史风险分析。
 - 版本语义：修 bug → patch；行为/配置变更 → minor；破坏兼容 → major。
 - 发版前必须逐条通过 [docs/RELEASE-CHECKLIST.md](docs/RELEASE-CHECKLIST.md) 的发布门槛
   （10 条质量门槛 + OCR 准确率专项），并记录证据；**当前 3.0.0 的 10 条门槛全部满足，

@@ -1,6 +1,7 @@
 # 架构说明（v3.0.0）
 
-> 适用版本：**3.0.0（开发中，未公开发布）**；上一已发布版本 v0.2.8。
+> 适用版本：**3.0.0（开发中；未打 tag、未发布 npm、未创建 Release）**；上一已发布版本 v0.2.8。
+> GitHub 仓库为 **public**；`package.json` 的 `private: true` 仅表示不发布 npm，不代表仓库私有（公开历史风险见 [PRIVACY-REVIEW-PRE-RELEASE.md](PRIVACY-REVIEW-PRE-RELEASE.md)）。
 > 本文按当前 `feat/v3.0.0` 分支的真实代码结构编写；文中标注「未验证」的能力表示代码与单测已落地但**真实微信环境尚未验证**，不要按“已在真机生效”理解。
 > 相关文档：[使用说明](使用说明.md)｜[通道说明](CHANNELS.md)｜[OCR 设计](OCR-DESIGN.md)｜[OCR 基准](OCR-BENCHMARK.md)｜[安全说明](SECURITY.md)｜[发布门槛](RELEASE-CHECKLIST.md)。
 
@@ -187,7 +188,7 @@ disabled → breaker → paused（只 skip 不 halt）→ group-chat → self-me
 
 **暂停/恢复**：暂停会 abort 在飞请求并停通道；暂停期间入站消息暂存 `deferred-inbound.json`（最多 50 条），恢复后按序补处理（中途再次暂停则剩余保留）。恢复会清熔断、重建 `AbortController`、重启通道并 flush 积压。聊天内 `/stop` 可暂停（仅白名单）；`/resume` 相关函数已定义但**尚未接入引擎**，恢复请用工具或 `POST /resume`。
 
-**预算**：`budgetPhase` 三态；`spent >= dailyTokens * draftModeRatio(0.85)` 进入草稿模式（只生成不发，写 `drafts.jsonl`）；`spent >= dailyTokens` 硬停。预算不阻止 `engine.start()`（否则重启后通道永远起不来）。
+**预算**：`budgetPhase` 三态；`spent >= dailyTokens * draftModeRatio(0.85)` 进入草稿模式（只生成不发，写 `drafts.json` 供人工批准，并兼容追加 `drafts.jsonl`）；`spent >= dailyTokens` 硬停。预算不阻止 `engine.start()`（否则重启后通道永远起不来）。
 
 **风控熔断**：`handleRisk` 在 `safety.circuitBreakerEnabled=true`（默认）时 `tripBreaker` + 暂停 + abort + 停通道 + critical 通知 + 持久化；关闭时只记录和通知。
 
@@ -203,7 +204,7 @@ v0.2.8 把 OCR 文本处理都写在 `desktop.ts` 里（带 `@ts-nocheck`）。v
 | `src/core/ocr/geometry.ts` | 纯几何：`iou`、`intersectionBox`、`unionBox`、`groupLinesIntoRows`、`toLogicalBox/fromLogicalBox`（跨帧坐标必须换算） |
 | `src/core/ocr/normalize.ts` | 文本归一：展示用 `normalizeOcrText`（去 CJK 字间空格等）、比较用 `compareKey`（去空白标点/全角转半角/小写）；相似度与 CER |
 | `src/core/ocr/correction.ts` | 质量评估 `noiseScore/looksGarbled/pickBetterText` + 受控纠错（同长度、至多差一字、敏感区段跳过） |
-| `src/core/ocr/vote.ts` | 旧双引擎投票 `mergeEngineVote`（重合度 <0.35 信任系统 OCR）；作为 A/B 基线与预览回退路径保留，生产桌面通道的分层决策见 §8.2 |
+| `src/core/ocr/vote.ts` | 旧双引擎投票 `mergeEngineVote`（重合度 <0.35 信任系统 OCR）；作为 A/B 基线与预览回退路径保留，生产桌面通道的分层决策见 §8.3 |
 | `src/core/ocr/fusion.ts` | **v3.0.0 新增**：双引擎几何匹配 `matchLines`（IoU/中心距/垂直重合/水平相邻/同气泡，一对一贪心；**只看几何、不比文本长度**） |
 | `src/core/ocr/align.ts` | **v3.0.0 新增**：顺序保持的 Levenshtein 序列对齐（跨气泡禁止替换，避免“强行配对”） |
 | `src/core/ocr/confidence.ts` | **v3.0.0 新增**：可解释置信度 `evaluateConfidence`（原生 confidence/清晰度/多引擎一致性/框匹配/截断与纠错/联系人验证），输出 `accept/verify/reject` |
@@ -216,14 +217,12 @@ v0.2.8 把 OCR 文本处理都写在 `desktop.ts` 里（带 `@ts-nocheck`）。v
 
 > 状态（Phase C 已实现，真实环境未验证）：`baseline/bubbles/pipeline` 有单测（`test/core/ocr-{baseline,bubbles,pipeline}.test.ts`），`desktop.ts` 与 `scripts/pwsh/wechat-uia.ps1` 已双向接线——read 时脚本输出 `captureId/pane/lines[].side/box/messages[]`，调用方下次读取回传 `-Ack <上次成功投递的 captureId>`，脚本只丢弃 ≤ 水位线的 pending 行并对未确认行重放（id 稳定，TS 侧按 id 去重）；`desktop.ts` 用 `planInboundDispatch` 拒绝 `uncertain/outbound` 并 `commitAck`。旧脚本输出（无这些字段）走 legacy 兼容分支全部接受。**真实微信窗口下的端到端效果仍需用户授权后验证**（见 [RELEASE-CHECKLIST.md](RELEASE-CHECKLIST.md) 门槛 2）。
 
-### 8.1 只读测试模式与 OCR 流水线开关（发布前验收）
+### 8.2 只读测试模式与 OCR 流水线开关（发布前验收）
 
-- 
-eadOnlyTestMode（配置，默认 false）四层阻断真实发送：engine.canSend 返回 
-ead-only-mode（自动回复/重试/sendTest/approveDraft 共用）、desktop.send() 首行直接拒绝（不调用脚本）、POST /test/send 与 POST /drafts/approve 返回 409、PS1 -ReadOnly（send 在定位窗口前失败；read 强制 -NoSearch；不恢复/移动/置顶/切前台窗口）。只读模式不阻断 LLM 调用与只读 OCR。
-- ocrPipelineMode：3（默认）走 planInboundDispatch + 置信度门禁；legacy 走 planReadLegacy（接受全部非空文本、跳过归属/置信度门禁），用于受控回退；两者共用同一发送安全门禁，不会因切算法放开自动发送。
+- **`readOnlyTestMode`（配置，默认 `false`）**：四层硬阻断真实发送——`engine.canSend` 返回 `read-only-mode`（自动回复/重试/`sendTest`/`approveDraft` 共用；mock 通道不拦因为不触达真实微信）、`desktop.send()` 首行直接拒绝（不调用脚本）、`POST /test/send` 与 `POST /drafts/approve` 在 HTTP 层返回 409、PS1 `-ReadOnly`（send 在定位窗口前失败；read 强制 `-NoSearch`；不恢复/移动/置顶/切前台窗口）。只读模式不阻断 LLM 调用与只读 OCR；`/status`、`/config` 与 `security` 均透出该开关。发布前验收的离线证据见 [PRE-RELEASE-INSTALL.md](PRE-RELEASE-INSTALL.md) §5。
+- **`ocrPipelineMode`**：`v3`（默认）走 `planInboundDispatch` + 置信度门禁；`legacy` 走 `planReadLegacy`（接受全部非空文本、跳过归属/置信度门禁），用于受控回退；两者共用同一发送安全门禁，不会因切换算法放开自动发送。
 
-### 8.2 桌面通道读写路径
+### 8.3 桌面通道读写路径
 
 ```mermaid
 flowchart LR
@@ -247,7 +246,7 @@ flowchart LR
 - 第二引擎可用性：RapidOCR（Python）是**可选**第二引擎，脚本调用 `scripts/py/rapid_ocr.py` 识别同一帧截图；Python 或依赖缺失时静默回退单引擎，不是必需依赖（CI 冒烟也只要求 WinRT）。
 - 表情/图片/语音：桌面通道 `capabilities` 为 false，不发送表情（设置页会降级）。
 
-### 8.3 脚本契约
+### 8.4 脚本契约
 
 - `scripts/pwsh/wechat-uia.ps1`：`-Action send|read|list|shot`，stdout 只输出一行 JSON；`send` 成功 `{ok:true}`；失败 `{ok:false,error}`；不确定投递时带 `delivery:'unknown'`。`read` 接受 `-Ack <captureId>`（确认水位线）与 `-SecondOcr`（同帧第二引擎），输出 `{ok,captureId,engines,pane,lines[],messages[],diag?}`；`lines[]` 含 `text/side/captureId/box/merged/confidence/agreement`；`messages[]` 含 `id/text/captureId/seq/side/box/receivedAt`，本次新行与 pending 重放行混排、id 稳定（`pc-<captureSeq>-<messageSeq>-<几何哈希>`）；`diag` 只含 `scale/screenshotMode/engineVersion/conflictCount/secondOcrUsed/qualityStatus/dpi`（不含正文）。只截微信窗口区域、不读剪贴板内容（发送时临时借用剪贴板粘贴中文并恢复）、不联网。
 - 调试：`WXUIA_DEBUG`/`WXUIA_SHOT_DIR` 等环境变量可控（见 [CHANNELS.md](CHANNELS.md)）；默认日志 `%TEMP%\wxuia-engine-debug.log` 含 OCR 行文本，敏感环境请自行清理。
@@ -340,6 +339,7 @@ flowchart LR
 | 单元/集成测试 | `test/**/*.test.ts`（vitest） | core 纯逻辑、通道、引擎验收、server API、client 冒烟；`test:sandbox` 用 `--pool=threads` 适配受限环境 |
 | 安全/诊断专项 | `test/server/api.test.ts`、`test/engine/acceptance.test.ts` | 鉴权矩阵、限速、safeMode 拒发（真实通道 0 次 `channel.send`、审计 `safe-mode`、sendTest 返回 `not-sent`）、`GET /diagnostics/ocr` 只读白名单字段与降级、草稿批准/拒绝与幂等 |
 | 幂等/发送状态 | `test/core/send-ledger.test.ts`、`send-state.test.ts`、`test/engine/acceptance.test.ts` | 同一 `opId` 只发一次、`unknown` 不重发、重启后账本恢复、草稿批准复用 opId |
+| 只读测试/防重放专项 | `test/server/api.test.ts`、`test/engine/acceptance.test.ts`、`test/channels/desktop.test.ts`、`test/channels/desktop-id-stability.test.ts` | `readOnlyTestMode=true` 时 `/test/send` 与 `/drafts/approve` 409（`read-only-mode`）、`status/config` 透出开关、mock 不拦；消息 id 跨帧稳定、pending 重放不重复投递、重启后不重放、多联系人 id 不串 |
 | OCR 纯逻辑 | `test/core/ocr-*.test.ts` | fusion 几何匹配、align 序列对齐、confidence 决策、tracker 跨帧分类、baseline/bubbles/pipeline |
 | 离线 API 验收 | `scripts/verify-api.mjs` | 假宿主 ctx + 真实 dist + 真 HTTP，不联网、不碰微信 |
 | OCR 基准 | `scripts/ocr/bench.mjs` + `test/fixtures/ocr-corpus/` | 合成语料（全虚构），可复现实验，只读样本 |
@@ -357,4 +357,4 @@ flowchart LR
 - **发送可靠性（状态机/幂等/草稿）**：`send-state`/`send-ledger`/`drafts.json` 已实现并有单测（同一 opId 只发一次、`unknown` 不重发、草稿批准重走门禁）；**真实微信环境（含 DSH 重启、脚本超时、子进程异常）未实机验证**，不能据此宣称“绝不重复发送”。
 - **OCR 融合/对齐/跨帧差分**：`fusion.ts`/`align.ts`/`tracker.ts` 已实现并有单测，但**尚未接入生产读取路径**（生产使用脚本分层 SecondOcr + pipeline 几何归属 + confidence 门禁）；任务书第六部分的离线融合收益也未在真实截图上验证。
 - **真实微信环境**：桌面通道发送可靠性等需用户单独授权后才能实机验证；未验证项在 [RELEASE-CHECKLIST.md](RELEASE-CHECKLIST.md) 标注。
-- 本仓库 `private: true`，不对外发布、不承诺 API 稳定性。
+- 本仓库 GitHub 为 public，`private: true` 仅表示不发布 npm 包；不承诺 API 稳定性，公开历史中的隐私风险见 [PRIVACY-REVIEW-PRE-RELEASE.md](PRIVACY-REVIEW-PRE-RELEASE.md)。

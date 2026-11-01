@@ -2,6 +2,12 @@
 
 > 面向：项目第一作者 / 第二作者。
 > 目标：把仓库安全地公开发布、讲清楚玩法、保护自己、并让第二作者体面地署名。
+>
+> **当前仓库状态（重要）**：`https://github.com/xinghui2628/dsh-wechat-persona` **已经是 public（公开可见）**；
+> `package.json` 的 `private: true` **只阻止 `npm publish`，不会把 GitHub 仓库变成私有**。
+> 因此本文中「公开发布」的动作（打 tag/Release、开启 Issues、宣传）都已发生在公开视野下；
+> 公开 Git 历史无法通过 private 设置撤回，历史提交中的疑似个人信息见
+> [PRIVACY-REVIEW-PRE-RELEASE.md](PRIVACY-REVIEW-PRE-RELEASE.md)。发布前请按本文清单复核，**未获维护者明确批准不要创建 Release/tag**。
 
 ## 1. GitHub 的「玩法」是什么
 
@@ -50,7 +56,7 @@ git push origin v0.2.3
 - Description：一句话（中文 + 英文关键词）；Topics：`dsh`、`deepseek-harness`、`wechat`、`persona`、`ai-chat`、`windows-automation`、`ocr`、`plugin`
 - 勾选 Issues / Discussions / Private vulnerability reporting（Security 页）
 - Social preview 图（可先用 `icon.svg` 导出 PNG）
-- 若担心误推：先设为 **Private**，同学内测稳定后再转 Public
+- 新建仓库时可用 **Private** 先内测；**本仓库已经是 public**，不要假设「换成 private 就能隐藏已有历史提交/截图/姓名」——Git 历史已公开可见，只能通过改写历史（需 force push，本项目不授权）或删除仓库重建来处理。
 
 ## 4. 免责声明与安全声明的摆放（重要）
 

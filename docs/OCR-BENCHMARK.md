@@ -137,13 +137,31 @@ test/fixtures/ocr-corpus/
 
 > 任务书 12.1 的「合成图、模拟数据、真实数据分别统计」：本仓库只能覆盖**合成图**这一类；真实微信数据按合规要求不采集，模拟数据也未接入（见 §8）。
 
+### 2.1 数据口径与样本独立性复核（task-24）
+
+复核对象：`results/2026-11-01_02-01-45-*`（v2 全量）、`2026-11-01_01-53-37` / `2026-11-01_01-55-38`（A–H tune/eval）、`2026-11-01_01-57-37`（A/B 六组）、`2026-11-01_02-00-24`（worker）。下面每个数字都可以由这些 JSON + `manifest.json` 重算。
+
+| 项目 | tune | eval | 说明 |
+|---|---|---|---|
+| 场景（模板）数 | 15 | 15 | 30 个场景按 `manifest.scenarios` 顺序 0-based 奇偶拆分（`bench.mjs` 的 `scenarioSplitOf`），**两边场景零重叠** |
+| 图数 | 30 | 30 | 每模板 2 变体（`-00`/`-01`） |
+| GT 消息数 | 78 | 66 | 合计 144 |
+| GT 行数（A–H 用） | 83 | 70 | 合计 153 |
+| 空 GT 图（`empty_error`） | 2 | 0 | 只在 tune；eval 没有空 GT 图 |
+
+- **样本独立性**：同一场景的两张变体共享同一排版模板、字体、主题与场景参数，只是文案/时间戳不同；29/30 个场景的两变体 GT 文本不同（`empty_error` 无消息，视为相同）。全语料唯一 GT 文本 137 条 / 144 条消息，重复主要来自 `repeat_two` / `multi_message` 场景的刻意重复。tune 与 eval 之间共享的 GT 文本只有 `收到`、`明天见` 两条短消息。
+- **有效样本量**：按「独立模板」计，每个 split 只有 **15 个模板 / 30 张图 / 66-78 条消息**；按「独立文本」计生 eval 只有 66 条消息。eval 的 CER 分母：66 条消息的 GT 共 666 字符（其中 5 条整条漏读消息贡献 54 字符），整句准确率每条消息移动约 1.5pp（1/66）——任何 < 1.5pp 的差异都不应解读为改进。
+- **选型 / 评估分离**：`upscale3x`（§4.5 的 BEST_VARIANT）是**只看 tune** 选的；eval 只在 §4.5、§6.6、§6.9 各报告结果，未按 eval 回头改参数。`bench.mjs` 的 `--split` 过滤在 `--limit` 之前；正式证据集都未用 `--limit`，避免截断造成样本偏向。
+- **口径可重算**：A–H eval 的 gtLines=70 / ocrLines=71 / tp59 / fp12 / fn11 与逐图 `metrics` 一致；A/B 六组 A–F 的 `editDistance`（237/152/15/163/86/147）由 `perMessage` 逐条重算完全一致，GT 字符 666 与 `normGtLength` 求和一致。
+- **不可外推**：合成图不能代表真实微信（§8 第 17、23 条）；本节的「消息数 / 字符数」只说明**统计口径**，不改变「合成语料 ≠ 真实截图」这一结论。
+
 ---
 
 ## 3. 指标定义
 
 ### 3.1 预处理变体
 
-bench 对每张图生成 3 个变体再分别识别（变体图写到 `results/derived/<variant>/`）：
+bench 默认对每张图生成 3 个变体再分别识别（变体图写到 `results/derived/<variant>/`；任务书 4.4 的 A–H 实验用 `--variants=` 指定，共 11 个变体，见 §4.5）：
 
 | 变体 | 做法 | 坐标换算 |
 |---|---|---|
@@ -254,6 +272,35 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/pwsh/ocr-winrt.p
 - **裁剪（B）单独用没有稳定 CER 增益**：tune 31.00%（orig 30.62%）略差，但假消息率 12.99%（orig 18.07%）明显下降、eval 35.44%（orig 40.84%）反而更好；说明裁剪主要减少「窗口 chrome / 滚动残条」被误读成消息，对正文识别无稳定提升。**裁剪与放大组合未测**（本任务时间只够单变体，留作后续）。
 - **灰度/对比度/中值/自适应阈值在 WinRT 前一律有害**：`equalize_clahe` 68.11%/73.12%、`median3` 96.82%/92.64%、`adaptive_threshold` 43.84%/46.70%——二值化/平滑会破坏笔画。结论是「先放大，不要先动对比度」。
 - **选型**：`BEST_VARIANT='upscale3x'`（tune 最优），eval 复核仍是 CER 最低，进入 §6.6 的 B/F 组。
+
+---
+
+## 4.6 RapidOCR 兼容性审查（任务书 5.2，只审查不安装）
+
+审查对象：`scripts/py/rapid_ocr.py` 的「新 `rapidocr` 包 / 旧 `rapidocr_onnxruntime` 包双路径」适配。按任务书要求，本轮**没有安装新包、没有联网**，所以下面把「本机已验证」与「未验证」严格分开。
+
+**本机已验证（旧包路径）**：
+
+| 项目 | 事实 | 来源 |
+|---|---|---|
+| 已安装包 | `rapidocr_onnxruntime 1.2.3` | 本机 site-packages 的 dist-info/METADATA |
+| 许可证 | Apache-2.0 | 同上 |
+| 运行依赖 | pyclipper>=1.2.1、onnxruntime>=1.7.0、opencv-python>=4.5.1.48、numpy>=1.19.3、six>=1.15.0、Shapely>=1.7.1、PyYAML、Pillow | 同上 |
+| 模型体积 | det 2.3MB + rec 10.2MB + cls 0.6MB（随包自带，不联网下载） | 包内 `models/` |
+| onnxruntime | 1.31.1，MIT License；依赖 flatbuffers / numpy>=1.21.6 / packaging / protobuf>=4.25.8 | 对应 dist-info/METADATA |
+| 适配回归 | `python -X utf8 scripts/py/rapid_ocr.py test/fixtures/ocr-corpus/images/clear-00.png` → `ok:true, engine:rapidocr_onnxruntime, version:1.2.3`，4 行，结构 `lines[{text,x,y,w,h,score}]` | 本轮真实执行 |
+| 自动回退 | `RAPIDOCR_IMPL=unified` → `{"ok":false,"available":false,"engine":"unified","error":"…No module named 'rapidocr'"}`，exit 0（不崩、不自动安装） | 本轮真实执行 |
+| 结构映射 | stub 单测覆盖 dict/对象 columns（boxes/txts/scores）、旧包 pairs、`(result, elapse)` 元组解包、无 scores、未知结构→None 后报错 | 本轮真实执行 |
+
+**未验证（新 `rapidocr` 包）**：版本号、依赖闭包、许可证、模型文件名/体积、是否首次运行自动下载模型、`RapidOCR()` 调用参数、`__call__` 返回结构、CPU/内存占用——全部**未知**，不得写成已验证结论。适配代码只做了「按官方示例 `from rapidocr import RapidOCR`、结果可能为 boxes/txts/scores 或对象」的防御性映射；`RAPIDOCR_IMPL=auto` 在旧包可用时会走旧包，不会影响现有安装。
+
+**安装许可请求模板（给用户/维护者，本轮未执行）**：
+
+1. 在项目专用 venv 内执行 `python -m pip install rapidocr`（需要用户批准联网安装，不允许自动化脚本自动执行）；
+2. 记录版本与依赖锁（`pip freeze`）；核对许可证与包体积；
+3. 设 `RAPIDOCR_IMPL=unified`，对 `test/fixtures/ocr-corpus/images/` 跑 `scripts/py/rapid_ocr.py`，确认输出结构与旧包一致（`lines[{text,x,y,w,h,score}]`）；
+4. 断网/监控网络确认首次识别不会下载模型（若会下载，需要提前随包分发或改配置）；
+5. 用 `worker-eval.mjs` 复测常驻开销，再决定是否替换旧包。
 
 ---
 
@@ -533,7 +580,24 @@ v2 语料（60 图）上的复核见 **§6.6**：完整 v3（F）22.07% / 51.52%
 - **完整 v3（F）是唯一可部署组合**：相对 v0.2.8 baseline（A）CER −13.52pp、整句 +21.22pp，达到任务书 12.4 发布门槛第 2 条「OCR 相对 v0.2.8 有可测量改善」（限定离线等价 + 合成语料）。
 - **F 与 B 接近**（22.07% vs 22.82%）：在「可疑才投票 + 更长才替换」的保守门槛下，融合与 37 词纠错在 eval 上几乎不再带来额外增益；想拿到 E 的收益需要放宽投票门槛或每帧跑第二引擎，两者的成本/收益需要真实数据再权衡。
 
-**发布门槛判定**：达成（限定条件见 §8 第 13、15、17-23 条）。若只看绝对门槛 `CER ≤ 28.09% / 整句 ≥ 32.95%`（§6.5 口径，v1 40 图），F 的 22.07% / 51.52% 也在门槛内。
+**发布门槛判定**：达成（限定条件见 §8 第 13、15、17-28 条）。若只看绝对门槛 `CER ≤ 28.09% / 整句 ≥ 32.95%`（§6.5 口径，v1 40 图），F 的 22.07% / 51.52% 也在门槛内。
+
+### 6.6.1 代码执行路径与消融口径复核（task-24）
+
+- **每组实际执行的代码**（`scripts/ocr/bench.mjs`，v3.0.0 工作树）：
+
+| 组 | 实现（bench.mjs） | 实际输入 → 处理 |
+|---|---|---|
+| A | `baselinePostprocessMessage(textOf(itemsOrig, mi), { frames: {'2': g2x}, secondEngineText: gRapid })` | winrt **orig** 行 → v0.2.8 后处理 |
+| B | 同函数，文本取 `itemsBest`（**upscale3x**） | 只有首读预处理不同 |
+| C | `baselinePostprocessMessage(gRapid, { frames: {}, secondEngineText: '' })` | RapidOCR orig 文本直接走 v0.2.8 后处理（**没有多帧、没有第二引擎**） |
+| D | `alignLinesToSecondEngine(cBest, cRapid)` 过滤后再走 `baselinePostprocessMessage` | B + 新对齐过滤 |
+| E | `runV3Message({ winText: textOf(itemsAligned, mi), rapidLines: cRapid, config: { id: 'fusion-only', useVote: 'all', skipCorrection: true } })` | **D 的行 + 消息级全融合（累计，不是孤立融合）** |
+| F | `runV3Message({ winText: textOf(itemsBest, mi), rapidLines: cRapid, config: 'vote-garbled' })` | B 的行 + 可疑才投票 + 纠错；**没有做 align 过滤** |
+
+- 所以「与 A 的差异」列应理解为：B=预处理；C=引擎；D=B+对齐；E=D+融合；F=B+投票/纠错。只有 A/B/C 是干净的「单阶段替换」；D/E 是累计链，E 的 12.91% **不能**读成「融合单独贡献 −9.91pp」。F 也不是「完整 v3」——它缺 align 阶段，且用的是**离线旧门槛**（见 §6.9）。
+- **可复算**：由 `perMessage[].{A..F}.cer × normGtLength` 求和得到 editDistance = 237/152/15/163/86/147，与 `totals` 完全一致；GT 字符 666、消息 66 与 §2.1 一致。
+- **样本独立性**：见 §2.1（tune/eval 场景零重叠、每边 15 个独立模板、eval 仅 66 条消息）；F vs B 的差异 0.75pp 小于单条消息 ≈1.5pp 的粒度，属噪声范围（§8 第 21 条）。
 
 ---
 
@@ -590,6 +654,41 @@ eval 集各预处理变体资源（与 §4.5 同一次 run，30 图）：
 | 90s 脚本上限 | 可容纳 |
 
 **建议**：从数字看**值得做常驻 Worker**（每帧省 ~1.8s、内存 110-243MB 可接受、稳态延迟 1.3s 落在 2s 轮询预算内），但按任务书 5.3 的 8 个条件（模型只加载一次、stdin/IPC、requestId、超时取消、有限恢复、限并发、不监听公网、不持久化截图/关闭释放）实现成本不低；**本期只做量化评估，不接线**（未改 `src/**`）。真实微信数据复测后再决定是否接入。
+
+---
+
+## 6.9 阈值语义与标定建议（task-24）
+
+系统里同时存在三套「分数 / 阈值」，量纲不同、都不是概率，不能互相比较或直接套用：
+
+| 层 | 数值 | 定义 | 代码位置 |
+|---|---|---|---|
+| TS 置信度 | `CONFIDENCE_HIGH=0.75`（≥ accept）、`CONFIDENCE_LOW=0.45`（≥ verify，否则 reject） | 规则加权分：nativeConfidence 0.35 / sharpness 0.20 / agreement 0.25 / boxMatch 0.10 / mergeTruncation 0.10 / correction 0.05，按可用因子加权平均后重新归一化；`contactVerified=false` 时直接判 reject | `src/core/ocr/confidence.ts`（头注释明确「非概率」） |
+| PS1 一致性 | `overlap ≥ 0.90` → agree；`< 0.35` → single；`0.35 ≤ overlap < 0.90` → conflict，且仅当 RapidOCR 原生 `bestScore ≥ 0.85` 才替换文本 | `overlap = 2×多重集交集/(lenA+lenB)`；文本先 Normalize-Text（去空白/零宽、NFKC、小写，**不去标点**）；`bestScore` 是 RapidOCR 自己的识别分 | `scripts/pwsh/wechat-uia.ps1`（Normalize-Text / Get-TextOverlap / SecondOcr） |
+| 离线等价门槛（旧） | `overlap ≥ 0.35 且 rapid 文本更长` 才替换，之后 `mergeEngineVote` + 纠错 | 转写自 v3.0.0 初始提交时的 PS1，**已落后于当前 PS1** | `scripts/ocr/v3-pipeline.mjs` 的 `scriptReplaced` 分支 |
+
+- **语义**：TS 0.75/0.45 是「规则评分区间」，PS1 的 0.90 是「文本重合度」、0.85 是「引擎原生分」——三者的 0/1 端点定义都不同，写进文档/UI 时必须带定义与非概率说明。
+- **离线等价 vs 当前 PS1（量化，本轮真实执行）**：用 `node scripts/ocr/bench.mjs --engine=all --variants=upscale2x,upscale3x --pipeline=v3 --split=eval --out-dir=%TEMP%\ocr-task24-gate` 拿到真实 winrt 3x 行与 rapid 原生 score 后，在 eval 的 30 图 / 66 消息 / 666 GT 字符上复算：
+  - 旧门槛（离线 v3-pipeline，等价于 F 组）：替换 **0** 条，CER 22.07%、整句 51.52%；
+  - 当前 PS1 门槛：agree 42 条、single 1 条、conflict 18 条（其中 11 条满足原生分 ≥0.85 → 替换）、全局兜底 1 条；**替换 11 条后 CER 19.82%、整句 63.64%**（相对旧门槛 −2.25pp / +12.12pp；只统计有 OCR 文本的 61 条消息时为编辑数 93→78、GT 字符 612）。
+  - 分场景（旧 → 新）：stretched 72.50%→10.00%、gaussian_blur 70.37%→51.85%、multi_message 6.90%→0%、dark_mode 3.03%→0%、contact_switch 13.33%→2.22%、homophone 4.76%→2.38%；**变差**：numbers 12.04%→24.07%、ai_disclaimer 2.56%→19.23%。
+  - 变差原因（逐条明细见 `%TEMP%\ocr-task24-gate-sim.json`）：11 条替换里 3 条变差，都是「一条 rapid 行替换了整条多行消息」，rapid 行只覆盖消息的一部分（如 `numbers-00` 的日期段、`ai_disclaimer-00` 的尾部说明被截掉）。**这是当前 PS1「整条消息换成单行文本」规则的已知风险，仅靠分数门挡不住。**
+  - 口径限制：这是**离线复算**，不是生产实测；没有 4x 帧、分组用 GT bbox、rapid 行与消息的对应是近似；不得把 19.82%/63.64% 写成生产提升。
+- **标定建议（设计，本轮不执行）**：在用户授权真实只读数据或更大合成集上，对每条消息同时记录 `(TS 规则分, PS1 overlap, rapid 原生分, GT 是否正确)`，按阈值网格扫描选择工作点（目标：错误投递率优先，其次漏读率）；用独立集验证，**禁止在 eval 上反复调参**；在拿到数据前保持当前保守门槛（可疑才投票，拿不准不替换/不回复更安全）。
+
+## 6.10 fusion / align / tracker 渐进接入计划（task-24，只规划不接线）
+
+**现状（只读代码证据）**：`fusion.matchLines`、`align.alignLineSequences`、`tracker.classifyFrameDelta` 目前**只在测试里被引用**（`test/core/ocr-{fusion,align,tracker}.test.ts:3`），生产 `src/**` 没有任何 import；生产实际走 `pipeline.planInboundDispatch`（`src/channels/pc/desktop.ts:36` import、`planRead` 内调用）与 `confidence.evaluateConfidence`（同文件 `:38` import、`:838` 调用）；`config.ocrPipelineMode` 默认 `v3`、可一键回退 `legacy`（`src/config.ts`）。
+
+| 阶段 | 内容 | 前置条件 | 验收指标 | 回退 |
+|---|---|---|---|---|
+| S0 离线影子 | 只在 bench/分析脚本里跑 fusion/align/tracker，与现状指标并存，不影响投递 | 无（不碰 src） | 决策可复现；与 GT 对比的 shadow 一致率/不确定率；无崩溃 | 不涉及生产 |
+| S1 受控开关 + 保守拒绝 | 新增默认关闭的 Feature Flag；tracker 只做「重复帧去重」，fusion/align 只写诊断，不改变接受/拒绝结果 | 真实只读数据 ≥N 帧；离线 shadow 无回归 | 重复事件数下降；无新增错误投递；p95 延迟不显著增加；flag 关闭时行为与当前一致 | flag=false / `ocrPipelineMode=legacy` |
+| S2 纯虚构端到端 | mock 通道 + 故障注入（空截图/遮挡/滚动/重复帧），验证 fusion/align 参与后的投递计划 | S1 通过 | 端到端无重复回复、无错误联系人、故障注入可恢复；单元/沙箱测试全绿 | 回退 flag + legacy |
+| S3 用户授权真实设备只读回归 | `readOnlyTestMode` 下与 v0.2.8/legacy 影子对比，不发送 | 用户书面授权；S2 通过；备份与日志脱敏检查 | 影子一致率、uncertain 比例、冲突数；两周无 P0；不改变已读状态 | 关闭 flag / legacy |
+
+- 额外约束：S1 之后所有日志不得含截图/联系人隐私；tracker 跨帧状态必须能被一次重启安全清空；fusion/align 引入的任何「拒绝投递」都要计入现有 uncertain/reject 统计，不允许静默丢消息。
+- 本轮**不接线**：不改 `src/**`、不加 Flag、不写配置项；以上只是计划。
 
 ---
 
@@ -655,7 +754,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/pwsh/ocr-winrt.p
 ## 8. 已知局限（未测的都在这里）
 
 1. **未测真实微信截图**：合规要求不截图/不启动/不发送真实微信，语料全部是 Pillow 合成图；真实微信的头像照片、表情、引用、图片消息、系统通知条分布与之不同。
-2. **规模小、方差大**：只有 40 张、每场景 2 张，单张图的分数波动会影响场景均值；做显著性结论前需要扩量。
+2. **规模小、方差大**：v2 语料 60 张（30 场景 × 2）；单张图的分数波动会影响场景均值，做显著性结论前需要扩量。
 3. **emoji/颜文字不可读**：合成 emoji 用 Segoe UI Emoji，和微信自有 emoji 渲染不同；OCR 读不出 emoji 是预期行为，但会让整句准确率天然为 0（`emoji` 场景）。
 4. **头像偶发假文本**：真实头像是照片，合成头像是低对比度马赛克纹理，但仍可能被 OCR 读成 `0`/`网` 等（如 `low_contrast-01`、`scale_175-00`）；这类假消息在真实场景也存在，v0.2.8 靠坐标/`contactNames` 过滤，不是本 bench 能消除的。
 5. **小字号是压力场景**：10px 在 WinRT 下基本全错（100% CER），但它对应真实用户把微信字号调小的情况，保留作为防御场景。
@@ -667,7 +766,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/pwsh/ocr-winrt.p
 11. **单机单次测量**：P50/P95 未做多次重复与置信区间；RapidOCR 首次加载模型耗时（0.8-1.0s）单独记录，但不同机器差异可能很大。
 12. **未接入真实 UI 坐标分组**：baseline / v3 分组都用 GT bbox 近似，真实 pipeline 按 UI 元素坐标分组；分组误差会轻微影响数字。
 13. **v3 离线等价有 5 处偏差**（见 §6.5）：无 4x 帧重读、消息分组用 GT bbox、投票按消息粒度而非整段文本、pane 取整图宽度、气泡归属用行框并集近似；真实 pipeline 的定位/分组误差未计入。
-14. **tune/eval 规模小**：各 10 场景 / 20 图 / 42-46 条消息，单条消息就能移动整句准确率约 2pp；结论方向可信，具体数值需扩量复测。
+14. **tune/eval 规模小**：各 15 场景 / 30 图 / 66-78 条 GT 消息（A–H 行数 70-83），单条消息就能移动整句准确率约 1.5pp；结论方向可信，具体数值需扩量复测。
 15. **第二引擎融合与受控纠错在本语料几乎没触发**（eval：替换 0、纠错 0；tune：纠错仅 1 条），它们的独立收益**未被本 bench 证明**；`vote-all` 上界不能当成在线可达结果。
 16. **归属指标是近似**：pane 取整图宽度、bubble bbox 用行框并集 + 4% 内边距；真实脚本提供窗口/气泡几何，判左右准确率会受此近似影响。
 17. **v2 语料仍全部是合成图**：12.1 的 21 项覆盖是「场景存在」而非「分布真实」——每项覆盖只有 2-4 张图支撑（`homophone`、`similar_nickname` 等新场景各 2 张），真实微信里的昵称、系统提示、表情分布不同。
@@ -677,6 +776,11 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/pwsh/ocr-winrt.p
 21. **12.3 的 B 与 F 组差异在噪声范围内**：22.82% vs 22.07%（66 条消息，1 条消息 ≈1.5pp 整句），只能说明「本合成集上融合/纠错未体现额外收益」，不能断言失效；需要更大 eval 集或专门构造的双引擎冲突样本。
 22. **`truncated_bubble` / `scrolled` / `engine_conflict` 是压力场景**：前两者 GT 包含窗口外/被标题栏遮挡的不可见文本，CER 必然偏高；`engine_conflict` 双引擎都读不准（A 100% / F 100%）。它们用于验证「不误报、不崩」，不应计入发布门槛的典型样本人群。
 23. **12.1 的「模拟数据 / 真实数据」未采集**：按合规要求不截真实微信、不注入真实消息；本 bench 只有合成图一类，模拟数据（脚本注入的历史消息）与真实数据统计均**未测**。
+24. **数据口径复核的结论（task-24）**：tune/eval 场景零重叠（§2.1），但每个 split 只有 15 个独立模板 / 30 图 / 66-78 条消息；「选型/评估分离」在形式上成立，统计功效仍不足。
+25. **PS1 门槛已更新、离线等价没跟上**：当前 `scripts/pwsh/wechat-uia.ps1` 的 SecondOcr 用 0.90 agree / 0.35 conflict + rapid 原生分 ≥0.85 替换，而 `scripts/ocr/v3-pipeline.mjs` 仍是旧的「重叠度 ≥0.35 且更长才替换」，所以离线 F 组 0 替换。§6.9 的复算显示新门槛在合成 eval 上 CER 22.07%→19.82%，但那是**离线复算**，且 3/11 条替换因「单行覆盖整条消息」变差。
+26. **错误联系人关联未知**：合成语料每张图只有一个会话，`wrongContactAssociation` 无法测量；归属指标只覆盖「左右气泡判断 + uncertain 比例」，不能证明不会回复错人。
+27. **跨气泡/跨会话错误未覆盖**：语料没有同一截图内多个会话/引用消息，任务书 12.2 的「跨气泡错误」只能标未知。
+28. **TS 与 PS1 两套阈值都没有标定数据**：0.75/0.45、0.90/0.85 都是工程默认值，量纲不同、非概率；标定实验设计见 §6.9，本轮未执行。
 
 ---
 
@@ -686,18 +790,21 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/pwsh/ocr-winrt.p
 
 ```text
 scripts/ocr/gen_corpus.py        # 合成语料生成器（v2：30 场景/60 图 + 12.1 覆盖 + 空 GT/system/滚动/截断）
-scripts/ocr/engines.mjs          # 引擎适配层（WinRT / RapidOCR / A–H 预处理变体 / 文本与几何工具）
-scripts/ocr/bench.mjs            # 基准编排 + 指标 + 结果落盘（本次扩展 --variants / --pipeline=ab / 空 GT / 资源聚合）
+scripts/ocr/engines.mjs          # 引擎适配层（WinRT / RapidOCR / A–H 预处理变体 / 文本与几何工具；task-24 新增 crop_pane_upscale2x/3x 组合变体）
+scripts/ocr/bench.mjs            # 基准编排 + 指标 + 结果落盘（--variants / --pipeline=ab / 空 GT / 资源聚合；task-24 小修 rapid 变体过滤与落盘循环）
 scripts/ocr/baseline-v028.mjs    # v0.2.8 后处理逐行转写（A/B baseline）
 scripts/ocr/v3-pipeline.mjs      # v3 管线离线等价（normalize/correction/vote 纯函数转写 + 新对齐）
 scripts/ocr/worker-eval.mjs      # 任务书 5.3：RapidOCR 常驻 Worker 量化评估（只测不接线）
+scripts/ocr/analyze-errors.mjs   # 任务书 12.2 / task-24：从现有 results 做误差归因，输出 Markdown/JSON（不改结果目录）
 scripts/py/rapid_ocr.py          # 5.2：统一输出 + rapidocr 新包/旧包双路径（新包本机未安装，未实测）
 scripts/pwsh/ocr-winrt.ps1       # WinRT OCR helper（12.2：新增 cpuMs/rssMB；PS 5.1，UTF-8 带 BOM）
-test/fixtures/ocr-corpus/        # v2：60 张合成图 + manifest v2（12.1 覆盖 21 项）+ results/（最终证据集）
-docs/OCR-BENCHMARK.md            # 本文
+test/fixtures/ocr-corpus/        # v2：60 张合成图 + manifest v2（12.1 覆盖 21 项）+ results/（最终证据集，task-24 未改动）
+docs/OCR-BENCHMARK.md            # 本文（task-24 新增 §2.1 / §4.6 / §6.6.1 / §6.9 / §6.10 与 §8 第 24-28 条）
+docs/OCR-ERROR-ANALYSIS.md       # 误差归因（task-24 新增口径、九类再分类、阈值语义、许可证/未验证项）
 ```
 
 - `scripts/ocr/**`、`scripts/py/rapid_ocr.py`、`scripts/pwsh/ocr-winrt.ps1`、`test/fixtures/ocr-corpus/**`、`docs/OCR-BENCHMARK.md` 均在本任务允许范围内；`bench.mjs` 等是范围内既有文件的扩展。
 - `results/` 只保留最终证据集（见 §7）；`derived/`（派生变体图，可由 manifest 重建）不入库。
 - `src/**`、`client/**`、`scripts/pwsh/wechat-uia.ps1`、`package.json`、`.gitignore` 等文件**未改动**（仓库工作区里其它未提交改动来自并行任务，与本目录无关）。
+- task-24（本轮复核）只做**只读代码审查 + 现有离线结果复算 + 两文档更新**：新增 `scripts/ocr/analyze-errors.mjs`、`scripts/ocr/engines.mjs` 组合变体、`bench.mjs` 两处小修（rapid 变体过滤与落盘循环），其余 scripts/ocr 文件只审读不改；`results/` 未改动（诊断 run 写 `%TEMP%`）；`src/**`、`client/**`、`scripts/pwsh/wechat-uia.ps1`、`package.json` 均未改动。
 - 未 commit / 未 push（按任务书要求）。

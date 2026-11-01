@@ -174,8 +174,12 @@ console.log(`\n[1/3] 预处理变体: ${prep.count} 张（${Date.now() - prepSta
 const engineIds = args.engine === 'all' ? ['winrt', 'rapid'] : [args.engine];
 // baseline/v3/ab 组只需要 RapidOCR × orig（首读对比用），跑其它变体会白等数分钟→ 自动收敛。
 const rapidOnlyOrig = baselineEnabled || v3Enabled || abEnabled;
+// rapid 在 baseline/v3/ab 组中一律只跑原图；即使 --variants 未显式包含 orig 也要补上，
+// 否则这些组会因「缺少 rapidocr × orig」被静默跳过（task-24 复核发现的可用性小坑）。
 const variantsFor = (engineId) =>
-  engineId === 'rapid' && rapidOnlyOrig ? activeVariants.filter((v) => v.id === 'orig') : activeVariants;
+  engineId === 'rapid' && rapidOnlyOrig
+    ? [activeVariants.find((v) => v.id === 'orig') || variantById('orig')]
+    : activeVariants;
 console.log(`引擎/变体: ${engineIds.map((e) => `${e}=[${variantsFor(e).map((v) => v.id).join(',')}]`).join(' ')}`);
 const runs = new Map(); // key = `${engine}|${variant}`
 
@@ -597,7 +601,7 @@ function num(v, digits = 4) {
 }
 
 for (const engineId of engineIds) {
-  for (const variant of activeVariants) {
+  for (const variant of variantsFor(engineId)) {
     const run = runs.get(`${engineId}|${variant.id}`);
     if (!run) continue;
     const records = [];

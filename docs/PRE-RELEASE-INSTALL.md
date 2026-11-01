@@ -1,31 +1,33 @@
 # 发布前安装与迁移验收（v3.0.0，干净模拟环境）
 
-本文记录 v3.0.0 发布前（任务书第十一部分）在**本机、离线、干净临时目录**中完成的安装包 / 安装 / 配置迁移 / mock 与草稿模式 / 版本一致性验收。
+本文记录 v3.0.0 发布前（任务书第十一部分）在**本机、离线、干净临时目录**中完成的安装包 / 安装 / 配置迁移 / mock 与草稿模式 / 只读测试模式 / 版本一致性验收。
 
-> 结论先行：**发布包内容、包结构、版本、配置迁移、mock 启动与草稿模式均通过**；但存在 3 个明确限制——
+> 结论先行（2026-11-01 11:20–11:34 task-25 复核）：**发布包内容、包结构、版本、配置迁移、mock 启动、草稿模式与只读测试模式均通过离线验收**；但存在 3 个明确限制——
 > ①真实 DSH profile 安装与真实微信环境**未验证**（用户未授权，本轮也不应触碰）；
-> ②工作树在验收期间有其他队友并行修改，**当前 `dist/` 构建早于 `readOnlyTestMode` 集成**，
-> 因此只读模式相关行为**待最终代码重建后复验**；
-> ③`npm install <tarball>` 在离线环境下因依赖未命中缓存而失败（网络限制），改用「解包 + 复用宿主依赖」模拟安装并验证通过。
+> ②`npm install <tarball>` 在离线环境下因依赖未命中缓存而失败（网络限制），改用「解包 + 复用宿主依赖」模拟安装并验证 import/迁移通过；
+> ③`npm pack` 会带上**未跟踪文件**（本轮与候选集差 1 个未跟踪 docs 文件），发布包仍必须按 RELEASE-CHECKLIST §6.4 用受跟踪文件 + `dist` 制作。
+>
+> 上一轮（10:35–10:50，HEAD `c05a24a`）的「dist 早于只读源码」限制已解除：当前 `dist` 构建于 10:54，已包含 `readOnlyTestMode`，只读拒绝行为已离线验证（§5.3）。
 
 ## 0. 验收快照
 
 | 项目 | 值 |
 | --- | --- |
-| 验收日期 | 2026-11-01 10:35–10:50（Asia/Shanghai） |
+| 验收日期 | 2026-11-01（task-25 复核 11:20–11:34；上一轮 task-19 为 10:35–10:50） |
 | 仓库 | `dsh-wechat-persona`（分支 `feat/v3.0.0`） |
-| HEAD | `c05a24a`（验收开始时工作树干净；验收期间其他队友开始改代码） |
-| 本地提交数 | `git rev-list --count HEAD` = **39** |
+| HEAD | `2823439`（task-25 复核时；上一轮为 `c05a24a`） |
+| 本地提交数 | `git rev-list --count HEAD` = **42**（领先 `origin/master` 21 个提交） |
 | tag | `v0.2.3`、`v0.2.8`（回退目标 tag 存在） |
 | 版本 | `package.json` / `src/index.ts` / `dist/index.js` 均为 **3.0.0** |
-| 工作树漂移 | 验收过程中出现 6 个修改文件 + 3 个未跟踪文件（详见 §9.3），全部为其他队友/Lead 的并行工作；本验收未改动任何 `src/**`、`scripts/**` |
+| 工作树漂移 | task-25 复核时：4 个文档修改（本轮我改）+ 7 个队友未提交的 `src/scripts/test` 改动 + 3 个未跟踪文件（`docs/PII-INVENTORY.md`、`docs/V3-PRIVACY-AND-DEVICE-READINESS.md`、`test/channels/desktop-e2e.test.ts`），详见 §9.3 |
 | 工具链 | Node **v26.13.0**、npm **11.20.0**、Windows 11 本机 |
-| `dist/` 构建时间 | 2026-11-01 10:33:26（**早于** 10:39 后对 `src/config.ts`、`src/engine/engine.ts`、`src/server/api.ts` 的只读模式改动） |
+| `dist/` 构建时间 | **2026-11-01 10:54:00**（晚于 `readOnlyTestMode` / `ocrPipelineMode` 源码改动，当前 dist **已包含**只读测试模式） |
 | 数据目录 | 全程使用系统临时目录，验收后已清理；未接触用户真实 dataDir |
 | 网络 | 全程未访问外网；`npm install` 使用本地 tarball + `--offline` |
 
-> ⚠️ 由于 `dist/` 未在最终代码上重建，本报告中的「安装包」与「mock/草稿」验证反映的是 **10:33:26 构建产物**；
-> 发布前必须在最终代码上 `npm run build` 后重跑本清单（尤其 §5.3 的只读模式复验）。
+> ⚠️ 上一轮（`c05a24a`）报告的「`dist/` 早于只读源码」限制已在本轮解除：task-25 使用 10:54 构建的 dist，
+> 其 `dist/config.js` 已含 `readOnlyTestMode`，并已用离线 harness 验证只读拒绝（§5.3 / §6.3）。
+> 若发布前源码继续改动，仍必须在最终代码上重新 `npm run build` 并重跑本清单。
 
 ## 1. 方法与边界
 
@@ -41,22 +43,26 @@
 
 | # | 验收项 | 命令 / 方法 | 结果 | 说明 |
 | --- | --- | --- | --- | --- |
-| 1 | 发布包内容检查（仓库口径） | `node scripts/check-package.mjs` | **PASS** | 候选 181 文件，0 违规；1 条警告（7 个 gitignore 垃圾，仅警告不阻断） |
-| 2 | npm 打包内容（dry-run） | `npm pack --dry-run --json` | **PASS（有警示）** | 188 文件、762,683 B（打包后）/ 2,339,176 B（解包后）；含 7 个被 `.gitignore` 忽略的调试垃圾 → 发布包**不应**直接 `npm pack` |
-| 3 | 实际打包 + 解包核对 | `npm pack` → 解包到临时目录 | **PASS** | 188 文件 / 2,339,176 B，与 dry-run 一致；`version=3.0.0`、`private=true`；dist 106 文件（53 `.js` + 53 `.d.ts`）；无 `node_modules`、无运行时数据、无 `.env`、无截图 |
+| 1 | 发布包内容检查（仓库口径） | `node scripts/check-package.mjs` | **PASS** | 候选 **189** 文件，0 违规；1 条警告（**9** 个 gitignore 垃圾，仅警告不阻断；收尾时新增 1 个 `.bak-20261101-113621`） |
+| 2 | npm 打包内容（dry-run） | `npm pack --dry-run --json` | **PASS（有警示）** | 收尾复跑（11:40）：**192** 文件、**749,729 B**（打包后）/ **2,233,778 B**（解包后），垃圾文件 **0**；11:25 首次为 190 / 705,755 / 2,122,201（文档改动后 docs 数增加，属预期）；均含 1 个未跟踪 docs 文件 → 发布包**不应**直接 `npm pack` |
+| 3 | 实际打包 + 解包核对 | `npm pack` → 解包到临时目录 | **PASS** | 11:25 实际 pack：**190** 文件 / **2,122,201 B**，SHA256 `64C229…`（仅该次构建）；`version=3.0.0`、`private=true`；dist 106 文件（53 `.js` + 53 `.d.ts`）；无 `node_modules`、无运行时数据、无 `.env`、无截图；坏文件 0 |
 | 4 | 干净目录模拟安装 | 解包到临时 `node_modules/` + 复用宿主依赖后 `import` | **PASS（模拟）** | `import dist/index.js` 成功：`name=dsh-wechat-persona`、`provide=["wechatPersona"]`、`apply`/`migrateConfig` 可用；`node --check client/client.js` PASS |
 | 4b | 真正 `npm install <tarball>`（离线） | `npm install <tarball> --offline` | **限制** | `ENOTCACHED`：依赖 `@deepseek-ai/schemastery` 未在本机 npm 缓存；未联网重试，符合本轮约束 |
 | 5 | 配置迁移（v0.2.8 → v3.0.0） | `npx vitest run test/core/config-migration.test.ts` | **PASS** | 10/10 用例通过 |
-| 5b | 迁移字段探针（dist 构建） | 直接 import `dist/config.js` 调用 `migrateConfig()` | **PASS** | `sendMode='auto'`、`safeMode=false`、`onboardingDone=false`、`apiToken=''`；旧字段与未知字段保留；二次迁移幂等 |
-| 5c | 迁移字段探针（工作树源码） | 直接 import `src/config.ts` 调用 `migrateConfig()` | **PASS（未进 dist）** | 追加 `readOnlyTestMode=false`（默认关闭）、`ocrPipelineMode='v3'` 迁移；见 §5.3 与任务书预期差异 |
+| 5b | 迁移字段探针（dist 构建） | 直接 import `dist/config.js` 调用 `migrateConfig()` | **PASS** | `sendMode='auto'`、`safeMode=false`、`onboardingDone=false`、`apiToken=''`、`readOnlyTestMode=false`、`ocrPipelineMode='v3'`；旧字段与未知字段保留；二次迁移幂等 |
+| 5c | 只读测试模式（readOnlyTestMode）行为 | 离线 harness（假宿主 + 发布包 dist + 真实 HTTP） | **PASS（离线 mock）** | `/test/send`、`/drafts/approve` 均 **409 `read-only-mode`**，草稿状态不变、无 `outbox.jsonl`；`/status`/`/config`/`security` 透出开关；14/14 PASS（§5.3/§6.3） |
 | 6 | mock 启动 + API 冒烟 | `npm run verify:api`（假宿主 + 真实 dist + 真实 HTTP 端口） | **PASS** | 25/25 项通过（鉴权 403、health、status、config、日志、人格、市场、表情、help、test/send 成功、频控拒绝、test/inbound、pause/resume、404） |
 | 7 | 安全草稿模式（sendMode=draft） | 临时 harness（同 verify-api 思路，见 §6.2） | **PASS** | 13/13 项通过：草稿生成但不发送、批准后才发送、重复批准 409、不存在 404 |
-| 7b | 只读测试模式（readOnlyTestMode）行为 | 源码已接线、`dist` 未重建 | **未验证（待集成后复验）** | 见 §9.2 |
 | 8 | 卸载步骤 | 文档化（不实际卸载用户 profile） | **文档完成 / 未实机执行** | 见 §7.1 |
 | 9 | 回退 v0.2.8 | 文档化（不实际切换版本） | **文档完成 / 未实机执行** | tag `v0.2.8` 存在；见 §7.2 |
 | 10 | 版本一致性 | 三处比对 | **PASS** | `package.json` / `src/index.ts:83` / `dist/index.js:41` 均 `3.0.0`（实际行号 83，非任务书早前记录的 82） |
 | 11 | 隐私文件不带入包 | 解包文件遍历 + 内容检查 | **PASS** | 无 `.env`、`state.json`、`*.log`、截图、`audit*.jsonl` 等运行时数据；图片仅 18 张内置表情 |
-| 12 | 敏感信息扫描 | `node scripts/check-sensitive.mjs` | **HEAD PASS；工作树的 2 处误报已在本轮最终复核前修复（最终 212 文件 0 命中）** | 干净 clone（HEAD `c05a24a`）扫描 203 个受跟踪文本文件 **0 命中**；当前工作区因队友未提交的 SSRF 测试夹具命中 2 处（非本文档、不在我的写域），见 §9.4 |
+| 12 | 敏感信息扫描 | `node scripts/check-sensitive.mjs` | **PASS** | **212 个受跟踪文本文件，0 命中，exit 0**（2026-11-01 11:25 / 11:40 两次实测；上一轮工作树 2 处误报已由 Lead 修复） |
+
+> **收尾最终门禁（2026-11-01 11:40，README/文档更新后复跑）**：`npm run typecheck` exit 0；
+> `npm run test:sandbox` **42 文件 / 709 用例全过**（2.59s）；`check-sensitive` 212 文件 0 命中；
+> `check-package` 189 候选 0 违规（9 条垃圾仅警告）；`npm pack --dry-run` 192 文件 / 749,729 B / 2,233,778 B、垃圾 0；
+> `verify:api` 25/25。注意：工作区仍有并行未提交改动与未跟踪文档，最终发布包必须基于最终代码重建后重跑（§10）。
 
 ## 3. 发布包内容核对
 
@@ -64,36 +70,37 @@
 
 ```text
 $ node scripts/check-package.mjs
-候选文件：181 个
+候选文件：189 个
 [check-package] 警告（1 条，不阻断）：
-  ! 发现 7 个本地忽略垃圾（不会进入 git 发布包；但用 npm pack 直接从开发目录打包会带进去…）
+  ! 发现 8 个本地忽略垃圾（不会进入 git 发布包；但用 npm pack 直接从开发目录打包会带进去…）
 [check-package] 结论：通过。发布包内容干净（private 仓库，不发布 npm）。
 exit 0
 ```
 
 - 校验内容：`private:true`、无 `publishConfig`、`main`/`types` 产物存在、`dist/` 非空、无运行时数据/日志/备份/截图、
   敏感串扫描（本机路径/手机号/邮箱/wxid/密钥）。
-- 7 个垃圾文件（仅警告）：`scripts/pwsh/wechat-uia.ps1.bak-*` ×3、`scripts/dev/__pycache__/*.pyc` ×2、
+- 8 个垃圾文件（仅警告）：`scripts/pwsh/wechat-uia.ps1.bak-*` ×4、`scripts/dev/__pycache__/*.pyc` ×2、
   `scripts/ocr/__pycache__/*.pyc` ×1、`scripts/py/__pycache__/*.pyc` ×1。
+- `check-package.mjs` 只承认 **git 受跟踪** 文件（干净 checkout 口径），因此不会把未跟踪文件计为候选；这与发布包应基于受跟踪文件的规则一致。
 
 ### 3.2 `npm pack --dry-run --json`
 
 | 指标 | 值 |
 | --- | --- |
 | 包名 / 版本 | `dsh-wechat-persona` `3.0.0`（`private:true`） |
-| 文件数 | **188** |
-| tarball 大小 | **762,683 B**（约 745 KiB） |
-| 解包大小 | **2,339,176 B**（约 2.23 MiB） |
+| 文件数 | **190** |
+| tarball 大小 | **705,755 B**（约 689 KiB） |
+| 解包大小 | **2,122,201 B**（约 2.02 MiB） |
 | dist 产物 | 106 文件（53 `.js` + 53 `.d.ts`，与 `src/**/*.ts` 的 53 个源文件一一对应） |
 | `node_modules` | 未打入（依赖声明在 `package.json`，由安装方解析） |
 
-内容分组（按 188 个文件统计）：
+内容分组（按 190 个文件统计）：
 
 | 分组 | 文件数 | 说明 |
 | --- | --- | --- |
 | `dist/` | 106 | 运行时代码 + 类型声明 |
-| `docs/` | 20 | 全部文档（含本文件所在目录，安装后可通过 `GET /help` 读取使用说明） |
-| `scripts/` | 28 | 含运行时脚本、OCR/验收脚本；**也包含 `scripts/dev/*.py` 开发探针脚本**（受 git 跟踪、敏感扫描 0 命中，但非运行必需，可按需修剪） |
+| `docs/` | 28 | 全部文档（含本文件；安装后可通过 `GET /help` 读取使用说明） |
+| `scripts/` | 22 | 运行时脚本、OCR/验收脚本；**也包含 `scripts/dev/*.py` 开发探针脚本**（受 git 跟踪、敏感扫描 0 命中，但非运行必需，可按需修剪） |
 | `stickers/` | 18 | 内置表情 PNG（唯一图片类内容） |
 | `personas/` + `persona/` | 6 | 4 个内置人格 + 旧版 persona 模板 |
 | `locale/` | 2 | 中/英文案 |
@@ -101,13 +108,15 @@ exit 0
 | 根文件（npm 默认随包） | 4 | `package.json`、`LICENSE`、`README.md`、`CHANGELOG.md` |
 | 根文件（`files` 字段显式声明） | 2 | `cordis.patch.yml`、`icon.svg` |
 
-> 计数口径说明：以上为打包时快照。**本文件**（`docs/PRE-RELEASE-INSTALL.md`）在打包时尚未被 git 跟踪，
-> 因此未计入 181/188；它被提交后 `check-package` 候选数 +1（182），`npm pack` 文件数 +1（189）。
+> 计数口径说明：以上为 2026-11-01 task-25 复核快照（HEAD `2823439` + 工作区未提交改动）。
+> 当时 `docs/` 下有 2 个**未跟踪**文件（`docs/PII-INVENTORY.md`、`docs/V3-PRIVACY-AND-DEVICE-READINESS.md`）被 `files: docs` 的 glob 带进 pack，
+> 其中一个计入 190（另一个因路径/构建时点差异未计入）；`check-package` 候选 189 只统计受跟踪文件，因此两者相差 1。
+> 这正是「发布包应基于受跟踪文件制作」的直接证据。
 
-**发现（警示，不阻断）**：`npm pack` 会把 `scripts/` 下 7 个被 `.gitignore` 忽略的调试垃圾一并打入
-（3 个 `*.bak-*` + 4 个 `__pycache__/*.pyc`）。因此发布包应按
+**发现（警示，不阻断）**：`package.json files` 的 3 条排除项（`!**/*.bak-*`、`!**/__pycache__`、`!**/*.pyc`）已生效，
+task-25 实测 **pack 内垃圾 0**；但 `npm pack` 仍会把未跟踪文件打进包（与候选集差 1）。因此发布包应按
 [RELEASE-CHECKLIST.md](RELEASE-CHECKLIST.md) §6.4 用「git 受跟踪文件 + 本次 `dist/` 构建产物」制作，
-**不要直接分发 `npm pack` 产物**；预期干净包文件数 = `check-package` 候选 **181**（= 188 − 7）。
+**不要直接分发 `npm pack` 产物**；预期干净包文件数 = `check-package` 候选 **189**。
 
 ### 3.3 实际打包与解包核对
 
@@ -118,9 +127,9 @@ tar -xzf dsh-wechat-persona-3.0.0.tgz -C <临时目录>   # 解包为 package/..
 
 | 检查项 | 结果 |
 | --- | --- |
-| tarball SHA256 | `dc44d76802bc0ca811d315da7933c6b22b25cc6ee0262cb3797b8ec4160714e0`（**仅本次构建，非发布值**） |
-| 解包文件数 / 字节数 | 188 / 2,339,176（与 dry-run 完全一致） |
-| `package/package.json` | `name=dsh-wechat-persona`、`version=3.0.0`、`private=true`、`main=dist/index.js`、`types=dist/index.d.ts`、`files` 12 项、`engines.node>=22` |
+| tarball SHA256 | `64C229C1945C8C0646A213EC37F5C98D94D1F4E340D1C6704AD3E88E5015819B`（**仅本次构建，非发布值**） |
+| 解包文件数 / 字节数 | 190 / 2,122,201（与 dry-run 完全一致） |
+| `package/package.json` | `name=dsh-wechat-persona`、`version=3.0.0`、`private=true`、`main=dist/index.js`、`types=dist/index.d.ts`、`files` 15 项（12 + 3 个 `!` 排除项）、`engines.node>=22` |
 | 关键产物 | `dist/index.js`、`dist/index.d.ts`、`dist/config.js`、`client/client.js`、`client/lib.js`、`personas/builtin/*.json`、`locale/zh.json`、`icon.svg`、`cordis.patch.yml`、`README.md`、`CHANGELOG.md`、`LICENSE`、`scripts/check-package.mjs`、`docs/RELEASE-CHECKLIST.md` 均存在 |
 | dist 版本常量 | `dist/index.js` 中 `PLUGIN_VERSION = '3.0.0'` |
 | `node --check client/client.js` | PASS（exit 0） |
@@ -128,6 +137,7 @@ tar -xzf dsh-wechat-persona-3.0.0.tgz -C <临时目录>   # 解包为 package/..
 | 截图/聊天图片 | 无；图片仅 18 张 `stickers/*.png` |
 | 测试/夹具 | 无 `test/**`、`test/fixtures/**`（`files` 未包含 `test`） |
 | `dist/` 脏数据 | 无（`dist` 仅 53 js + 53 d.ts） |
+| 打包垃圾 | **0**（8 个 gitignore 垃圾未被带入；`files` 排除项生效） |
 
 ## 4. 干净临时目录「模拟安装」
 
@@ -205,21 +215,28 @@ Test Files  1 passed (1)   Tests  10 passed (10)   exit 0
 > 说明：配置内没有独立的 `model` 字段（模型由 DSH 宿主默认模型选择，插件读宿主 `agentDefaultModel`）；
 > 因此「model 不丢」在迁移层的等价验证是「未知/旧字段原样保留」，上表已覆盖。
 
-### 5.3 只读模式（任务书预期 vs 实际实现，重要差异）
+### 5.3 只读测试模式（任务书预期 vs 实际实现，重要差异）
 
 - **任务书第五部分设想**：配置字段 `readOnlyMode`，迁移后**默认 true**（默认只读、真实发送被禁用）。
-- **当前代码（工作树，未提交）实际**：字段名为 **`readOnlyTestMode`**，`src/config.ts:326` 的 schema 默认 **`false`**，
+- **当前代码实际**：字段名为 **`readOnlyTestMode`**，`src/config.ts:326` 的 schema 默认 **`false`**，
   迁移在 `src/config.ts:548-551` 补 `false` 并提示「只读测试模式默认关闭」；设计说明为「发布前验收专用，
   开启后代码层拒绝真实通道发送与键鼠模拟，重启后保持；默认关闭以保持升级兼容」。
-- 已在源码接线（`dist` 尚未重建，故本次安装包不含该逻辑）：
-  - `src/engine/engine.ts:235`（start 时只读不启动真实通道发送）、`:369`（status 暴露）、
-    `:501`（发送门禁 `checkReadOnly`，`mock` 通道放行）；
-  - `src/server/api.ts:1299/1304/1312`（status/config 暴露）、`:1752`（`/test/send` 拒绝）、`:1809`（`/drafts/approve` 拒绝）。
+- **当前 `dist`（10:54 构建）已包含该逻辑**，四层硬阻断（行号为 2026-11-01 工作树快照，代码并行改动时以函数名为准）：
+  - **引擎层**：`engine.start()` 只记录不阻断接收（`engine.ts:235`）、`engine.canSend()` 的 `checkReadOnly` 拦截真实通道（`:501`，`mock` 放行）、发送链路二次门禁（`:1120`）、`status()` 暴露（`:369-370`）；
+  - **桌面通道层**：`desktop.send()` **第一行**硬拒绝（`desktop.ts:1141-1146`，返回 `delivery:'not-sent'`，不调用脚本、不做键鼠模拟）；只读脚本参数 `readOnlyArgs()` 返回 `['-ReadOnly','-NoSearch']`（`:650-651`，用于 :902/:970/:1056）；
+  - **API 层**：`/test/send`（`api.ts:1732-1735`）与 `/drafts/approve`（`:1789-1792`）对真实发送硬拒 409 `read-only-mode`；`/status`/`/config`/`security` 透出开关（`:1280`/`:1285`/`:1293`）；
+  - **PS1 脚本层**：`-ReadOnly` 或 `WXUIA_READ_ONLY`（`scripts/pwsh/wechat-uia.ps1:69`、`:166-167`）→ send 在定位窗口前失败（`:1604`），read 强制 `-NoSearch`（`:1608`），不恢复/移动/置顶/切前台窗口。
+- 验证覆盖：离线 harness 验证**引擎门禁 + API 409**（基于 dist 构建，14/14 PASS）；桌面通道与 PS1 两层为**代码核查**（真实微信窗口未执行，需用户授权后复验）。
 - 另新增 `ocrPipelineMode: 'legacy' | 'v3'`（默认 `v3`，可一键回退 v0.2.8 OCR 行为），见 `src/config.ts:37/96/327/553-556`。
-- 迁移探针（直接 import 工作树 `src/config.ts`）：`readOnlyTestMode=false`、`ocrPipelineMode='v3'`，迁移 notes 增加两条；
-  旧字段与未知字段同样保留、二次迁移幂等。
-- **待办（发布前必须决策/复验）**：任务书要求「默认只读」与代码「默认关闭」不一致——若发布前真实微信只读测试需要
-  默认隔离，必须显式开启 `readOnlyTestMode`（并重建 dist）；`readOnlyTestMode` 的拒绝行为需在最终构建上复验。
+- 迁移探针（dist）：`readOnlyTestMode=false`、`ocrPipelineMode='v3'`；旧字段与未知字段保留、二次迁移幂等。
+- **只读行为离线验证（task-25，§6.3）**：`readOnlyTestMode=true` 时
+  - `POST /test/send` → **409** `只读测试模式已开启：已拒绝一切真实发送（POST /test/send）`（detail `read-only-mode`）；
+  - `POST /drafts/approve` → **409** `只读测试模式已开启：已拒绝草稿批准发送（代码层不触达真实通道）`（detail `read-only-mode`）；
+  - 草稿保持 `pending`、dataDir 无 `outbox.jsonl`；`POST /drafts/reject` 仍可用（拒绝不发送）。
+  - 14/14 项 PASS，详见 §6.3。
+- **发布前决策（仍需维护者确认）**：任务书要求「默认只读」与代码「默认关闭」不一致。若真实设备只读测试需要默认隔离，
+  应显式开启 `readOnlyTestMode` 并在**最终构建**上复验；若保持默认关闭（升级兼容），发布说明必须写明「开启方式与当前默认值」。
+  真实微信窗口下的只读行为仍未验证（需用户授权）。
 
 ## 6. mock 启动与安全草稿模式
 
@@ -264,8 +281,34 @@ PASS  批准不存在草稿 → 404
 ```
 
 - 说明：批准路径会重走暂停/熔断/预算/白名单/频控/安全模式/幂等账本门禁，并复用草稿的 `opId`；
-  以上验证的是「未开启只读模式」时 mock 通道可批准发送。**只读模式下 `/drafts/approve` 必须被拒绝**（`api.ts:1809`），
-  因 `dist` 未重建，列入 §9.2 待复验。
+  以上验证的是「未开启只读模式」时 mock 通道可批准发送。**只读模式下 `/drafts/approve` 被 409 拒绝**已由 §6.3 验证。
+
+### 6.3 只读模式离线 harness（task-25 新增，14/14 PASS）
+
+用与 `verify-api` 相同的假宿主方式启动插件（`activeChannel=mock`、`sendMode=draft`、`readOnlyTestMode=true`、白名单 1 个虚构联系人），
+经真实 HTTP 路由验证「只读开启后任何发送路径都被拒绝」：
+
+```text
+PASS  dist/index.js 可导入（发布包 dist）
+PASS  路由注册完成（26 条）
+PASS  GET /health → 200 且 version=3.0.0
+PASS  GET /status 顶层 readOnlyTestMode=true
+PASS  GET /status.status.readOnlyTestMode=true
+PASS  GET /status.security.readOnlyTestMode=true
+PASS  GET /config readOnlyTestMode=true
+PASS  POST /test/send → 409 且 detail=read-only-mode
+PASS  POST /test/inbound → 202（入站不受影响）
+PASS  sendMode=draft 生成 pending 草稿（reason=draft-mode）
+PASS  POST /drafts/approve → 409 且 detail=read-only-mode
+PASS  批准被拒后草稿仍为 pending（状态未变）
+PASS  POST /drafts/reject → 200（拒绝发送仍允许）
+PASS  dataDir 无 outbox.jsonl（未发生任何发送）
+共 14 项，通过 14，失败 0，exit 0
+```
+
+- 额外核对：dataDir 仅出现 `api-token`、`audit.jsonl`、`drafts.json`、`drafts.jsonl`、`memory/`、`send-ledger.json`、`state.json`；
+  审计事件包含 `read-only-mode`（8 条）记录拒绝原因。
+- 局限：mock 通道 + 独立临时 dataDir，**不是**真实微信/真实 DSH profile；真实环境只读行为仍需用户授权后验证。
 
 ## 7. 卸载与回退步骤（文档化，未实机执行）
 
@@ -329,57 +372,51 @@ npm run build
 
 ### 9.2 代码状态类（发布前必须复验）
 
-1. **`dist/` 早于源码**：验收用 `dist` 构建于 10:33:26，而 `src/config.ts`（10:39）、`src/engine/engine.ts`（10:41）、
-   `src/server/api.ts`（10:41）之后加入 `readOnlyTestMode` / `ocrPipelineMode` 逻辑。因此：
-   - 本次 tarball **不含**只读模式与 OCR 流水线开关；
-   - `readOnlyTestMode` 下 `/test/send`、`/drafts/approve` 是否被拒绝 → **待最终代码 `npm run build` 后复验**；
-   - 发布前必须重建 `dist` 并重跑本清单（包内容、版本、mock、草稿、只读）。
+1. **`dist/` 与源码时点**：task-25 使用 10:54 构建的 dist，已包含 `readOnlyTestMode` / `ocrPipelineMode`，只读拒绝已离线验证（§6.3）。
+   但工作区仍有队友未提交改动（§9.3）——**发布包必须基于最终代码重新 `npm run build` 并重跑本清单**（包内容、版本、mock、草稿、只读）。
 2. **只读模式默认值差异**：任务书设想 `readOnlyMode` 默认 `true`；实际字段 `readOnlyTestMode` 默认 `false`（升级兼容）。
-   若发布前真实设备只读测试要求默认隔离，需显式开启并复验（见 §5.3）。
+   发布前需由维护者决定：若真实设备只读测试要求默认隔离，显式开启并在最终构建上复验；否则发布说明写清默认值与开启方式（见 §5.3）。
 3. **`ocrPipelineMode` 生产路径**：默认 `v3`，`legacy` 回退分支本次未在真实读取路径验证（仅迁移层验证存在性）。
-4. **工作树并行修改**：验收期间其他队友/Lead 仍在改 `src/engine/engine.ts`、`src/server/api.ts`、`scripts/**`、
-   `test/**`，并新增 `docs/OCR-REAL-DEVICE-TEST-PLAN.md`、`scripts/ocr/analyze-errors.mjs`、
-   `test/channels/desktop-id-stability.test.ts` 等；最终发布包必须基于最终代码重新构建与复验。
+4. **工作树并行修改**：task-25 期间其他队友仍在改 `src/engine/engine.ts`、`src/server/api.ts`、`src/core/persona-market.ts`、
+   `scripts/ocr/bench.mjs`、`test/**`，并新增未跟踪文档/测试（§9.3）；发布包与门禁必须基于最终代码重跑。
+5. **npm pack 带未跟踪文件**：本节 §3.2 已实测（190 vs 189），发布包按 §6.4 用受跟踪文件制作。
 
-### 9.3 工作树漂移记录（验收快照）
-
-验收开始时 `git status --short` 为空（HEAD `c05a24a`）。验收结束时（约 10:52）HEAD 未变，工作树已有多处其他队友的并行改动：
+### 9.3 工作树漂移记录（task-25 复核快照，2026-11-01 11:34）
 
 ```text
- M client/client.js
- M scripts/ocr/engines.mjs
- M scripts/verify-api.mjs
- M src/config.ts
- M src/engine/engine.ts
- M src/server/api.ts
- M test/core/persona-market.test.ts
- M test/server/api.test.ts
-?? docs/OCR-REAL-DEVICE-TEST-PLAN.md
-?? docs/PRE-RELEASE-INSTALL.md          # 本文件
-?? scripts/ocr/analyze-errors.mjs
-?? test/channels/desktop-id-stability.test.ts
+ M CHANGELOG.md                            # task-25 本轮修改
+ M README.md                               # task-25 本轮修改
+ M docs/ARCHITECTURE.md                    # task-25 本轮修改
+ M docs/RELEASE-GUIDE.md                   # task-25 本轮修改
+ M scripts/ocr/bench.mjs                   # 队友并行工作（OCR 评估）
+ M src/core/persona-market.ts              # 队友并行工作（隐私整改）
+ M src/engine/engine.ts                    # 队友并行工作
+ M src/server/api.ts                       # 队友并行工作
+ M test/core/persona-market.test.ts        # 队友并行工作
+ M test/engine/acceptance.test.ts          # 队友并行工作
+ M test/server/api.test.ts                 # 队友并行工作
+?? docs/PII-INVENTORY.md                   # 队友新增（privacy-auditor）
+?? docs/V3-PRIVACY-AND-DEVICE-READINESS.md # 队友新增（privacy-auditor）
+?? test/channels/desktop-e2e.test.ts       # 队友新增
 ```
 
-本验收未修改上述任何 `src/**`、`scripts/**`、`test/**`、`client/**` 文件（仅新增本文档）；
-`verify-api.mjs` 的频控用例修复（`/test/send` 成功 + 立即第二次被 `not-sent` 拒绝）在本次运行中已生效（25/25 PASS）。
+本任务**未修改**上述任何 `src/**`、`scripts/**`、`test/**`、`client/**` 文件；task-25 只改文档、CI 与 `scripts/check-package.mjs` 所在写域（本轮未改该脚本）。
+最终测试文件数可能因 `desktop-e2e.test.ts` 进入跟踪而变为 42 个，发布前重跑需相应更新数字。
 
 ### 9.4 敏感信息扫描
 
-- **HEAD `c05a24a`（干净 clone）**：`node scripts/check-sensitive.mjs` 扫描 **203** 个受跟踪文本文件，**0 命中**，exit 0。
-- **当前工作树**：当时扫描 203 个文件命中 **2 处**（均在 `test/core/persona-market.test.ts:825`，夹具邮箱域名不在示例白名单）；本轮已改为 `example.com` 并复扫 **212 文件 0 命中**。
-  （队友未提交的 SSRF 测试夹具，URL userinfo 被 [真实邮箱] 规则误判/待脱敏），该文件**不在本任务写域**，
-  未改动；发布前需由作者改为虚构占位并重跑扫描（与 §8 门槛 8 相关）。
-- **本文档提交后的预演**：在临时 clone（HEAD `c05a24a`）中把本文档 `git add` 后复跑
-  `node scripts/check-sensitive.mjs` → 扫描 **204** 个受跟踪文本文件，**0 命中**，exit 0（证明本文件本身可过扫描）；
-  同时 `check-package` 候选数会由 181 变为 182、`npm pack` 文件数由 188 变为 189（见 §3.1 注）。
+- 2026-11-01 task-25 实测：`node scripts/check-sensitive.mjs` → **212 个受跟踪文本文件，0 命中，exit 0**（HEAD `2823439` + 工作区）。
+- 上一轮（task-19）工作树曾命中 2 处 SSRF 测试夹具邮箱，已由 Lead/作者修复为示例域名并复扫通过。
+- 注意：`check-sensitive` 只扫 **git 受跟踪**文件；`docs/PII-INVENTORY.md`、`docs/V3-PRIVACY-AND-DEVICE-READINESS.md`、`test/channels/desktop-e2e.test.ts`
+  等未跟踪文件**尚未被扫描**——提交前应 `git add` 后重跑（本文档自身已在 task-19 预演中通过扫描）。
 - 发布包（tarball）内已确认无运行时隐私数据（见 §3.3）。
 
 ## 10. 发布前建议
 
-1. 在**最终代码**上 `npm run build`，然后重跑本清单（尤其 §3 包内容、§4 模拟安装、§6 mock/草稿、§5.3 只读模式复验）。
+1. 在**最终代码**上 `npm run build`，然后重跑本清单（尤其 §3 包内容、§4 模拟安装、§6 mock/草稿/只读、§5.3 只读模式复验）。
 2. 按 [RELEASE-CHECKLIST.md](RELEASE-CHECKLIST.md) §6.4 用「git 受跟踪文件 + 本次 dist」制作干净发布包（**不要直接 `npm pack`**），
-   并同步更新其中「期望文件数」（现为旧值 **167**；本次实测 `check-package` 候选 **181**，重构建后以最新为准）。
-3. 修复 §9.4 的敏感扫描命中后重跑 `node scripts/check-sensitive.mjs`。
+   并同步更新其中「期望文件数」（task-25 实测 `check-package` 候选 **189**；最终以重构建后实测为准）。
+3. 提交前把未跟踪文件 `git add` 后重跑 `node scripts/check-sensitive.mjs`（当前受跟踪 212 文件 0 命中）。
 4. 明确 `readOnlyTestMode` 的发布默认值：若需要「默认只读」的真实设备验收，显式开启并在最终构建上验证
    `/test/send`、`/drafts/approve` 均被拒绝、重启后仍保持只读。
 5. 若希望发布包更小，可在维护者批准下从 `files` 中排除 `scripts/dev/**`、`scripts/ocr/**`、`scripts/py/**`
@@ -427,9 +464,9 @@ node scripts/check-sensitive.mjs
 | `readOnlyTestMode` 字段 / schema 默认 false / 迁移补齐 | `src/config.ts:89`、`:326`、`:548-551` |
 | `ocrPipelineMode` 类型 / schema / 迁移 | `src/config.ts:37`、`:327`、`:553-556` |
 | `sendMode` 类型与默认 auto / 迁移 | `src/config.ts:34`、`:304-306`、`:519-523` |
-| 只读模式发送门禁 | `src/engine/engine.ts:501`（canSend 的 `checkReadOnly`）、`:235`（start） |
-| 只读模式 API 拒绝 | `src/server/api.ts:1752`（`/test/send`）、`:1809`（`/drafts/approve`） |
-| 草稿队列 / 批准 / 拒绝 | `src/engine/engine.ts:723`（createDraft）、`:800-866`（approveDraft）、`:781-792`（rejectDraft） |
+| 只读模式发送门禁 | `src/engine/engine.ts:501`（canSend 的 `checkReadOnly`）、`:235`（start）、`:1120`（发送链路二次门禁） |
+| 只读模式 API 拒绝 | `src/server/api.ts:1732`（`/test/send`）、`:1789`（`/drafts/approve`） |
+| 草稿队列 / 批准 / 拒绝 | `src/engine/engine.ts:755`（persistDraft）、`:830`（approveDraft）、`:813`（rejectDraft）、`:694/707`（loadDrafts/saveDrafts） |
 | 幂等账本 | `src/core/send-ledger.ts`（`sendOperationId`、`shouldSend`、上限 200） |
 | 草稿 API | `src/server/api.ts`：`GET /drafts`、`POST /drafts/approve|reject` |
 | 安装说明 | `docs/使用说明.md` §3（安装/更新/卸载）、`README.md` §5 |
