@@ -117,15 +117,17 @@
 
 ## H. 自动化测试与门禁真数（Lead 统一复跑）
 
+> 终态快照：`feat/v3.0.0` HEAD `52945e3`，相对 `42a3caa` **24 个本地提交**，工作树干净，未 push、无新 tag。
+
 | 命令 | 结果 |
 | --- | --- |
 | `npm run typecheck` | 0 错（exit 0） |
-| `npm run test:sandbox` | **42 文件 / 709 用例全过**（2.55s，exit 0） |
+| `npm run test:sandbox` | **42 文件 / 709 用例全过**（2.57s，exit 0） |
 | `npm run build` | exit 0 |
 | `node scripts/check-sensitive.mjs` | 216 个受跟踪文本文件 0 命中（4 份本轮新文档 `git add` 后扫描；此前快照为 212） |
-| `node scripts/check-package.mjs` | 189 候选 0 违规（9 条 gitignore 垃圾仅警告，不进 git 包） |
+| `node scripts/check-package.mjs` | **通过**（9 条 gitignore 垃圾仅警告，不进 git 包） |
 | `npm run verify:api` | 25 项 / 25 通过（含频控拒绝正期望） |
-| `npm pack --dry-run` | 192 文件 / 749,729 B / 解包 2,233,778 B；0 `.bak-*`、0 `.pyc`（发布包建议按 RELEASE-CHECKLIST §6.4 用受跟踪文件制作） |
+| `npm pack --dry-run` | 192 文件 / 756,270 B / 解包 2,251,538 B；0 `.bak-*`、0 `.pyc`（发布包建议按 RELEASE-CHECKLIST §6.4 用受跟踪文件制作） |
 | PS1 5.1 `[Parser]::ParseFile` | ParseErrors=0、BOM=EF BB BF、LoneLF=0 |
 | 文档相对链接 | 102 条，0 缺失；ci.yml YAML 可解析（jobs=verify-windows,linux-guard） |
 
