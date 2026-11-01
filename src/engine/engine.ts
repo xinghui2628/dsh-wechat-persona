@@ -647,7 +647,9 @@ export class PersonaEngine {
     let blockedAt: number | null = null
     for (let index = 0; index < entries.length; index += 1) {
       // 补处理途中若再次暂停/熔断，剩余消息留在队列里等下次恢复。
-      if (this.canSend()) {
+      // 只读/安全模式/预算不在这里拦：交给 processInner 逐条判定并留审计（否则队列会在
+      // 只读/安全模式下永久滞留、且没有 read-only-mode 跳过记录）。
+      if (this.canSend({ checkBudget: false, checkSafeMode: false, checkReadOnly: false })) {
         blockedAt = index
         break
       }
@@ -1108,6 +1110,27 @@ export class PersonaEngine {
     }
     // 9.1：门禁全部通过 → validated（之后每一步都可能被新的暂停/熔断打断，发送前还会复查）。
     await this.transitionSendState('validated', { contactId: message.contactId, msgId: message.id }, now)
+
+    // 只读测试模式（任务书 §5 / next §7 只读副作用）：
+    // 真实通道下，默认诊断不得对私人聊天调用云端 LLM、联网搜索或写入消息记忆——在
+    // validated 之后、任何外部副作用（LLM / 搜索 / 记忆）之前直接跳过，原因记为
+    // 'read-only-mode'（需单独授权后才可进行真实聊天诊断）。审计/状态落盘仍会写入
+    // （诊断必需，见 docs/READ-ONLY-MODES.md「副作用」表）。
+    // canSend 的只读门禁保留作二道防线（覆盖 sendTest / 草稿批准 / 重试等其它入口）。
+    if (config.readOnlyTestMode === true && this.deps.channel.id !== 'mock') {
+      await this.transitionSendState('cancelled', { contactId: message.contactId, msgId: message.id }, now)
+      await this.skip(
+        message,
+        {
+          skip: true,
+          reason: READ_ONLY_SKIP_REASON,
+          detail:
+            '只读测试模式：未授权对真实聊天调用云端 LLM、联网搜索或写入消息记忆，已跳过（需单独授权后才可进行真实聊天诊断）',
+        },
+        now,
+      )
+      return
+    }
 
     // 4) 预算：超限直接停
     state.budget = normalizeBudget(state.budget, now)

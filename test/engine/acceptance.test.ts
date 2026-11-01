@@ -1234,40 +1234,44 @@ describe('发布前验收：只读测试模式（真实发送从代码层完全�
     reply: { ...defaultConfig().reply, stickerProbability: 0 },
   }
 
-  it('真实通道：LLM 正常生成，但 channel.send 一次都不调用；审计记录 read-only-mode', async () => {
+  it('真实通道：只读下不调用云端 LLM / 联网搜索 / 不写消息记忆，channel.send 一次都不调用', async () => {
     const h = makeHarness({ config: readOnlyConfig, channelId: 'desktop' })
     await h.engine.start()
     expect(h.channel.startCalls).toBe(1)
-    await h.engine.handleInbound(inbound())
-    expect(h.llm.calls).toHaveLength(1)
+    await h.engine.handleInbound(inbound({ text: '帮我联网搜一下今天的新闻' }))
+    // task-22 只读副作用：真实私人聊天不得进云端 LLM、不得联网搜索、不得写消息记忆
+    expect(h.llm.calls).toHaveLength(0)
+    expect(h.search.queries).toHaveLength(0)
+    expect([...h.store.files.keys()].some((key) => key.startsWith('memory/'))).toBe(false)
     expect(h.channel.sent).toHaveLength(0)
+    expect(h.channel.sendSignals).toHaveLength(0)
     const status = (await h.engine.status()) as unknown as { readOnlyTestMode?: boolean }
     expect(status.readOnlyTestMode).toBe(true)
     expect(h.audit.reasons('skip')).toContain('read-only-mode')
     const blocked = h.audit.events.find((event) => event.type === 'skip' && event.reason === 'read-only-mode')
-    expect(String(blocked?.detail)).toContain('只读测试模式')
+    expect(String(blocked?.detail)).toContain('云端 LLM')
     expect(h.state.stats.sends).toBe(0)
   })
 
   it('mock 通道不受影响：只读测试模式允许 mock 空转', async () => {
     const h = makeHarness({ config: readOnlyConfig })
     await h.engine.handleInbound(inbound())
+    expect(h.llm.calls).toHaveLength(1)
     expect(h.channel.sent.length).toBeGreaterThanOrEqual(1)
   })
 
-  it('sendTest 与草稿批准走同一门禁：返回 not-sent，不触达通道', async () => {
+  it('sendTest / 草稿批准走 canSend 二道防线：not-sent；只读下不生成草稿', async () => {
     const h = makeHarness({ config: { ...readOnlyConfig, sendMode: 'draft' as const }, channelId: 'desktop' })
     await h.engine.handleInbound(inbound())
-    const drafts = await h.engine.listDrafts()
-    expect(drafts).toHaveLength(1)
+    // 只读早退发生在草稿分支之前：既不发送、也不落草稿
+    expect(await h.engine.listDrafts()).toHaveLength(0)
     const sent = await h.engine.sendTest('张三', '只读测试')
     expect(sent.ok).toBe(false)
     expect(sent.delivery).toBe('not-sent')
     expect(String(sent.error)).toContain('只读测试模式')
     expect(h.channel.sent).toHaveLength(0)
-    const approved = await h.engine.approveDraft(drafts[0]!.id)
+    const approved = await h.engine.approveDraft('draft-not-exist')
     expect(approved.ok).toBe(false)
-    expect(String(approved.error)).toContain('只读测试模式')
     expect(h.channel.sent).toHaveLength(0)
   })
 
@@ -1284,6 +1288,118 @@ describe('发布前验收：只读测试模式（真实发送从代码层完全�
     expect(result.ok).toBe(false)
     expect(result.delivery).toBe('not-sent')
     await h2.engine.handleInbound(inbound())
+    expect(h2.llm.calls).toHaveLength(0)
     expect(h2.channel.sent).toHaveLength(0)
+  })
+})
+
+/* ─────────────────── task-22：只读模式绕过路径审计（mock 证明） ─────────────────── */
+
+describe('task-22 只读模式绕过路径审计（mock 证明）', () => {
+  const readOnlyConfig = {
+    readOnlyTestMode: true,
+    whitelist,
+    reply: { ...defaultConfig().reply, stickerProbability: 0 },
+  }
+
+  it('deferred 旧队列重放：重启后 flushDeferred 走 handleInbound，只读真实通道不调用 LLM/不发送', async () => {
+    const h = makeHarness({ config: readOnlyConfig, channelId: 'desktop' })
+    await h.store.writeJson('deferred-inbound.json', {
+      version: 1,
+      entries: [{ message: inbound(), deferredAt: h.clock.now() - 1000, reason: 'paused' }],
+    })
+    await h.engine.start()
+    expect(h.channel.startCalls).toBe(1)
+    expect(h.llm.calls).toHaveLength(0)
+    expect(h.channel.sent).toHaveLength(0)
+    expect(h.audit.reasons('skip')).toContain('read-only-mode')
+  })
+
+  it('重启后读取旧账本（unknown 终态）：只读 sendTest 仍 not-sent、不触达通道', async () => {
+    const h = makeHarness({ config: readOnlyConfig, channelId: 'desktop' })
+    await h.store.writeJson('send-ledger.json', {
+      version: 1,
+      entries: [
+        {
+          opId: 'op-old-unknown',
+          contactId: '张三',
+          partIndex: 0,
+          state: 'unknown',
+          attempts: 1,
+          delivery: 'unknown',
+          textHash: 'deadbeef',
+          updatedAt: h.clock.now() - 1000,
+        },
+      ],
+    })
+    await h.engine.start()
+    const result = await h.engine.sendTest('张三', '只读下补发旧消息')
+    expect(result.ok).toBe(false)
+    expect(result.delivery).toBe('not-sent')
+    expect(String(result.error)).toContain('只读测试模式')
+    expect(h.channel.sent).toHaveLength(0)
+  })
+
+  it('运行期切换：readOnly false → true 后，下一条消息立即跳过（无需重启）', async () => {
+    const h = makeHarness({
+      config: { whitelist, reply: { ...defaultConfig().reply, stickerProbability: 0 } },
+      channelId: 'desktop',
+    })
+    await h.engine.handleInbound(inbound())
+    expect(h.channel.sent.length).toBeGreaterThanOrEqual(1)
+    const sentBeforeSwitch = h.channel.sent.length
+    const llmBeforeSwitch = h.llm.calls.length
+    h.config.readOnlyTestMode = true
+    // 跳过频控（默认 minReplyIntervalSec=30 内第二条会先被判 rate-interval，测不到只读分支）
+    h.clock.advance(60_000)
+    await h.engine.handleInbound(inbound({ id: 'msg-after-switch', text: '切换后的一条' }))
+    expect(h.llm.calls).toHaveLength(llmBeforeSwitch)
+    expect(h.channel.sent).toHaveLength(sentBeforeSwitch)
+    expect(h.audit.reasons('skip')).toContain('read-only-mode')
+  })
+
+  it('配置组合矩阵：safeMode + readOnly + sendMode=draft + 真实通道 → LLM 0 / 发送 0 / 草稿 0；ocrPipelineMode 两种取值均无发送', async () => {
+    for (const mode of ['legacy', 'v3'] as const) {
+      const h = makeHarness({
+        config: {
+          ...readOnlyConfig,
+          safeMode: true,
+          sendMode: 'draft' as const,
+          ocrPipelineMode: mode,
+        },
+        channelId: 'desktop',
+      })
+      await h.engine.handleInbound(inbound())
+      expect(h.llm.calls, mode).toHaveLength(0)
+      expect(h.channel.sent, mode).toHaveLength(0)
+      expect(await h.engine.listDrafts(), mode).toHaveLength(0)
+      expect(h.state.stats.sends, mode).toBe(0)
+    }
+  })
+
+  it('旧草稿队列不构成绕过：只读下 listDrafts 可读，approveDraft 拒绝且不发送', async () => {
+    const h = makeHarness({ config: readOnlyConfig, channelId: 'desktop' })
+    await h.store.writeJson('drafts.json', {
+      version: 1,
+      drafts: [
+        {
+          id: 'draft-old',
+          opId: 'op-old',
+          contactId: '张三',
+          contactName: '张三',
+          text: '旧草稿内容',
+          createdAt: h.clock.now() - 60_000,
+          expiresAt: h.clock.now() + 60_000,
+          status: 'pending',
+          reason: 'draft-mode',
+        },
+      ],
+    })
+    await h.engine.start()
+    expect(await h.engine.listDrafts()).toHaveLength(1)
+    const approved = await h.engine.approveDraft('draft-old')
+    expect(approved.ok).toBe(false)
+    expect(String(approved.error)).toContain('只读测试模式')
+    expect(h.channel.sent).toHaveLength(0)
   })
 })

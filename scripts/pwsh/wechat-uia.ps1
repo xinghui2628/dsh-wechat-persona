@@ -2178,6 +2178,32 @@ if ($hwnd -ne [IntPtr]::Zero) { Ensure-UsableWindow $hwnd }
                 $k--
             }
         }
+        if (-not $matched -and $n -gt 0 -and $m -gt 0) {
+            # 滚动/窗口偏移兜底：尾对齐失败时，从基线尾部向前找「最后一个能在当前窗口里找到的基线行」当锚点。
+            # 只把锚点之后的行当作新消息；滚回已知历史时 newTexts 为空且不重置基线，
+            # 避免旧消息因换了新帧号/序号/几何而生成新 id 被重复投递（task-23 消息身份专项）。
+            $anchorPrevIndex = -1
+            $anchorCurrentIndex = -1
+            for ($pi = $m - 1; $pi -ge 0 -and $pi -ge ($m - 20); $pi--) {
+                $anchorText = [string]$prevTexts[$pi]
+                if ([string]::IsNullOrWhiteSpace($anchorText)) { continue }
+                for ($ti = $n - 1; $ti -ge 0; $ti--) {
+                    if ([string]$texts[$ti] -eq $anchorText) { $anchorPrevIndex = $pi; $anchorCurrentIndex = $ti; break }
+                }
+                if ($anchorPrevIndex -ge 0) { break }
+            }
+            if ($anchorPrevIndex -ge 0) {
+                $matched = $true
+                if ($anchorCurrentIndex -lt ($n - 1)) {
+                    $k = $anchorCurrentIndex + 1
+                    $newTexts = @($texts[$k..($n - 1)])
+                    $newCandidates = @($candidates[$k..($n - 1)])
+                }
+                $combined = @(@($prevTexts) + @($newTexts))
+                $mergedBaseline = @($combined | Select-Object -Last 200)
+                Write-Debug-Log ("滚动锚点对齐：基线锚点=" + $anchorPrevIndex + " 当前锚点=" + $anchorCurrentIndex + " 新行数=" + $newTexts.Count)
+            }
+        }
         if ($matched) {
             if ($k -lt $n) {
                 $newTexts = @($texts[$k..($n - 1)])

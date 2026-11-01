@@ -20,8 +20,14 @@ import type {
   PersonaPackV2,
   PersonaSummary,
 } from '../../src/types.ts'
-import { PersonaMarket, MARKET_MAX_RESPONSE_BYTES, assertSafeMarketUrl, isPrivateMarketHost } from '../../src/core/persona-market.ts'
-import type { FetchLike } from '../../src/core/persona-market.ts'
+import {
+  PersonaMarket,
+  MARKET_MAX_RESPONSE_BYTES,
+  assertSafeMarketUrl,
+  assertSafeResolvedMarketUrl,
+  isPrivateMarketHost,
+} from '../../src/core/persona-market.ts'
+import type { FetchLike, MarketHostResolver } from '../../src/core/persona-market.ts'
 import { parsePersonaPack, PersonaLibrary } from '../../src/core/persona-library.ts'
 import { FakeLogger, testConfig } from './fakes.ts'
 
@@ -838,14 +844,14 @@ describe('发布前安全复核：SSRF 边界（当前实现 + 已知缺口证�
     }
   })
 
-  it('[已知缺口 P2] IPv4-compatible / NAT64 形式的 IPv6 字面量当前不被字符串校验拦截', () => {
-    // 说明：需要特定网络栈（IPv4-compatible 路由 / NAT64）才可能真正连到 127.0.0.1，
-    // 当前实现按字符串判定会放行；修复方案与测试设计见 docs/SECURITY-REVIEW-PRE-RELEASE.md。
-    expect(() => assertSafeMarketUrl('http://[::127.0.0.1]/')).not.toThrow()
-    expect(() => assertSafeMarketUrl('http://[64:ff9b::127.0.0.1]/')).not.toThrow()
+  it('IPv4-compatible / NAT64 形式的 IPv6 字面量已被拒绝（task-22 修复）', () => {
+    // 修复前这些写法会绕过字符串校验；现在 parseIpv6Groups + embeddedIpv4 会提取内嵌 IPv4 判定。
+    for (const url of ['http://[::127.0.0.1]/', 'http://[64:ff9b::127.0.0.1]/', 'http://[::7f00:1]/']) {
+      expect(() => assertSafeMarketUrl(url), url).toThrow(/不允许指向本机或内网地址/)
+    }
   })
 
-  it('[已知缺口 P1] 公网域名通过字符串校验，DNS 解析/重绑定不由本实现校验（注入 fetch 证据）', async () => {
+  it('注入 fetch 的测试替身默认不触发真实 DNS；生产路径默认启用解析后校验', async () => {
     expect(isPrivateMarketHost('rebind.example.test')).toBe(false)
     const calls: FakeFetchCall[] = []
     const market = new PersonaMarket({
@@ -864,7 +870,7 @@ describe('发布前安全复核：SSRF 边界（当前实现 + 已知缺口证�
       ),
     })
     const result = await market.fetchIndex()
-    // 当前实现只校验 URL 字符串，真正解析到哪个 IP 由 fetch/DNS 决定（潜在 DNS rebinding）。
+    // 注入 fetchImpl 时 resolver=null（避免单测联网）；生产环境默认走 defaultMarketHostResolver。
     expect(result.source).toBe('remote')
     expect(calls[0]?.url).toBe('http://rebind.example.test/index.json')
   })
@@ -882,5 +888,182 @@ describe('发布前安全复核：SSRF 边界（当前实现 + 已知缺口证�
       expect(result.source, target).toBe('builtin')
       expect(calls, target).toHaveLength(1)
     }
+  })
+})
+
+/* ────────────── task-22 SSRF / DNS rebinding 防护（next §7） ────────────── */
+
+describe('task-22 SSRF/DNS rebinding 防护', () => {
+  const resolverOf = (table: Record<string, string[]>, calls: string[] = []): MarketHostResolver => {
+    return async (hostname: string) => {
+      calls.push(hostname)
+      const addresses = table[hostname]
+      if (!addresses) throw new Error(`测试未配置解析结果：${hostname}`)
+      return addresses
+    }
+  }
+
+  it('isPrivateMarketHost 覆盖 IPv4-mapped / IPv4-compatible / NAT64 / ULA / 链路本地 / 组播 / 文档段', () => {
+    for (const host of [
+      '::1',
+      '::',
+      '::ffff:7f00:1',
+      '::ffff:127.0.0.1',
+      '::127.0.0.1',
+      '::7f00:1',
+      '64:ff9b::7f00:1',
+      '64:ff9b::127.0.0.1',
+      'fc00::1',
+      'fd12:3456::1',
+      'fe80::1',
+      'ff02::1',
+      '2001:db8::1',
+      '127.0.0.1',
+      '10.1.2.3',
+      '172.16.0.1',
+      '192.168.1.1',
+      '169.254.1.1',
+      '100.64.0.1',
+      '198.18.0.1',
+      '224.0.0.1',
+      'localhost',
+      'foo.local',
+      'example.internal',
+      '2130706433',
+      '127.1',
+      'not-an-ip:gggg::1',
+    ]) {
+      expect(isPrivateMarketHost(host), host).toBe(true)
+    }
+    for (const host of ['2001:4860:4860::8888', '93.184.216.34', 'example.com']) {
+      expect(isPrivateMarketHost(host), host).toBe(false)
+    }
+  })
+
+  it('assertSafeResolvedMarketUrl：公网解析放行、私有/混合解析拒绝、解析失败与空结果拒绝', async () => {
+    const calls: string[] = []
+    const publicUrl = 'http://index.example.test/index.json'
+    await expect(
+      assertSafeResolvedMarketUrl(publicUrl, '人格索引地址', resolverOf({ 'index.example.test': ['93.184.216.34'] }, calls)),
+    ).resolves.toBe(publicUrl)
+    expect(calls).toEqual(['index.example.test'])
+
+    await expect(
+      assertSafeResolvedMarketUrl(publicUrl, '人格索引地址', resolverOf({ 'index.example.test': ['127.0.0.1'] })),
+    ).rejects.toThrow(/解析到本机或内网地址/)
+
+    await expect(
+      assertSafeResolvedMarketUrl(publicUrl, '人格索引地址', resolverOf({ 'index.example.test': ['93.184.216.34', '10.0.0.1'] })),
+    ).rejects.toThrow(/解析到本机或内网地址/)
+
+    await expect(
+      assertSafeResolvedMarketUrl(publicUrl, '人格索引地址', async () => {
+        throw new Error('dns boom')
+      }),
+    ).rejects.toThrow(/域名解析失败/)
+
+    await expect(assertSafeResolvedMarketUrl(publicUrl, '人格索引地址', async () => [])).rejects.toThrow(/域名解析失败/)
+
+    // 错误信息不回显解析出的 IP（避免把内网地址写进日志/响应）
+    try {
+      await assertSafeResolvedMarketUrl(publicUrl, '人格索引地址', resolverOf({ 'index.example.test': ['10.20.30.40'] }))
+      throw new Error('unreachable')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      expect(message).toContain('解析到本机或内网地址')
+      expect(message).not.toContain('10.20.30.40')
+      expect(message).not.toContain('index.example.test')
+    }
+  })
+
+  it('IP 字面量不再调用解析器：公网字面量放行、内网字面量直接拒绝', async () => {
+    const calls: string[] = []
+    const resolver = resolverOf({}, calls)
+    await expect(assertSafeResolvedMarketUrl('http://93.184.216.34/x.json', '远程地址', resolver)).resolves.toBe(
+      'http://93.184.216.34/x.json',
+    )
+    await expect(assertSafeResolvedMarketUrl('http://[::127.0.0.1]/', '远程地址', resolver)).rejects.toThrow(
+      /不允许指向本机或内网地址/,
+    )
+    expect(calls).toEqual([])
+  })
+
+  it('PersonaMarket：索引域名解析到公网 → 远程索引；解析到内网 → 回退内置且零请求', async () => {
+    const publicCalls: FakeFetchCall[] = []
+    const indexUrl = 'http://index.example.test/index.json'
+    const market = new PersonaMarket({
+      config: marketConfig(() => {}, indexUrl),
+      library: new FakeLibrary(),
+      logger: new FakeLogger(),
+      fetchImpl: fakeFetch(
+        {
+          [indexUrl]: () => jsonResponse({ version: 1, personas: [makeEntry({ id: 'persona-a', name: '人格 A' })] }),
+        },
+        publicCalls,
+      ),
+      resolveHostname: resolverOf({ 'index.example.test': ['93.184.216.34'] }),
+    })
+    const remote = await market.fetchIndex()
+    expect(remote.source).toBe('remote')
+    expect(publicCalls).toHaveLength(1)
+
+    const blockedCalls: FakeFetchCall[] = []
+    const blocked = new PersonaMarket({
+      config: marketConfig(() => {}, indexUrl),
+      library: new FakeLibrary(),
+      personas: [makeEntry({ id: 'builtin-small', name: '小号', url: '' })],
+      logger: new FakeLogger(),
+      fetchImpl: fakeFetch({}, blockedCalls),
+      resolveHostname: resolverOf({ 'index.example.test': ['127.0.0.1'] }),
+    })
+    const result = await blocked.fetchIndex()
+    expect(result.source).toBe('builtin')
+    expect(result.warning).toMatch(/解析到本机或内网地址/)
+    expect(blockedCalls).toHaveLength(0)
+  })
+
+  it('PersonaMarket：重定向目标域名解析到内网 → 拒绝跟随，回退内置且只请求第一跳', async () => {
+    const calls: FakeFetchCall[] = []
+    const indexUrl = 'http://index.example.test/index.json'
+    const redirectUrl = 'http://nested.example.test/index.json'
+    const market = new PersonaMarket({
+      config: marketConfig(() => {}, indexUrl),
+      library: new FakeLibrary(),
+      logger: new FakeLogger(),
+      fetchImpl: fakeFetch({ [indexUrl]: () => redirectResponse(redirectUrl) }, calls),
+      resolveHostname: resolverOf({
+        'index.example.test': ['93.184.216.34'],
+        'nested.example.test': ['192.168.1.10'],
+      }),
+    })
+    const result = await market.fetchIndex()
+    expect(result.source).toBe('builtin')
+    expect(calls).toHaveLength(1)
+  })
+
+  it('PersonaMarket.install：人格包域名解析到内网 → 抛错且不落库、不请求包地址', async () => {
+    const calls: FakeFetchCall[] = []
+    const indexUrl = 'http://index.example.test/index.json'
+    const packUrl = 'http://cdn.example.test/pack.json'
+    const library = new FakeLibrary()
+    const market = new PersonaMarket({
+      config: marketConfig(() => {}, indexUrl),
+      library,
+      logger: new FakeLogger(),
+      fetchImpl: fakeFetch(
+        {
+          [indexUrl]: () => jsonResponse({ version: 1, personas: [makeEntry({ id: 'persona-a', name: '人格 A', url: packUrl })] }),
+        },
+        calls,
+      ),
+      resolveHostname: resolverOf({
+        'index.example.test': ['93.184.216.34'],
+        'cdn.example.test': ['10.0.0.5'],
+      }),
+    })
+    await expect(market.install('persona-a')).rejects.toThrow(/解析到本机或内网地址/)
+    expect(library.installs).toHaveLength(0)
+    // 只请求索引，未请求人格包地址
+    expect(calls.map((call) => call.url)).toEqual([indexUrl])
   })
 })

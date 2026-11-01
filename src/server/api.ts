@@ -27,6 +27,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { extname, isAbsolute, relative, resolve } from 'node:path'
 import { defaultConfig } from '../config.ts'
 import type { WechatPersonaConfig, WhitelistEntry } from '../config.ts'
+import { fetchRemoteJson } from '../core/persona-market.ts'
 import { EMOTION_ORDER } from '../core/stickers.ts'
 import type {
   AuditLogLike,
@@ -822,40 +823,20 @@ function decodeBase64Image(raw: unknown): { ok: true; data: Buffer } | { ok: fal
 
 /**
  * 从 URL 下载人格包 JSON（POST /personas/install 的 {url} 分支）。
- * 只允许 http/https；超时/非 2xx/超大/非对象都抛可读错误。
+ *
+ * next §7：与人格市场统一走同一套远程下载校验（fetchRemoteJson）——
+ * 只允许 http/https、拒绝内网/回环/保留地址、重定向与 DNS 解析后逐跳校验、
+ * 要求 JSON Content-Type、2MB 上限、超时；不再单独实现一套弱校验。
  */
 async function downloadPersonaPack(url: string, timeoutMs: number): Promise<PersonaPackV2> {
-  let parsed: URL
-  try {
-    parsed = new URL(url)
-  } catch {
-    throw new Error('下载地址不是合法 URL')
-  }
-  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-    throw new Error('只支持 http/https 下载地址')
-  }
   if (typeof fetch !== 'function') throw new Error('当前环境不支持网络下载')
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), Math.max(1000, timeoutMs))
-  try {
-    const response = await fetch(parsed, { signal: controller.signal, headers: { accept: 'application/json' } })
-    if (!response.ok) throw new Error(`下载失败（HTTP ${response.status}）`)
-    const text = await response.text()
-    if (Buffer.byteLength(text, 'utf8') > 2 * 1024 * 1024) throw new Error('人格包超过 2MB 上限')
-    let data: unknown
-    try {
-      data = JSON.parse(text)
-    } catch {
-      throw new Error('下载内容不是合法 JSON')
-    }
-    if (!isPlainObject(data)) throw new Error('人格包内容必须是 JSON 对象')
-    return data as unknown as PersonaPackV2
-  } catch (error) {
-    if (error instanceof Error && error.name === 'AbortError') throw new Error('下载人格包超时')
-    throw error
-  } finally {
-    clearTimeout(timer)
-  }
+  const data = await fetchRemoteJson(url, {
+    action: '下载人格包',
+    timeoutMs: Math.max(1000, timeoutMs),
+    maxBytes: 2 * 1024 * 1024,
+  })
+  if (!isPlainObject(data)) throw new Error('人格包内容必须是 JSON 对象')
+  return data as unknown as PersonaPackV2
 }
 
 /* ─────────────────── 人格包导入：结构校验与消毒 ─────────────────── */
@@ -1053,6 +1034,8 @@ export interface OcrDiagnosticsView {
   engineVersion?: string
   secondOcrUsed?: boolean
   qualityStatus?: string
+  /** 受控 OCR 流水线：'legacy'（v0.2.8 行为）| 'v3'（气泡归属/融合/置信度门禁）。 */
+  pipelineMode?: string
   dualEngine: boolean
 }
 
@@ -1119,6 +1102,9 @@ export function normalizeOcrDiagnostics(input: unknown): OcrDiagnosticsView {
   const engineVersion = normalizeOcrText(ocr.engineVersion, 64)
   const secondOcrUsed = ocr.secondOcrUsed === true
   const qualityStatus = normalizeOcrText(ocr.qualityStatus, 32)
+  // task-23：受控 OCR 流水线开关（legacy/v3），只接受这两个真实取值，不编造。
+  const pipelineModeRaw = normalizeOcrText(ocr.pipelineMode, 16)
+  const pipelineMode = pipelineModeRaw === 'legacy' || pipelineModeRaw === 'v3' ? pipelineModeRaw : undefined
   const dualEngine = ocr.dualEngine === true || engines.length >= 2
   const available =
     captureId !== undefined ||
@@ -1128,7 +1114,8 @@ export function normalizeOcrDiagnostics(input: unknown): OcrDiagnosticsView {
     dpi !== undefined ||
     engineVersion !== undefined ||
     qualityStatus !== undefined ||
-    screenshotMode !== undefined
+    screenshotMode !== undefined ||
+    pipelineMode !== undefined
   if (!available) {
     return { ...fallback, channelId, channelState, capturedAt, reason: '通道 OCR 诊断数据格式不可识别' }
   }
@@ -1152,6 +1139,7 @@ export function normalizeOcrDiagnostics(input: unknown): OcrDiagnosticsView {
     engineVersion,
     secondOcrUsed,
     qualityStatus,
+    pipelineMode,
     dualEngine,
   }
 }

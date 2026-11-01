@@ -684,7 +684,9 @@ export class DesktopChannel {
         ? data.engines.map((engine) => String(engine))
         : this.ocrDiagnostics.engines,
       lines: typeof lineCount === 'number' ? lineCount : this.ocrDiagnostics.lines,
-      uncertainCount: plan.uncertainCount,
+      // 与 rejectCount 同口径：累计值（跨联系人/跨帧累加），不再被下一次 read 覆盖为 0。
+      // 调用方（api /diagnostics/ocr）白名单只有 uncertainCount，故不额外增加 lastUncertainCount 字段。
+      uncertainCount: this.uncertainCount,
       rejectCount: this.rejectCount,
       lastReadAt: Date.now(),
       durationMs: this.ocrStartedAt > 0 ? Date.now() - this.ocrStartedAt : this.ocrDiagnostics.durationMs,
@@ -975,7 +977,9 @@ export class DesktopChannel {
       const payload = data && data.ok === true ? data : null;
       const plan = payload ? this.planRead(item.name, payload) : null;
       const rawById = this.rawMessageMap(payload);
-      let verified: { text: string; id?: string } | null = null;
+      // 一帧内可能有多条新消息（例如连发两条同文）：必须逐条投递，只投最后一条会在
+      // ack 推进后让脚本 pending 丢弃其余消息，造成永久丢消息（task-23 e2e 场景 2 回归）。
+      const deliverable: OcrAcceptedMessage[] = [];
       let blockedAck = false;
       for (const message of plan?.accepted ?? []) {
         const text = message.text.trim();
@@ -997,9 +1001,9 @@ export class DesktopChannel {
             continue;
           }
         }
-        verified = { text, id: message.id };
+        deliverable.push(message);
       }
-      if (!verified) {
+      if (deliverable.length === 0) {
         if (blockedAck) {
           // 有低置信消息：不推进 ack，脚本下次重放（id 稳定），也不拿列表预览兜底。
           this.logger.debug?.(`[desktop] 本次读取存在低置信消息，保留 pending 下次再试：${item.name}`);
@@ -1020,10 +1024,22 @@ export class DesktopChannel {
         previewFallbacks.push(item);
         continue;
       }
+      // 逐条投递（保持脚本顺序）：list 预览只对应「最新一条」，因此 useFull 预览补全只用于最后一条；
+      // 其余多条一律使用 read 全文（read 全文是准确来源，不用可能被截断的列表预览替换）。
       const preview = item.preview.trim();
-      const fullText = await this.recheckGarbledText(item.name, args, verified.text);
-      const useFull = fullText.length >= preview.length || fullText.includes(preview) || preview.includes(fullText);
-      this.emitMessage(item.name, useFull ? fullText : preview, verified.id);
+      for (let emitIndex = 0; emitIndex < deliverable.length; emitIndex += 1) {
+        const message = deliverable[emitIndex];
+        const isLast = emitIndex === deliverable.length - 1;
+        const text = message.text.trim();
+        if (!isLast || !preview) {
+          this.emitMessage(item.name, text, message.id);
+          continue;
+        }
+        const fullText = await this.recheckGarbledText(item.name, args, text);
+        const useFull = fullText.length >= preview.length || fullText.includes(preview) || preview.includes(fullText);
+        this.emitMessage(item.name, useFull ? fullText : preview, message.id);
+      }
+      // 只有本帧没有需要保留 pending 的消息时才推进水位线；否则下一帧重放靠 inFlight/deliveredIds 去重。
       if (!blockedAck) this.commitAck(item.name, plan);
     }
     for (const item of previewFallbacks) this.emitPreview(item.name, correctOcrText(item.preview, this.contactNames()));

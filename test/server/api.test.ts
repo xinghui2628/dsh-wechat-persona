@@ -1559,6 +1559,7 @@ describe('Host HTTP API：OCR 诊断（Phase F 只读）', () => {
       engineVersion: 'winrt-1.2.0',
       secondOcrUsed: true,
       qualityStatus: 'degraded',
+      pipelineMode: 'v3',
     },
   }
 
@@ -1583,9 +1584,23 @@ describe('Host HTTP API：OCR 诊断（Phase F 只读）', () => {
       engineVersion: 'winrt-1.2.0',
       secondOcrUsed: true,
       qualityStatus: 'degraded',
+      pipelineMode: 'v3',
       dualEngine: true,
     })
     expect(diagnostics.secret).toBeUndefined()
+  })
+
+  it('task-23：OCR 流水线模式只透出 legacy/v3，非法值不编造', async () => {
+    const env = await makeEnv()
+    env.engine!.ocrDiagnosticsResult = { ocr: { captureId: 'cap-9', pipelineMode: 'legacy' } }
+    const legacyView = normalizeOcrDiagnostics(env.engine!.ocrDiagnosticsResult)
+    expect(legacyView.available).toBe(true)
+    expect(legacyView.pipelineMode).toBe('legacy')
+
+    env.engine!.ocrDiagnosticsResult = { ocr: { captureId: 'cap-9', pipelineMode: 'weird' } }
+    const weirdView = normalizeOcrDiagnostics(env.engine!.ocrDiagnosticsResult)
+    expect(weirdView.available).toBe(true)
+    expect(weirdView.pipelineMode).toBeUndefined()
   })
 
   it('task-12：诊断白名单补齐 pipeline-fixer 新增字段，缺失时安全忽略', async () => {
@@ -1943,7 +1958,7 @@ describe('发布前安全复核：鉴权强度 / 凭据泄露 / 草稿权限', (
     expect(tokenEnv.engine!.approveDraftCalls).toEqual(['draft-1'])
   })
 
-  it('[已知残余面 P2] POST /personas/install {url} 只校验协议，不拒绝内网地址（downloadPersonaPack 未做 SSRF 防护）', async () => {
+  it('[task-22 修复] POST /personas/install {url} 与市场共用统一 SSRF 校验：内网地址在 fetch 前被拒', async () => {
     const env = await makeEnv()
     const calls: string[] = []
     const originalFetch = globalThis.fetch
@@ -1952,10 +1967,19 @@ describe('发布前安全复核：鉴权强度 / 凭据泄露 / 草稿权限', (
       throw new Error('review-stub-blocked')
     }) as typeof fetch
     try {
-      const response = await call(env, 'POST', '/personas/install', { url: 'http://127.0.0.1:9/internal/pack.json' })
-      expect(calls).toHaveLength(1)
-      expect(calls[0]).toContain('127.0.0.1:9/internal/pack.json')
-      expectFail(response, 400, /安装人格失败/)
+      for (const url of [
+        'http://127.0.0.1:9/internal/pack.json',
+        'http://[::1]/internal/pack.json',
+        'http://[::127.0.0.1]/internal/pack.json',
+        'http://[64:ff9b::127.0.0.1]/internal/pack.json',
+        'http://2130706433/internal/pack.json',
+        'ftp://127.0.0.1/internal/pack.json',
+      ]) {
+        const response = await call(env, 'POST', '/personas/install', { url })
+        expectFail(response, 400, /安装人格失败/)
+      }
+      // 统一校验在 fetch 之前完成：没有任何网络请求被发出（不探测真实内网）
+      expect(calls).toHaveLength(0)
     } finally {
       globalThis.fetch = originalFetch
     }
@@ -2000,5 +2024,50 @@ describe('发布前验收：只读测试模式（真实发送从 API 层完全�
     const env = await makeEnv()
     expectOk(await call(env, 'POST', '/test/send', { contactId: 'wxid_alice', text: '正常' }))
     expect(env.engine!.sent).toHaveLength(1)
+  })
+})
+
+/* ══════════════════ task-22：只读模式绕过路径与安装 URL 统一校验 ══════════════════ */
+
+describe('task-22 只读模式绕过路径与安装 URL 统一校验', () => {
+  it('/test/send 缺参 400：参数错误路径不会触达引擎发送', async () => {
+    const env = await makeEnv()
+    expectFail(await call(env, 'POST', '/test/send', { contactId: 'wxid_alice' }), 400, /text/)
+    expectFail(await call(env, 'POST', '/test/send', { text: '在吗' }), 400, /contactId/)
+    expect(env.engine!.sent).toHaveLength(0)
+  })
+
+  it('只读模式下 /test/inbound 仍转发引擎（由引擎层拒绝副作用），API 不触达发送', async () => {
+    const env = await makeEnv()
+    env.config.readOnlyTestMode = true
+    const response = await call(env, 'POST', '/test/inbound', { contactId: 'wxid_alice', text: '只读入站' })
+    expect(response.status).toBe(202)
+    expect(env.engine!.handled).toHaveLength(1)
+    expect(env.engine!.sent).toHaveLength(0)
+  })
+
+  it('POST /config 关闭只读模式会成功（管理员能力，非未授权绕过；引擎侧仍需重启/重新 apply 才生效）', async () => {
+    const env = await makeEnv()
+    env.config.readOnlyTestMode = true
+    const next = { ...env.config, readOnlyTestMode: false }
+    expectOk(await call(env, 'POST', '/config', { config: next }), 202)
+    expect(env.savedConfigs).toHaveLength(1)
+    expect(env.savedConfigs[0]?.readOnlyTestMode).toBe(false)
+  })
+
+  it('/test/send 只读 409 时先于引擎调用：engine.sendTest 未被调用（engine.sent 0）', async () => {
+    const env = await makeEnv()
+    env.config.readOnlyTestMode = true
+    expectFail(await call(env, 'POST', '/test/send', { contactId: 'wxid_alice', text: '只读' }), 409, /只读测试模式/)
+    expect(env.engine!.sent).toHaveLength(0)
+  })
+
+  it('/drafts/approve 只读 409 时 approveDraft 未被调用；reject 仍可用（不触达发送）', async () => {
+    const env = await makeEnv()
+    env.config.readOnlyTestMode = true
+    expectFail(await call(env, 'POST', '/drafts/approve', { id: 'draft-1' }), 409, /只读测试模式/)
+    expect(env.engine!.approveDraftCalls).toHaveLength(0)
+    expectOk(await call(env, 'POST', '/drafts/reject', { id: 'draft-1' }))
+    expect(env.engine!.rejectDraftCalls).toEqual(['draft-1'])
   })
 })
