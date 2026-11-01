@@ -386,6 +386,8 @@ interface EnvOptions {
   persistError?: string
   /** 强制生效的 API 共享 token（模拟 config.apiToken 显式配置）。 */
   apiToken?: string
+  /** v3.0.0-beta.1 安全闸门是否开启（默认 false，保持既有用例/诊断路径可发送；beta 用例显式 true）。 */
+  betaSafeMode?: boolean
 }
 
 interface TestEnv {
@@ -423,7 +425,9 @@ async function makeEnv(options: EnvOptions = {}): Promise<TestEnv> {
   const personas = new FakePersonas()
   const market = new FakeMarket()
   const audit = new FakeAudit()
-  const config = testConfig()
+  const config = testConfig((cfg) => {
+    cfg.betaSafeMode = options.betaSafeMode === true
+  })
   const savedConfigs: WechatPersonaConfig[] = []
   const saveError: { message: string | null } = { message: null }
 

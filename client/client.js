@@ -3553,6 +3553,25 @@
               title: '安全红线',
               desc: '命中违禁词会暂停回复并记录风控事件；建议保留默认开关。',
             },
+            // v3.0.0-beta.1 安全闸门（默认开启；配置缺省视为 true）：四层拒绝真实发送，只允许 mock 空转。
+            draft.betaSafeMode !== false
+              ? h(
+                  'div',
+                  { className: 'dwp-row' },
+                  h(Badge, { tone: 'warn', title: 'betaSafeMode：预览版默认禁用真实发送' }, 'v3.0.0-beta.1 预览版：真实发送已禁用'),
+                  h(
+                    'span',
+                    { className: 'dwp-hint' },
+                    'betaSafeMode 默认开启：引擎、桌面通道、API 与 PS1 四层都会拒绝真实发送（自动回复 / 测试发送 / 草稿批准），只允许 mock 空转；显式关闭并保存后才允许真实发送（风险自担）。',
+                  ),
+                )
+              : h(
+                  'div',
+                  { className: 'dwp-row' },
+                  h(Badge, { tone: 'error' }, '真实发送已显式开启（betaSafeMode=false）'),
+                  h('span', { className: 'dwp-hint' }, '当前配置允许真实通道发送；请确认已了解 v3.0.0-beta.1 预览版风险。'),
+                ),
+            h('div', { className: 'dwp-divider' }),
             // 发布前验收（任务书第五部分）：只读测试模式展示。开启后本页不提供关闭按钮（防止误操作绕过），
             // 关闭需经配置文件/二次确认；未开启时允许在这里开启，便于验收前准备。
             draft.readOnlyTestMode === true
@@ -4756,6 +4775,16 @@
             }
           : null
 
+        // v3.0.0-beta.1 安全闸门（默认开启，配置缺省视为 true）全局提示：四层拒绝真实发送。
+        const betaSafeModeOn = !!(config && config.betaSafeMode !== false)
+        const betaSafeModeMessage = betaSafeModeOn
+          ? {
+              text:
+                'v3.0.0-beta.1 预览版安全闸门已开启（betaSafeMode 默认 true）：真实通道发送被引擎/桌面通道/API/PS1 四层拒绝，仅允许 mock 空转；如需真实发送须由维护者显式关闭 betaSafeMode 并重启插件，风险自担。',
+              tone: 'warn',
+            }
+          : null
+
         const titleNode = h(
           'div',
           null,
@@ -4842,6 +4871,7 @@
               : null,
             readOnlyMessage ? h(Banner, { message: readOnlyMessage }) : null,
             readOnlyTestModeMessage ? h(Banner, { message: readOnlyTestModeMessage }) : null,
+        betaSafeModeMessage ? h(Banner, { message: betaSafeModeMessage }) : null,
             config && config.onboardingDone !== true ? h(OnboardingWizard, { shared: shared }) : null,
             h(
               'div',

@@ -156,6 +156,14 @@ const SAFE_MODE_SKIP_REASON = 'safe-mode' as unknown as SkipReason
 const READ_ONLY_SKIP_REASON = 'read-only-mode' as unknown as SkipReason
 
 /**
+ * v3.0.0-beta.1 安全闸门拦截的审计 reason。
+ *
+ * 值固定为 'beta-safe-mode'：canSend 拒绝、processInner 早退、API 409 detail 与客户端提示
+ * 都用同一个字符串，便于验收脚本统一检索。
+ */
+const BETA_SAFE_SKIP_REASON = 'beta-safe-mode' as unknown as SkipReason
+
+/**
  * 判断入站文本是不是机器人自己刚说过的话（通道回读造成）。
  * 列表预览会截断、OCR 会漏字认错字，所以整串之外还要比前缀/后缀与字符重合率。
  * 安全原则：宁可漏回一条，也不自问自答。
@@ -241,7 +249,7 @@ export class PersonaEngine {
     }
     // P1-7：启动时若状态仍是暂停/熔断，绝不静默开始收消息/发消息；等主人显式 resume。
     // 只拦暂停/熔断：预算耗尽不应让通道永远起不来（次日预算会自动恢复）。
-    const blocked = this.canSend({ checkBudget: false, checkSafeMode: false, checkReadOnly: false })
+    const blocked = this.canSend({ checkBudget: false, checkSafeMode: false, checkReadOnly: false, checkBetaSafe: false })
     if (blocked) {
       this.deps.logger.warn('启动时处于暂停/熔断状态，保持暂停不启动通道', `${blocked.reason}: ${blocked.detail}`)
       await this.audit({ type: 'start', reason: blocked.reason, detail: `blocked: ${blocked.detail}` })
@@ -365,6 +373,8 @@ export class PersonaEngine {
       sendMode: config.sendMode,
       pendingDrafts: this.pendingDrafts(),
       sendState: this.sendState,
+      // v3.0.0-beta.1 安全闸门状态（默认 true：真实通道默认禁止发送，仅 mock 空转）。
+      betaSafeMode: config.betaSafeMode === true,
       // 发布前验收（任务书第五部分）：只读测试模式状态（只读诊断，不参与发送决策的旁路）。
       readOnlyTestMode: config.readOnlyTestMode === true,
     } as EngineStatus & { readOnlyTestMode: boolean }
@@ -483,7 +493,7 @@ export class PersonaEngine {
    * 统一发送门禁（P0-1 / P1-5）：暂停、熔断、预算、白名单、频控任一不满足都拒绝发送。
    * 自动回复在拟人延迟后、每个 part 发出前、每次重试前调用；手动发送（sendTest）也走这里。
    */
-  canSend(options: { contactId?: string; contactName?: string; checkWhitelist?: boolean; checkRate?: boolean; checkBudget?: boolean; checkSafeMode?: boolean; checkReadOnly?: boolean } = {}): SendBlock | null {
+  canSend(options: { contactId?: string; contactName?: string; checkWhitelist?: boolean; checkRate?: boolean; checkBudget?: boolean; checkSafeMode?: boolean; checkReadOnly?: boolean; checkBetaSafe?: boolean } = {}): SendBlock | null {
     const { config, state } = this.deps
     // 先看 AbortSignal：pause()/stop()/熔断会 abort，这是最实时的“已暂停”信号。
     if (this.abortController.signal.aborted) {
@@ -494,6 +504,15 @@ export class PersonaEngine {
     }
     if (state.breaker.tripped) {
       return { reason: 'breaker', detail: `熔断已触发${state.breaker.reason ? `：${state.breaker.reason}` : ''}` }
+    }
+    // v3.0.0-beta.1 安全闸门（默认开启）：预览版默认禁用真实发送，只允许 mock 空转。
+    // 放在只读/安全模式之前，保证预览版默认语义优先；engine.start() 传 checkBetaSafe:false
+    //（启动通道只接收/读取，本身不产生发送）。
+    if (options.checkBetaSafe !== false && config.betaSafeMode === true && this.deps.channel.id !== 'mock') {
+      return {
+        reason: BETA_SAFE_SKIP_REASON,
+        detail: 'v3.0.0-beta.1 预览版默认禁用真实发送（betaSafeMode=true，仅允许 mock 空转；如确需真实发送请显式关闭）',
+      }
     }
     // 只读测试模式（发布前验收，任务书第五部分）：开启后真实通道一律拒发；
     // mock 通道只是空转、不会触达真实微信，所以不拦。start() 传 checkReadOnly:false
@@ -647,9 +666,9 @@ export class PersonaEngine {
     let blockedAt: number | null = null
     for (let index = 0; index < entries.length; index += 1) {
       // 补处理途中若再次暂停/熔断，剩余消息留在队列里等下次恢复。
-      // 只读/安全模式/预算不在这里拦：交给 processInner 逐条判定并留审计（否则队列会在
-      // 只读/安全模式下永久滞留、且没有 read-only-mode 跳过记录）。
-      if (this.canSend({ checkBudget: false, checkSafeMode: false, checkReadOnly: false })) {
+      // 只读/安全模式/预算/beta 闸门不在这里拦：交给 processInner 逐条判定并留审计（否则队列会
+      // 在只读/安全模式下永久滞留、且没有 read-only-mode 跳过记录）。
+      if (this.canSend({ checkBudget: false, checkSafeMode: false, checkReadOnly: false, checkBetaSafe: false })) {
         blockedAt = index
         break
       }
@@ -1110,6 +1129,25 @@ export class PersonaEngine {
     }
     // 9.1：门禁全部通过 → validated（之后每一步都可能被新的暂停/熔断打断，发送前还会复查）。
     await this.transitionSendState('validated', { contactId: message.contactId, msgId: message.id }, now)
+
+    // v3.0.0-beta.1 安全闸门（默认开启）：预览版默认禁用真实发送。
+    // 真实通道下在 validated 之后、任何外部副作用（云端 LLM / 联网搜索 / 消息记忆写入）之前
+    // 直接跳过并记 'beta-safe-mode'，避免默认诊断对私人聊天产生任何网络/落盘副作用；
+    // canSend 的 beta 门禁保留作二道防线（覆盖 sendTest / 草稿批准 / 重试等其它入口）。
+    if (config.betaSafeMode === true && this.deps.channel.id !== 'mock') {
+      await this.transitionSendState('cancelled', { contactId: message.contactId, msgId: message.id }, now)
+      await this.skip(
+        message,
+        {
+          skip: true,
+          reason: BETA_SAFE_SKIP_REASON,
+          detail:
+            'v3.0.0-beta.1 预览版默认禁用真实发送：已在云端 LLM/联网搜索/消息记忆之前跳过（如确需真实发送，请由维护者显式关闭 betaSafeMode）',
+        },
+        now,
+      )
+      return
+    }
 
     // 只读测试模式（任务书 §5 / next §7 只读副作用）：
     // 真实通道下，默认诊断不得对私人聊天调用云端 LLM、联网搜索或写入消息记忆——在

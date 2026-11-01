@@ -652,6 +652,17 @@ export class DesktopChannel {
   }
 
   /**
+   * v3.0.0-beta.1 安全闸门（默认开启）的脚本参数：send 动作追加 `-NoRealSend`，
+   * 让脚本层在「找窗口/点击/粘贴/回车」之前再硬阻断一次（第四层拒绝的纵深防御）。
+   *
+   * 显式 `betaSafeMode=false`（用户知情关闭）时不追加，否则闸门就永远关不掉；
+   * 默认配置下通道层 send() 第一行已经直接拒绝，不会走到脚本调用。
+   */
+  betaSafeScriptArgs(): string[] {
+    return this.config.betaSafeMode === true ? ['-NoRealSend'] : [];
+  }
+
+  /**
    * 把一次 read 的脚本输出转成投递计划（v3.0.0 Phase C）：
    * - 透传 captureId / pane / side / box，交给 core/ocr/pipeline.ts 做气泡归属过滤；
    * - uncertain（几何无法判断）与 outbound（自己）一律拒投并计数，绝不猜；
@@ -1136,6 +1147,16 @@ export class DesktopChannel {
   }
 
   async send(contactId: string, part: OutboundPart, signal?: AbortSignal): Promise<SendResult> {
+    // v3.0.0-beta.1 安全闸门（默认开启）：预览版默认禁用真实发送，在通道层**第一行**硬拒绝——
+    // 早于一切参数/定位/空闲校验与脚本调用，返回 not-sent 防止引擎误判 unknown。
+    // 例外：插件或桌面通道本身已禁用时保留原有「桌面通道已禁用」错误（此时本就不可能真实发送，
+    // 保持既有错误契约与测试；安全闸门只负责拦截「可发送」路径）。
+    if (this.config.betaSafeMode === true && this.config.enabled && this.config.channels.desktop.enabled) {
+      const error = 'v3.0.0-beta.1 预览版默认禁用真实发送（betaSafeMode=true，仅允许 mock 空转；如确需真实发送请由维护者显式关闭）';
+      this.lastError = error;
+      this.logger.warn?.('[desktop] 发送被 v3.0.0-beta.1 安全闸门拒绝（未执行任何自动化）');
+      return { ok: false, delivery: 'not-sent', error };
+    }
     // 发布前验收（任务书第五部分）：只读测试模式在通道层**第一行**硬拒绝——
     // 不调用任何脚本、不做键鼠模拟、不进入任何后续门禁分支；返回 not-sent 防止引擎误判 unknown。
     if (this.config.readOnlyTestMode === true) {
@@ -1195,6 +1216,8 @@ export class DesktopChannel {
       '-Contact', label,
       '-TextBase64', Buffer.from(text, 'utf8').toString('base64'),
     ];
+    // v3.0.0-beta.1 安全闸门：默认开启时追加 -NoRealSend（脚本层在找窗口/点击/粘贴/回车之前再硬阻断一次）。
+    args.push(...this.betaSafeScriptArgs());
     // 不传 -CurrentContact：脚本侧 trustedOpen 分支会跳过标题 OCR，属于 v0.2.8 的跨联系人误发根因之一，
     // v3.0.0 起发送必须走「行坐标 + 标题校验」路径（定位失败由脚本返回 not-sent）。
     if (row) {

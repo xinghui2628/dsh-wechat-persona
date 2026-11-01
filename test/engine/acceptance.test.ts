@@ -265,7 +265,9 @@ function makeHarness(options: {
   nextOperationId?: () => string
 } = {}): Harness {
   const now = options.now ?? new Date('2026-10-30T12:00:00+08:00').getTime()
-  const config = { ...defaultConfig(), ...(options.config ?? {}) } as WechatPersonaConfig
+  // v3.0.0-beta.1 安全闸门默认 true；本文件既有用例覆盖自动发送/只读等路径，故默认关闭闸门，
+  // 需要验证 beta 闸门的用例在 config 里显式传 betaSafeMode:true（见 test/core/beta-safe.test.ts）。
+  const config = { ...defaultConfig(), betaSafeMode: false, ...(options.config ?? {}) } as WechatPersonaConfig
   const clock = new FakeClock(now)
   const random = new FakeRandom()
   const store = new FakeStore()

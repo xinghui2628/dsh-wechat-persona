@@ -650,6 +650,11 @@ export interface EngineStatus {
    * 为 true 时代码层拒绝一切真实通道发送与键鼠模拟。
    */
   readOnlyTestMode?: boolean
+  /**
+   * v3.0.0-beta.1 预览版安全闸门（默认 true）：真实通道默认禁止发送，只允许 mock 空转。
+   * 该字段同时出现在 `config.betaSafeMode` 与 `EngineStatus`，便于设置页/验收脚本核对。
+   */
+  betaSafeMode?: boolean
 }
 
 /** memory.ts 暴露的接口（engine 依赖）。 */

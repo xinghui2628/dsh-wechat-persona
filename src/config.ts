@@ -88,6 +88,14 @@ export interface WechatPersonaConfig {
    */
   readOnlyTestMode: boolean
   /**
+   * v3.0.0-beta.1 预览版安全闸门（默认 **true**）。
+   *
+   * 默认禁止一切真实通道发送（自动回复、`/test/send`、草稿批准、桌面通道脚本对真实微信的发送），
+   * 只允许 mock 通道空转；显式改成 false 才代表用户知情并承担真实发送风险。
+   * 迁移会给旧配置补 true——安全默认，绝不默默提升旧用户权限。
+   */
+  betaSafeMode: boolean
+  /**
    * OCR 读取流水线模式（任务书 4.3 受控 Feature Flag，默认 `v3`）。
    * - `v3`：v3.0.0 新流水线（气泡归属、不确定拒绝、置信度门禁）；
    * - `legacy`：回退 v0.2.8 行为（脚本返回消息全部接受，仅保留自回声过滤），
@@ -324,6 +332,7 @@ export const Config: z<WechatPersonaConfig> = z.object({
     .description('发送模式：auto=生成后自动发送（默认）；draft=只生成草稿，需在设置页人工「批准」后才发送；confirm=只生成草稿，人工确认后发送（safeMode 优先级更高）'),
   apiToken: z.string().default('').description('API 共享 token：留空=兼容模式（启动时自动生成到数据目录但不强制）；填写后所有 API 请求必须带 Authorization: Bearer <token>'),
   readOnlyTestMode: z.boolean().default(false).description('只读测试模式（发布前验收用）：开启后代码层拒绝一切真实通道发送与键鼠模拟，重启后仍保持；用于真实微信只读回归，默认关闭'),
+  betaSafeMode: z.boolean().default(true).description('v3.0.0-beta.1 预览版安全闸门（默认开启）：禁止一切真实通道发送，仅允许 mock 空转；显式关闭才允许真实发送，风险自担'),
   ocrPipelineMode: z.union([z.const('legacy'), z.const('v3')])
     .default('v3')
     .description('OCR 读取流水线模式：v3=新流水线（气泡归属/不确定拒绝/置信度门禁，默认）；legacy=回退 v0.2.8 行为（真实设备验证期一键回退）'),
@@ -549,6 +558,13 @@ export function migrateConfig(input: unknown): {
     raw.readOnlyTestMode = false
     changed = true
     notes.push('迁移：新增 readOnlyTestMode 默认 false（只读测试模式默认关闭）')
+  }
+  // v3.0.0-beta.1 新增 betaSafeMode：旧配置没有该字段，必须补 true（安全默认：升级后默认禁止真实发送，
+  // 绝不默默提升旧用户权限）。显式 false 的原样保留（用户知情关闭，风险自担）。
+  if (typeof raw.betaSafeMode !== 'boolean') {
+    raw.betaSafeMode = true
+    changed = true
+    notes.push('迁移：新增 betaSafeMode 默认 true（v3.0.0-beta.1 预览版默认禁用真实发送）')
   }
   if (raw.ocrPipelineMode !== 'legacy' && raw.ocrPipelineMode !== 'v3') {
     raw.ocrPipelineMode = 'v3'

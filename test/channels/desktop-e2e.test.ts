@@ -402,6 +402,8 @@ function makeEngineConfig(overrides: (config: WechatPersonaConfig) => void = () 
   const config = defaultConfig()
   config.whitelist = [CONTACT_ZHANGSAN]
   config.stickers.maxPerReply = 0
+  // e2e 夹具显式关闭 beta 闸门，用于覆盖 v3 发送路径；beta 默认安全由 test/core/beta-safe.test.ts 覆盖。
+  config.betaSafeMode = false
   overrides(config)
   return config
 }
@@ -903,6 +905,32 @@ describe('desktop 生产链路端到端离线用例（任务书 §4）', () => {
     expect(audit.reasons('skip')).toContain('read-only-mode')
     expect(engineStore.list('')).toBeDefined()
     await engine.stop()
+  })
+
+  it('11b) v3.0.0-beta.1 安全闸门：betaSafeMode=true 时 desktop.send 首行拒绝，未调用任何脚本', async () => {
+    // lead 授权本文件仅两处改动：夹具默认关闭 beta 闸门（见 makeEngineConfig），
+    // 以及本条 beta 门禁用例（显式把夹具 config 改回默认 true）。
+    const recorder = recordRunner((script, args) => {
+      if (script === 'user-activity') return USER_IDLE
+      if (args.includes('list')) return listResult([listRow('张三', { unread: true, preview: '' })])
+      return { code: 0, stdout: '{"ok":true}', stderr: '' }
+    })
+    const harness = makeDesktopE2EHarness({
+      runScript: recorder.runner,
+      configPatch: (config) => {
+        config.betaSafeMode = true
+      },
+    })
+    expect(harness.config.betaSafeMode).toBe(true)
+    await harness.start()
+    const result = await harness.channel.send('张三', { kind: 'text', text: '在吗' })
+    expect(result.ok).toBe(false)
+    expect(result.delivery).toBe('not-sent')
+    expect(String(result.error ?? '')).toContain('v3.0.0-beta.1')
+    // 首行拒绝发生在任何脚本调用之前：完全没有 send 动作脚本调用。
+    const sendScriptCalls = recorder.calls.filter((call) => call.args.includes('send') && call.args.includes('-Action'))
+    expect(sendScriptCalls).toHaveLength(0)
+    await harness.stop()
   })
 
   it('12) 依赖失败安全降级：PS1 报错/OCR 失败/磁盘失败/LLM 失败都不崩溃、不误发', async () => {

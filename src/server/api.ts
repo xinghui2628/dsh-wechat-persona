@@ -1290,6 +1290,8 @@ export function createPersonaApi(deps: PersonaApiDeps): PersonaApi {
           safeMode: config.safeMode === true,
           // 发布前验收（任务书第五部分）：只读测试模式状态，只读诊断用（不改任何发送路径）。
           readOnlyTestMode: config.readOnlyTestMode === true,
+          // v3.0.0-beta.1 安全闸门状态（默认 true：真实通道默认禁止发送，仅 mock 空转）。
+          betaSafeMode: config.betaSafeMode === true,
           // task-12 / 13.4：发送模式与草稿队列状态（引擎未提供时按配置/0 兜底）。
           sendMode: status?.sendMode ?? config.sendMode,
           pendingDrafts: status?.pendingDrafts ?? 0,
@@ -1298,6 +1300,7 @@ export function createPersonaApi(deps: PersonaApiDeps): PersonaApi {
             apiTokenEnabled: apiToken !== '',
             rateLimitPerMinute: API_RATE_LIMIT_MAX,
             readOnlyTestMode: config.readOnlyTestMode === true,
+            betaSafeMode: config.betaSafeMode === true,
           },
         })
       }
@@ -1739,6 +1742,11 @@ export function createPersonaApi(deps: PersonaApiDeps): PersonaApi {
         if (deps.getConfig().readOnlyTestMode === true) {
           return failJson(409, '只读测试模式已开启：已拒绝一切真实发送（POST /test/send）', 'read-only-mode')
         }
+        // v3.0.0-beta.1 安全闸门（默认开启）：API 层硬拒绝，绝不调用引擎 sendTest / 通道 send。
+        // 放在 engine 检查之前，未启动引擎时也返回一致的 409。
+        if (deps.getConfig().betaSafeMode === true) {
+          return failJson(409, 'v3.0.0-beta.1 预览版默认禁用真实发送（POST /test/send）', 'beta-safe-mode')
+        }
         const engine = currentEngine()
         if (!engine) return failJson(409, '引擎未启动，无法发送测试消息')
         // P1-5：暂停期间手动发送与自动发送一样被门禁拒绝（引擎 sendTest 内部还有一层
@@ -1795,6 +1803,11 @@ export function createPersonaApi(deps: PersonaApiDeps): PersonaApi {
         // 「拒绝」只改草稿状态、不产生任何发送，仍允许。放在 engine 检查之前保证硬阻断。
         if (isApprove && deps.getConfig().readOnlyTestMode === true) {
           return failJson(409, '只读测试模式已开启：已拒绝草稿批准发送（代码层不触达真实通道）', 'read-only-mode')
+        }
+        // v3.0.0-beta.1 安全闸门（默认开启）：「批准」可能触达真实发送，API 层硬 409；
+        // 「拒绝」只改草稿状态、不产生发送，仍允许。放在 engine 检查之前保证硬阻断。
+        if (isApprove && deps.getConfig().betaSafeMode === true) {
+          return failJson(409, 'v3.0.0-beta.1 预览版默认禁用真实发送：已拒绝草稿批准发送', 'beta-safe-mode')
         }
         const engine = currentEngine()
         if (!engine) return failJson(409, '引擎未启动，无法处理草稿')

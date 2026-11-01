@@ -74,6 +74,9 @@ function makeDesktopHarness(options: {
     cfg.channels.desktop.driverEnabled = options.driverEnabled ?? true
     cfg.channels.desktop.userActivityIdleMs = 5000
     cfg.channels.desktop.pauseSeconds = 30
+    // v3.0.0-beta.1 安全闸门默认 true；本文件这些用例覆盖 v3 发送路径，故显式关闭闸门。
+    // 默认安全语义（betaSafeMode=true 时 send 首行拒绝）由 test/core/beta-safe.test.ts 覆盖。
+    cfg.betaSafeMode = false
     if (options.configPatch) options.configPatch(cfg)
   })
   const channel = new DesktopChannel({

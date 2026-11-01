@@ -67,6 +67,9 @@ param(
     [string]$Ack = '',
     # 只读测试模式（发布前验收第五部分）：拒绝一切发送与键鼠模拟；read 只允许 -NoSearch 被动读取。
     [switch]$ReadOnly,
+    # v3.0.0-beta.1 安全闸门（默认开启，由引擎/API 传 -NoRealSend）：send 在脚本入口直接失败，
+    # 不找窗口、不点击、不粘贴、不回车（任何键鼠模拟都不会发生）。
+    [switch]$NoRealSend,
     # 可选：shot 动作的截图输出路径（默认写到临时目录）。
     [string]$OutPath = ''
 )
@@ -1603,6 +1606,11 @@ try {
     # send 在脚本入口直接失败：不找窗口、不点击、不粘贴、不回车（任何键鼠模拟都不会发生）。
     if ($script:ReadOnlyMode -and $Action -eq 'send') {
         Fail-With '只读测试模式：已拒绝发送（PS1 只读模式禁止一切键鼠模拟，未执行点击/粘贴/回车提交）'
+    }
+    # v3.0.0-beta.1 安全闸门（默认开启）：send 在脚本入口直接失败——
+    # 不找窗口、不点击、不粘贴、不回车（任何键鼠模拟都不会发生）。
+    if ($NoRealSend -and $Action -eq 'send') {
+        Fail-With 'v3.0.0-beta.1 预览版默认禁用真实发送（-NoRealSend，脚本层硬阻断：未找窗口、未点击、未粘贴、未回车）'
     }
     # read 只允许被动读取已打开的聊天：主动搜索/点击会话会改变已读状态与焦点，默认禁用。
     if ($script:ReadOnlyMode -and $Action -eq 'read' -and -not $NoSearch) {

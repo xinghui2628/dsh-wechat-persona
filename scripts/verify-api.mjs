@@ -95,10 +95,13 @@ const { migrateConfig, defaultConfig } = await import('../dist/config.js')
 check('dist/index.js 导出 name/provide/Config/apply', name === 'dsh-wechat-persona' && typeof apply === 'function' && Array.isArray(provide), String(name))
 check('dist/config.js 导出 migrateConfig/defaultConfig', typeof migrateConfig === 'function' && typeof defaultConfig === 'function')
 
-// 模拟用户 profile 里现有的旧配置（onlineStart/End + desktop 通道）
+// 模拟用户 profile 里现有的旧配置（onlineStart/End + desktop 通道）。
+// 注意：本验收脚本要验证「/test/send 走真实发送链路」与频控，因此显式关闭 v3.0.0-beta.1 的
+// betaSafeMode 预览闸门（默认 true）。beta 预览闸门本身由 test/core/beta-safe.test.ts 的 15 条用例覆盖。
 const userConfig = {
   enabled: true,
   activeChannel: 'mock',
+  betaSafeMode: false,
   dataDir: tmp,
   ownerName: '主人',
   whitelist: [{ id: '测试好友', name: '测试好友', aliases: [], note: '' }],
