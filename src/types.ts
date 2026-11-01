@@ -9,7 +9,7 @@
  * - 时间一律用 epoch 毫秒（number），本地时区换算放在 schedule 模块。
  */
 
-import type { WechatPersonaConfig } from './config.ts'
+import type { SendMode, WechatPersonaConfig } from './config.ts'
 
 /* ────────────────────────────── 通道层 ────────────────────────────── */
 
@@ -472,6 +472,8 @@ export type AuditEventType =
   | 'summary'
   | 'error'
   | 'config'
+  /** 发送生命周期状态推进（9.1，引擎在真实阶段落审计）。 */
+  | 'send-state'
 
 export interface AuditLlmInfo {
   provider?: string
@@ -559,6 +561,8 @@ export interface EngineDeps {
   persona: PersonaPack
   /** 引擎在关键状态变化后调用，由 host 层落盘 state.json。 */
   saveState(): Promise<void>
+  /** 生成发送操作 id（9.4 幂等；测试可注入确定性实现，默认用时间戳+随机数）。 */
+  nextOperationId?: () => string
 }
 
 /** 发送投递三态累计计数（status 对外可见，P0-2）。 */
@@ -566,6 +570,43 @@ export interface SendDeliveryCounts {
   sent: number
   notSent: number
   unknown: number
+}
+
+/* ─────────────────────── 发送草稿 / 人工确认（13.4） ─────────────────────── */
+
+export type DraftStatus = 'pending' | 'approved' | 'rejected' | 'expired'
+
+/**
+ * 待发送草稿（sendMode=draft/confirm 或 safeMode 下生成，持久化到 dataDir/drafts.json）。
+ *
+ * `id` 同时也是幂等账本的发送操作 id：同一草稿即使被重复批准，也只会真正发送一次
+ * （unknown 结果绝不自动重发，见 send-ledger.ts 与任务书 9.3/9.4）。
+ */
+export interface SendDraft {
+  id: string
+  opId: string
+  contactId: string
+  contactName?: string
+  text: string
+  createdAt: number
+  expiresAt: number
+  status: DraftStatus
+  /** 生成原因：draft-mode / confirm-mode / safe-mode / budget-draft / budget-exhausted。 */
+  reason: string
+  /** 实际投递三态（批准发送后才有）。 */
+  delivery?: SendDelivery
+  /** 最近一次批准尝试的失败原因（展示给用户）。 */
+  lastError?: string
+}
+
+/** 草稿批准/拒绝结果（POST /drafts/approve、POST /drafts/reject）。 */
+export interface DraftDecisionResult {
+  ok: boolean
+  error?: string
+  detail?: string
+  delivery?: SendDelivery
+  draft?: SendDraft
+  result?: SendResult
 }
 
 /** 供 DSH 工具 / 服务查询的只读状态快照。 */
@@ -592,6 +633,14 @@ export interface EngineStatus {
   delivery?: SendDeliveryCounts
   /** 暂停期间暂存、等待恢复后按序补处理的消息条数（P1-4）。 */
   deferredCount?: number
+  /** 安全运行模式（Phase F，默认 false）。 */
+  safeMode?: boolean
+  /** 发送模式（13.4：auto / draft / confirm）。 */
+  sendMode?: SendMode
+  /** 待人工批准的草稿条数（13.4）。 */
+  pendingDrafts?: number
+  /** 最近一次发送生命周期状态（9.1）。 */
+  sendState?: string
 }
 
 /** memory.ts 暴露的接口（engine 依赖）。 */
@@ -668,6 +717,14 @@ export interface PersonaEngineLike {
   setPersona?(pack: PersonaPack): void
   /** 上传/删除表情后热更新目录。 */
   setStickers?(catalog: StickerCatalogLike): void
+  /** 待发送草稿（13.4：sendMode=draft/confirm 或 safeMode 下生成）。 */
+  listDrafts?(): Promise<SendDraft[]>
+  /** 人工批准草稿：重新走全部门禁 + 幂等账本后发送。 */
+  approveDraft?(id: string): Promise<DraftDecisionResult>
+  /** 人工拒绝草稿。 */
+  rejectDraft?(id: string): Promise<DraftDecisionResult>
+  /** OCR 只读诊断（duck-typing；通道未提供时由 API 层降级 available:false）。 */
+  ocrDiagnostics?(): Promise<unknown>
 }
 
 /** 配置持久化状态（设置页显示“已保存/不可写/上次错误”）。 */

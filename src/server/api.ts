@@ -1042,9 +1042,17 @@ export interface OcrDiagnosticsView {
   engines: string[]
   lines?: number
   uncertainCount?: number
+  rejectCount?: number
+  conflictCount?: number
   durationMs?: number
   lastReadAt?: number
   lastError?: string
+  dpi?: number
+  scale?: number
+  screenshotMode?: string
+  engineVersion?: string
+  secondOcrUsed?: boolean
+  qualityStatus?: string
   dualEngine: boolean
 }
 
@@ -1052,6 +1060,12 @@ function normalizeOcrNumber(value: unknown, min: number, max: number): number | 
   const n = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : Number.NaN
   if (!Number.isFinite(n)) return undefined
   return Math.min(max, Math.max(min, Math.round(n)))
+}
+
+function normalizeOcrFloat(value: unknown, min: number, max: number): number | undefined {
+  const n = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : Number.NaN
+  if (!Number.isFinite(n)) return undefined
+  return Math.min(max, Math.max(min, n))
 }
 
 function normalizeOcrText(value: unknown, max: number): string | undefined {
@@ -1093,12 +1107,28 @@ export function normalizeOcrDiagnostics(input: unknown): OcrDiagnosticsView {
   }
   const lines = normalizeOcrNumber(ocr.lines, 0, 100_000)
   const uncertainCount = normalizeOcrNumber(ocr.uncertainCount, 0, 100_000)
+  const rejectCount = normalizeOcrNumber(ocr.rejectCount, 0, 100_000)
+  const conflictCount = normalizeOcrNumber(ocr.conflictCount, 0, 100_000)
   const durationMs = normalizeOcrNumber(ocr.durationMs, 0, 600_000)
   const lastReadAt = normalizeOcrNumber(ocr.lastReadAt, 0, Number.MAX_SAFE_INTEGER)
   const lastError = normalizeOcrText(ocr.lastError, 300)
+  // task-12 / 13.4：pipeline-fixer 在通道 status().ocr 新增的只读诊断字段（缺失时安全忽略）。
+  const dpi = normalizeOcrNumber(ocr.dpi, 0, 10_000)
+  const scale = normalizeOcrFloat(ocr.scale, 0, 16)
+  const screenshotMode = normalizeOcrText(ocr.screenshotMode, 32)
+  const engineVersion = normalizeOcrText(ocr.engineVersion, 64)
+  const secondOcrUsed = ocr.secondOcrUsed === true
+  const qualityStatus = normalizeOcrText(ocr.qualityStatus, 32)
   const dualEngine = ocr.dualEngine === true || engines.length >= 2
   const available =
-    captureId !== undefined || lines !== undefined || engines.length > 0 || lastReadAt !== undefined
+    captureId !== undefined ||
+    lines !== undefined ||
+    engines.length > 0 ||
+    lastReadAt !== undefined ||
+    dpi !== undefined ||
+    engineVersion !== undefined ||
+    qualityStatus !== undefined ||
+    screenshotMode !== undefined
   if (!available) {
     return { ...fallback, channelId, channelState, capturedAt, reason: '通道 OCR 诊断数据格式不可识别' }
   }
@@ -1111,9 +1141,17 @@ export function normalizeOcrDiagnostics(input: unknown): OcrDiagnosticsView {
     engines,
     lines,
     uncertainCount,
+    rejectCount,
+    conflictCount,
     durationMs,
     lastReadAt,
     lastError,
+    dpi,
+    scale,
+    screenshotMode,
+    engineVersion,
+    secondOcrUsed,
+    qualityStatus,
     dualEngine,
   }
 }
@@ -1262,6 +1300,10 @@ export function createPersonaApi(deps: PersonaApiDeps): PersonaApi {
           channel,
           configSummary,
           safeMode: config.safeMode === true,
+          // task-12 / 13.4：发送模式与草稿队列状态（引擎未提供时按配置/0 兜底）。
+          sendMode: status?.sendMode ?? config.sendMode,
+          pendingDrafts: status?.pendingDrafts ?? 0,
+          sendState: status?.sendState ?? null,
           security: { apiTokenEnabled: apiToken !== '', rateLimitPerMinute: API_RATE_LIMIT_MAX },
         })
       }
@@ -1725,6 +1767,54 @@ export function createPersonaApi(deps: PersonaApiDeps): PersonaApi {
         return okJson({ ok: true, result })
       }
 
+      /* ── 待发送草稿 / 人工确认（task-12 / 13.4） ── */
+      // 批准会重新走引擎 canSend 全部门禁（暂停/熔断/预算/白名单/频控/安全模式）并复用同一
+      // sendOperationId：unknown 的发送结果永远不会在这里被自动重发。
+      if (routePath === '/drafts') {
+        if (verb !== 'GET') return methodNotAllowed(['GET'])
+        const engine = currentEngine()
+        if (!engine) return failJson(409, '引擎未启动，无法读取草稿队列')
+        const listDrafts = (engine as PersonaEngineLike & { listDrafts?: () => Promise<unknown> }).listDrafts
+        if (typeof listDrafts !== 'function') return failJson(409, '当前引擎不支持草稿队列')
+        try {
+          const drafts = await listDrafts.call(engine)
+          return okJson({ ok: true, drafts })
+        } catch (error) {
+          return failJson(500, `读取草稿队列失败：${errorMessage(error)}`)
+        }
+      }
+
+      if (routePath === '/drafts/approve' || routePath === '/drafts/reject') {
+        if (verb !== 'POST') return methodNotAllowed(['POST'])
+        const obj = requireObject(body)
+        if (!obj) return failJson(400, '请求体必须是 JSON 对象')
+        const id = typeof obj.id === 'string' ? obj.id.trim() : ''
+        if (id === '') return failJson(400, 'id 不能为空')
+        if (id.length > 128) return failJson(400, 'id 过长')
+        const engine = currentEngine()
+        if (!engine) return failJson(409, '引擎未启动，无法处理草稿')
+        const isApprove = routePath === '/drafts/approve'
+        const handler = (
+          engine as PersonaEngineLike & {
+            approveDraft?: (draftId: string) => Promise<unknown>
+            rejectDraft?: (draftId: string) => Promise<unknown>
+          }
+        )[isApprove ? 'approveDraft' : 'rejectDraft']
+        if (typeof handler !== 'function') return failJson(409, '当前引擎不支持草稿人工确认')
+        let decision: { ok?: unknown; error?: unknown; detail?: unknown }
+        try {
+          decision = (await handler.call(engine, id)) as { ok?: unknown; error?: unknown; detail?: unknown }
+        } catch (error) {
+          return failJson(500, `${isApprove ? '批准' : '拒绝'}草稿失败：${errorMessage(error)}`)
+        }
+        if (decision?.ok === true) return okJson({ ok: true, result: decision })
+        const message = typeof decision?.error === 'string' ? decision.error : '处理草稿失败'
+        const detail = typeof decision?.detail === 'string' ? decision.detail : undefined
+        // 草稿不存在/已清理 → 404；已处理过、门禁拒绝、unknown 终结 → 409（调用方需人工处理）。
+        const status = message.includes('不存在') ? 404 : 409
+        return failJson(status, message, detail)
+      }
+
       if (routePath === '/pause') {
         if (verb !== 'POST') return methodNotAllowed(['POST'])
         const obj = optionalObject(body)
@@ -2098,6 +2188,9 @@ export function attachPersonaRoutes(
       '/logs',
       '/test/inbound',
       '/test/send',
+      '/drafts',
+      '/drafts/approve',
+      '/drafts/reject',
       '/pause',
       '/resume',
       '/memory/clear',

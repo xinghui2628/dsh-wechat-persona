@@ -30,6 +30,9 @@ export interface Point {
   y: number
 }
 
+/** 发送模式（任务书 13.4）：auto=自动发送；draft=只生成草稿；confirm=草稿+人工确认。 */
+export type SendMode = 'auto' | 'draft' | 'confirm'
+
 export interface WechatPersonaConfig {
   /** 总开关（关闭时插件不启动任何监听，工具返回停用提示）。 */
   enabled: boolean
@@ -53,6 +56,15 @@ export interface WechatPersonaConfig {
   safeMode: boolean
   /** 首次配置向导是否已完成（默认 false；设置页据此显示向导，完成后写 true）。 */
   onboardingDone: boolean
+  /**
+   * 发送模式（任务书 13.4，默认 `auto`）：
+   * - `auto`：生成后自动发送（原有行为，升级兼容）；
+   * - `draft`：只生成草稿、不发送，需在设置页「待发送草稿」里人工「批准」后才发送；
+   * - `confirm`：只生成草稿、人工确认后发送（产品语义上等于 draft，均不自动发）。
+   *
+   * `safeMode`（安全运行模式）优先级最高：开启时无论 sendMode 如何都只生成草稿。
+   */
+  sendMode: SendMode
   /**
    * API 共享 token（可选，默认空字符串 = 不强制）。
    *
@@ -289,6 +301,9 @@ export const Config: z<WechatPersonaConfig> = z.object({
   whitelistOnly: z.boolean().default(true).description('只回白名单（默认开；关闭后允许回复任意单聊，风险自担）'),
   safeMode: z.boolean().default(false).description('安全运行模式：开启后拒绝一切真实通道发送（只允许 mock 空转）；默认关闭以保持升级兼容，首次配置向导会建议开启'),
   onboardingDone: z.boolean().default(false).description('首次配置向导是否已完成（设置页完成后自动写入，无需手动修改）'),
+  sendMode: z.union([z.const('auto'), z.const('draft'), z.const('confirm')])
+    .default('auto')
+    .description('发送模式：auto=生成后自动发送（默认）；draft=只生成草稿，需在设置页人工「批准」后才发送；confirm=只生成草稿，人工确认后发送（safeMode 优先级更高）'),
   apiToken: z.string().default('').description('API 共享 token：留空=兼容模式（启动时自动生成到数据目录但不强制）；填写后所有 API 请求必须带 Authorization: Bearer <token>'),
 
   persona: z.object({
@@ -500,6 +515,12 @@ export function migrateConfig(input: unknown): {
     raw.whitelistOnly = true
     changed = true
     notes.push('迁移：whitelistOnly 补为 true')
+  }
+  // 3.0.0 新增 sendMode：旧配置没有该字段，补默认 auto（保持旧行为）。
+  if (raw.sendMode !== 'auto' && raw.sendMode !== 'draft' && raw.sendMode !== 'confirm') {
+    raw.sendMode = 'auto'
+    changed = true
+    notes.push('迁移：新增 sendMode 默认 auto（生成后自动发送）')
   }
   if (typeof reply.groupChatEnabled !== 'boolean') {
     reply.groupChatEnabled = false

@@ -1145,6 +1145,16 @@
         getOcrDiagnostics: function () {
           return request('GET', 'diagnostics/ocr')
         },
+        /** task-12 / 13.4：待发送草稿队列。批准才会发送，unknown 的草稿不会被自动重发。 */
+        getDrafts: function () {
+          return request('GET', 'drafts')
+        },
+        approveDraft: function (id) {
+          return request('POST', 'drafts/approve', { id: id }, { timeoutMs: SAVE_TIMEOUT_MS })
+        },
+        rejectDraft: function (id) {
+          return request('POST', 'drafts/reject', { id: id }, { timeoutMs: SAVE_TIMEOUT_MS })
+        },
         pause: function (reason) {
           return request('POST', 'pause', reason ? { reason: reason } : {})
         },
@@ -3543,6 +3553,22 @@
               title: '安全红线',
               desc: '命中违禁词会暂停回复并记录风控事件；建议保留默认开关。',
             },
+            // task-12 / 13.4：发送模式（auto / draft / confirm）。draft/confirm 只生成草稿，
+            // 必须在「日志与测试 → 待发送草稿」里人工批准后才会真正发送。
+            h(Field, {
+              label: '发送模式（13.4 人工确认）',
+              hint: 'auto=自动发送（默认）；draft=只生成草稿，人工批准后才发送；confirm=人工确认后发送。safeMode 优先级更高（安全模式下只生成草稿）。修改后点下方「保存预算与安全设置」生效。',
+              control: h(Select, {
+                options: [
+                  { value: 'auto', label: '自动发送（默认）' },
+                  { value: 'draft', label: '只生成草稿，人工批准' },
+                  { value: 'confirm', label: '人工确认后发送' },
+                ],
+                value: draft.sendMode || 'auto',
+                onChange: function (value) { set('sendMode', value) },
+              }),
+            }),
+            h('div', { className: 'dwp-divider' }),
             h(
               'div',
               { className: 'dwp-row' },
@@ -3669,6 +3695,20 @@
       // =====================================================================
       // 日志与测试
       // =====================================================================
+      // task-12 / 13.4：草稿状态与内容预览（纯展示，不做任何发送动作）。
+      function draftStatusLabel(status) {
+        if (status === 'pending') return '待处理'
+        if (status === 'approved') return '已批准'
+        if (status === 'rejected') return '已拒绝'
+        if (status === 'expired') return '已过期'
+        return status || '—'
+      }
+
+      function previewText(text, max) {
+        const value = String(text == null ? '' : text)
+        return value.length > max ? value.slice(0, max) + '…' : value
+      }
+
       function LogsTab(props) {
         const s = props.shared
         const [limit, setLimit] = React.useState(50)
@@ -3710,6 +3750,51 @@
             })
         }, [])
         React.useEffect(function () { refreshOcr() }, [refreshOcr])
+
+        // task-12 / 13.4：待发送草稿（draft / confirm 模式）。批准会重新走服务端全部门禁，
+        // 结果 unknown 的草稿不会被自动重发。
+        const [drafts, setDrafts] = React.useState(null)
+        const [draftBusy, setDraftBusy] = React.useState(false)
+        const [draftError, setDraftError] = React.useState('')
+        const refreshDrafts = React.useCallback(function () {
+          setDraftBusy(true)
+          setDraftError('')
+          api.getDrafts()
+            .then(function (response) {
+              const list = response && Array.isArray(response.drafts) ? response.drafts : []
+              setDrafts(list)
+            })
+            .catch(function (error) {
+              setDraftError(errorMessage(error))
+            })
+            .finally(function () {
+              setDraftBusy(false)
+            })
+        }, [])
+        React.useEffect(function () { refreshDrafts() }, [refreshDrafts])
+        const decideDraft = function (action, id) {
+          run(async function () {
+            try {
+              const response = action === 'approve' ? await api.approveDraft(id) : await api.rejectDraft(id)
+              const result = response && response.result ? response.result : {}
+              const sent = result.delivery === 'sent'
+              s.showBanner({
+                text: action === 'approve'
+                  ? sent ? '草稿已批准并发送' : '草稿已批准，发送结果见审计日志'
+                  : '草稿已拒绝，不会发送',
+                tone: 'success',
+              })
+              refreshDrafts()
+              reloadLogs()
+              s.refreshStatus()
+            } catch (error) {
+              s.showBanner({
+                text: (action === 'approve' ? '批准草稿失败：' : '拒绝草稿失败：') + errorMessage(error),
+                tone: 'error',
+              })
+            }
+          })
+        }
 
         return h(
           'div',
@@ -3886,6 +3971,59 @@
           h(
             Card,
             {
+              title: '待发送草稿',
+              desc: 'draft / confirm 模式下引擎只生成草稿，点「批准」才会发送（批准会重新通过暂停/熔断/预算/白名单/频控/安全模式全部门禁）。unknown 的发送结果不会自动重发。',
+              extra: h(
+                'div',
+                { className: 'dwp-actions' },
+                drafts && drafts.length ? h(Badge, { tone: 'warn' }, '待处理 ' + drafts.filter(function (item) { return item.status === 'pending' }).length + ' 条') : null,
+                h(Button, { size: 'sm', busy: draftBusy, onClick: refreshDrafts }, '刷新'),
+              ),
+            },
+            draftError ? h('div', { className: 'dwp-errorBox' }, '读取草稿失败：' + draftError) : null,
+            !drafts && !draftError ? h('div', { className: 'dwp-hint' }, '正在读取草稿…') : null,
+            drafts && drafts.length === 0 ? h(EmptyState, null, '暂无待发送草稿（当前是自动发送模式，或还没有生成过草稿）。') : null,
+            drafts && drafts.length
+              ? h(
+                  'div',
+                  { className: 'dwp-list' },
+                  h(
+                    'div',
+                    { className: 'dwp-listRowHead' },
+                    h('span', null, '创建时间'),
+                    h('span', null, '联系人'),
+                    h('span', null, '内容'),
+                    h('span', null, '状态'),
+                    h('span', null, '操作'),
+                  ),
+                  drafts.map(function (draft) {
+                    const statusLabel = draftStatusLabel(draft.status)
+                    const tone = draft.status === 'pending' ? 'warn' : draft.status === 'approved' ? 'success' : 'neutral'
+                    return h(
+                      'div',
+                      { key: draft.id, className: 'dwp-listRow' },
+                      h('span', null, formatDateTime(draft.createdAt)),
+                      h('span', null, draft.contactName || draft.contactId || '—'),
+                      h('span', { className: 'dwp-nowrap', title: draft.text || '' }, previewText(draft.text || '', 60)),
+                      h('span', { title: draft.reason || '' }, h(Badge, { tone: tone }, statusLabel)),
+                      h(
+                        'div',
+                        { className: 'dwp-actions' },
+                        draft.status === 'pending'
+                          ? h(Button, { size: 'sm', variant: 'primary', busy: busy, onClick: function () { decideDraft('approve', draft.id) } }, '批准')
+                          : null,
+                        draft.status === 'pending'
+                          ? h(Button, { size: 'sm', busy: busy, onClick: function () { decideDraft('reject', draft.id) } }, '拒绝')
+                          : null,
+                      ),
+                    )
+                  }),
+                )
+              : null,
+          ),
+          h(
+            Card,
+            {
               title: 'OCR 诊断（只读）',
               desc: '最近一次读屏结果的结构化摘要（只读，不触发截图；不含截图与聊天原文）。',
               extra: h(Button, { size: 'sm', busy: ocrBusy, onClick: refreshOcr }, '刷新'),
@@ -3912,6 +4050,15 @@
                   h(KeyValue, null, 'uncertain 行数', ocr.uncertainCount === undefined ? '—' : String(ocr.uncertainCount)),
                   h(KeyValue, null, '耗时', ocr.durationMs === undefined ? '—' : formatDuration(ocr.durationMs)),
                   h(KeyValue, null, '最后读取', ocr.lastReadAt === undefined ? '—' : formatDateTime(ocr.lastReadAt)),
+                  // task-12：pipeline-fixer 在通道 status().ocr 新增的只读字段（缺失时显示 —）
+                  h(KeyValue, null, 'DPI', ocr.dpi === undefined ? '—' : String(ocr.dpi)),
+                  h(KeyValue, null, '缩放', ocr.scale === undefined ? '—' : String(ocr.scale)),
+                  h(KeyValue, null, '截图模式', ocr.screenshotMode || '—'),
+                  h(KeyValue, null, '引擎版本', ocr.engineVersion || '—'),
+                  h(KeyValue, null, '质量', ocr.qualityStatus || '—'),
+                  h(KeyValue, null, '二次 OCR', ocr.secondOcrUsed ? '是' : '否'),
+                  h(KeyValue, null, 'reject 行数', ocr.rejectCount === undefined ? '—' : String(ocr.rejectCount)),
+                  h(KeyValue, null, '冲突数', ocr.conflictCount === undefined ? '—' : String(ocr.conflictCount)),
                   ocr.lastError ? h(KeyValue, null, '最后错误', ocr.lastError) : null,
                 )
               : null,

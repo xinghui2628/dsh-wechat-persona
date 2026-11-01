@@ -20,7 +20,7 @@ import type {
   PersonaPackV2,
   PersonaSummary,
 } from '../../src/types.ts'
-import { PersonaMarket } from '../../src/core/persona-market.ts'
+import { PersonaMarket, MARKET_MAX_RESPONSE_BYTES, assertSafeMarketUrl, isPrivateMarketHost } from '../../src/core/persona-market.ts'
 import type { FetchLike } from '../../src/core/persona-market.ts'
 import { parsePersonaPack, PersonaLibrary } from '../../src/core/persona-library.ts'
 import { FakeLogger, testConfig } from './fakes.ts'
@@ -83,12 +83,40 @@ function makeEntry(overrides: Partial<MarketEntry> = {}): MarketEntry {
   }
 }
 
-/** 构造 fetch 的假 Response。 */
+/** 构造 fetch 的假 Response（带 JSON Content-Type 与 text()，行为贴近真实 fetch）。 */
 function jsonResponse(body: unknown, status = 200): Response {
+  const text = JSON.stringify(body)
   return {
     ok: status >= 200 && status < 300,
     status,
+    headers: new Headers({
+      'content-type': 'application/json',
+      'content-length': String(new TextEncoder().encode(text).byteLength),
+    }),
+    text: async () => text,
     json: async () => body,
+  } as unknown as Response
+}
+
+/** 构造非 JSON Content-Type 的响应。 */
+function textResponse(text: string, contentType = 'text/html', status = 200): Response {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    headers: new Headers({ 'content-type': contentType }),
+    text: async () => text,
+    json: async () => JSON.parse(text),
+  } as unknown as Response
+}
+
+/** 构造重定向响应（302 + Location）。 */
+function redirectResponse(location: string, status = 302): Response {
+  return {
+    ok: false,
+    status,
+    headers: new Headers({ location }),
+    text: async () => '',
+    json: async () => ({}),
   } as unknown as Response
 }
 
@@ -301,6 +329,8 @@ describe('fetchIndex 远程索引', () => {
     expect(calls[0]?.init?.method).toBe('GET')
     expect((calls[0]?.init?.headers as Record<string, string> | undefined)?.accept).toBe('application/json')
     expect(calls[0]?.init?.signal).toBeInstanceOf(AbortSignal)
+    // 10.3：手动跟随重定向，每一跳重新做 SSRF 校验
+    expect(calls[0]?.init?.redirect).toBe('manual')
   })
 })
 
@@ -341,14 +371,7 @@ describe('fetchIndex 失败回退内置（绝不抛）', () => {
 
   it('响应不是合法 JSON：回退内置', async () => {
     const market = fallbackMarket(
-      () =>
-        ({
-          ok: true,
-          status: 200,
-          json: async () => {
-            throw new Error('Unexpected token')
-          },
-        }) as unknown as Response,
+      () => textResponse('{not-json', 'application/json'),
       new FakeLogger(),
     )
     const result = await market.fetchIndex()
@@ -500,6 +523,228 @@ describe('install', () => {
     const { market, library } = remoteEnvironment(undefined, () => jsonResponse({}, 404))
     await expect(market.install('persona-a')).rejects.toThrow(/HTTP 404/u)
     expect(library.installs).toEqual([])
+  })
+})
+
+/* ────────────────────── 10.3 SSRF / 远程下载安全 ────────────────────── */
+
+describe('10.3 SSRF 防护：地址校验与远程下载安全', () => {
+  const builtinPersonas = [makeEntry({ id: 'builtin-small', name: '小号', url: '' })]
+
+  function ssrfMarket(indexUrl: string, route: Route, calls: FakeFetchCall[] = [], logger = new FakeLogger()) {
+    return {
+      logger,
+      calls,
+      market: new PersonaMarket({
+        config: marketConfig(() => {}, indexUrl),
+        library: new FakeLibrary(),
+        personas: builtinPersonas,
+        logger,
+        fetchImpl: fakeFetch({ [indexUrl]: route }, calls),
+      }),
+    }
+  }
+
+  it('isPrivateMarketHost 覆盖 localhost / 内网 IPv4 / IPv6 / .local / 数字变体', () => {
+    const privateHosts = [
+      'localhost',
+      'localhost.',
+      'app.local',
+      'svc.internal',
+      '127.0.0.1',
+      '127.1',
+      '10.1.2.3',
+      '172.16.0.1',
+      '172.31.255.255',
+      '192.168.1.1',
+      '169.254.169.254',
+      '100.64.0.1',
+      '0.0.0.0',
+      '2130706433',
+      '::1',
+      '[::1]',
+      '::ffff:127.0.0.1',
+      'fd00::1',
+      'fe80::1',
+    ]
+    for (const host of privateHosts) {
+      expect(isPrivateMarketHost(host), host).toBe(true)
+    }
+    const publicHosts = ['example.com', 'cdn.example.com', '1.1.1.1', '8.8.8.8', '2001:4860:4860::8888']
+    for (const host of publicHosts) {
+      expect(isPrivateMarketHost(host), host).toBe(false)
+    }
+  })
+
+  it('assertSafeMarketUrl：拒绝非 http/https、内嵌凭据、内网地址，且错误信息不回显完整 URL', () => {
+    expect(assertSafeMarketUrl('https://example.com/index.json')).toBe('https://example.com/index.json')
+    expect(() => assertSafeMarketUrl('file:///C:/persona.json')).toThrow(/只支持 http\/https/u)
+    expect(() => assertSafeMarketUrl('javascript:alert(1)')).toThrow(/只支持 http\/https/u)
+    expect(() => assertSafeMarketUrl('https://user:pass@example.com/index.json')).toThrow(/用户名或密码/u)
+    expect(() => assertSafeMarketUrl('http://169.254.169.254/latest/meta-data')).toThrow(/本机或内网/u)
+    try {
+      assertSafeMarketUrl('http://169.254.169.254/latest/meta-data', '索引地址')
+    } catch (error) {
+      expect(String((error as Error).message)).not.toContain('169.254.169.254')
+    }
+  })
+
+  it('indexUrl 指向内网/非法协议：回退内置人格、不访问网络、warning 不回显内网 URL', async () => {
+    const cases: Array<{ url: string; pattern: RegExp }> = [
+      { url: 'http://127.0.0.1:8080/index.json', pattern: /内网/u },
+      { url: 'http://169.254.169.254/latest/meta-data', pattern: /内网/u },
+      { url: 'http://10.0.0.5/index.json', pattern: /内网/u },
+      { url: 'http://172.20.1.1/index.json', pattern: /内网/u },
+      { url: 'http://192.168.1.2/index.json', pattern: /内网/u },
+      { url: 'http://[::1]/index.json', pattern: /内网/u },
+      { url: 'http://printer.local/index.json', pattern: /内网/u },
+      { url: 'ftp://example.com/index.json', pattern: /只支持 http\/https/u },
+    ]
+    for (const item of cases) {
+      const calls: FakeFetchCall[] = []
+      const { market } = ssrfMarket(item.url, () => jsonResponse({ personas: [makeEntry()] }), calls)
+      const result = await market.fetchIndex()
+      expect(result.source, item.url).toBe('builtin')
+      expect(result.warning ?? '', item.url).toMatch(item.pattern)
+      expect(result.warning ?? '', item.url).not.toContain('169.254')
+      expect(calls, item.url).toEqual([])
+    }
+  })
+
+  it('重定向到内网地址：拒绝跟随（不外泄请求），回退内置并提示内网', async () => {
+    const calls: FakeFetchCall[] = []
+    const { market } = ssrfMarket(INDEX_URL, () => redirectResponse('http://127.0.0.1/secret'), calls)
+    const result = await market.fetchIndex()
+    expect(result.source).toBe('builtin')
+    expect(result.warning ?? '').toMatch(/内网/u)
+    expect(calls).toHaveLength(1)
+    expect(calls[0]?.url).toBe(INDEX_URL)
+  })
+
+  it('重定向次数超过上限（2 跳）：拒绝并回退，不无限跟随', async () => {
+    const calls: FakeFetchCall[] = []
+    const market = new PersonaMarket({
+      config: marketConfig(),
+      library: new FakeLibrary(),
+      personas: builtinPersonas,
+      logger: new FakeLogger(),
+      fetchImpl: fakeFetch(
+        {
+          [INDEX_URL]: () => redirectResponse('https://example.com/hop-1'),
+          'https://example.com/hop-1': () => redirectResponse('https://example.com/hop-2'),
+          'https://example.com/hop-2': () => redirectResponse('https://example.com/hop-3'),
+        },
+        calls,
+      ),
+    })
+    const result = await market.fetchIndex()
+    expect(result.source).toBe('builtin')
+    expect(result.warning ?? '').toContain('重定向次数超过上限')
+    expect(calls).toHaveLength(3)
+  })
+
+  it('相对路径重定向：按当前 URL 解析后继续拉取', async () => {
+    const calls: FakeFetchCall[] = []
+    const realIndex = 'https://example.com/personas/real-index.json'
+    const market = new PersonaMarket({
+      config: marketConfig(() => {}, 'https://example.com/personas/index.json'),
+      library: new FakeLibrary(),
+      logger: new FakeLogger(),
+      fetchImpl: fakeFetch(
+        {
+          'https://example.com/personas/index.json': () => redirectResponse('./real-index.json'),
+          [realIndex]: () => jsonResponse({ personas: [makeEntry({ id: 'persona-a' })] }),
+        },
+        calls,
+      ),
+    })
+    const result = await market.fetchIndex()
+    expect(result.source).toBe('remote')
+    expect(result.entries.map((entry) => entry.id)).toEqual(['persona-a'])
+    expect(calls.map((call) => call.url)).toEqual(['https://example.com/personas/index.json', realIndex])
+  })
+
+  it('Content-Type 不是 JSON：拒绝并回退内置', async () => {
+    const { market } = ssrfMarket(INDEX_URL, () => textResponse('<html>not json</html>', 'text/html'))
+    const result = await market.fetchIndex()
+    expect(result.source).toBe('builtin')
+    expect(result.warning ?? '').toContain('Content-Type 不是 JSON')
+  })
+
+  it('Content-Length 超过 2MB：拒绝并回退内置', async () => {
+    const { market } = ssrfMarket(INDEX_URL, () => {
+      const response = jsonResponse({ personas: [makeEntry()] })
+      ;(response.headers as Headers).set('content-length', String(MARKET_MAX_RESPONSE_BYTES + 1))
+      return response
+    })
+    const result = await market.fetchIndex()
+    expect(result.source).toBe('builtin')
+    expect(result.warning ?? '').toContain('超过 2MB 上限')
+  })
+
+  it('无 Content-Length 但流式响应体超过 2MB：读取过程中拒绝（不把整段读进内存后才判断）', async () => {
+    const { market } = ssrfMarket(INDEX_URL, () => {
+      const chunk = new Uint8Array(1024 * 1024)
+      let sent = 0
+      const body = new ReadableStream<Uint8Array>({
+        pull(controller) {
+          sent += 1
+          if (sent > 3) {
+            controller.close()
+            return
+          }
+          controller.enqueue(chunk)
+        },
+      })
+      return {
+        ok: true,
+        status: 200,
+        headers: new Headers({ 'content-type': 'application/json' }),
+        body,
+      } as unknown as Response
+    })
+    const result = await market.fetchIndex()
+    expect(result.source).toBe('builtin')
+    expect(result.warning ?? '').toContain('超过 2MB 上限')
+  })
+
+  it('install 下载地址指向内网 / 含凭据：拒绝且不请求、不落库', async () => {
+    const library = new FakeLibrary()
+    for (const badUrl of ['http://127.0.0.1/pack.json', 'http://192.168.0.2/pack.json', 'https://user:pass@example.com/pack.json']) {
+      const calls: FakeFetchCall[] = []
+      const market = new PersonaMarket({
+        config: marketConfig(),
+        library,
+        logger: new FakeLogger(),
+        fetchImpl: fakeFetch(
+          {
+            [INDEX_URL]: () => jsonResponse({ personas: [makeEntry({ id: 'persona-a', url: badUrl })] }),
+          },
+          calls,
+        ),
+      })
+      await expect(market.install('persona-a'), badUrl).rejects.toThrow(/内网|用户名或密码/u)
+      expect(calls.map((call) => call.url), badUrl).toEqual([INDEX_URL])
+    }
+    expect(library.installs).toEqual([])
+  })
+
+  it('install 下载响应 Content-Type 非 JSON：拒绝且不落库', async () => {
+    const calls: FakeFetchCall[] = []
+    const market = new PersonaMarket({
+      config: marketConfig(),
+      library: new FakeLibrary(),
+      logger: new FakeLogger(),
+      fetchImpl: fakeFetch(
+        {
+          [INDEX_URL]: () => jsonResponse({ personas: [makeEntry({ id: 'persona-a', url: PACK_URL })] }),
+          [PACK_URL]: () => textResponse('<html>', 'text/html'),
+        },
+        calls,
+      ),
+    })
+    await expect(market.install('persona-a')).rejects.toThrow(/Content-Type 不是 JSON/u)
+    expect(calls.map((call) => call.url)).toEqual([INDEX_URL, PACK_URL])
   })
 })
 

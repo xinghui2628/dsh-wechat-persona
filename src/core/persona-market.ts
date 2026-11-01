@@ -62,6 +62,113 @@ const DEFAULT_TIMEOUT_MS = 8000
 const MIN_TIMEOUT_MS = 1
 const MAX_TIMEOUT_MS = 600000
 
+/* ────────────────────── 远程下载安全（任务书 10.3 SSRF 防护） ────────────────────── */
+
+/** 远程 JSON 响应体上限（2MB；Content-Length 与流式读取双重限制）。 */
+export const MARKET_MAX_RESPONSE_BYTES = 2 * 1024 * 1024
+/** 最多跟随的重定向次数（每一跳都重新做协议/内网校验）。 */
+export const MARKET_MAX_REDIRECTS = 2
+const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308])
+/** 允许的 JSON Content-Type（application/json 与 application/*+json）。 */
+const JSON_CONTENT_TYPE = /^application\/(?:[a-z0-9.+-]*\+)?json\b/i
+
+/** 统一读取响应头（兼容标准 Headers 与测试替身/普通对象）。 */
+function responseHeader(response: unknown, name: string): string {
+  const headers = (response as { headers?: unknown } | null | undefined)?.headers
+  if (!headers) return ''
+  const getter = (headers as { get?: unknown }).get
+  if (typeof getter === 'function') {
+    const value = (getter.call(headers, name) as unknown) ?? ''
+    return String(value)
+  }
+  const record = headers as Record<string, unknown>
+  const key = Object.keys(record).find((item) => item.toLowerCase() === name.toLowerCase())
+  return key ? String(record[key] ?? '') : ''
+}
+
+function normalizeHostname(hostname: string): string {
+  return hostname
+    .trim()
+    .toLowerCase()
+    .replace(/^\[/, '')
+    .replace(/\]$/, '')
+    .replace(/\.$/, '')
+}
+
+function isPrivateIpv4(host: string): boolean {
+  const parts = host.split('.')
+  if (parts.length !== 4) return false
+  const octets = parts.map((part) => (/^\d{1,3}$/.test(part) ? Number(part) : Number.NaN))
+  if (octets.some((value) => !Number.isInteger(value) || value < 0 || value > 255)) return false
+  const [first, second] = octets as [number, number, number, number]
+  if (first === 0 || first === 10 || first === 127) return true
+  if (first === 169 && second === 254) return true
+  if (first === 172 && second >= 16 && second <= 31) return true
+  if (first === 192 && second === 168) return true
+  // 运营商级 NAT 100.64.0.0/10（内网性质，同样拒绝）
+  if (first === 100 && second >= 64 && second <= 127) return true
+  return false
+}
+
+/**
+ * 判断主机名是否指向本机 / 内网 / 保留地址（SSRF 防护，任务书 10.3）。
+ *
+ * 覆盖：localhost、`.local` / `.internal` / `.localhost`、IPv4 私有/回环/链路本地/
+ * CGNAT、IPv6 回环（::1）、IPv6 ULA（fc00::/7）、IPv6 链路本地（fe80::/10）、
+ * IPv4-mapped IPv6、纯数字主机名（十进制 IP 变体）。
+ */
+export function isPrivateMarketHost(hostname: string): boolean {
+  const host = normalizeHostname(hostname)
+  if (!host) return true
+  if (host === 'localhost' || host === '0.0.0.0' || host === '::' || host === '::1' || host === '0:0:0:0:0:0:0:1') {
+    return true
+  }
+  if (host.endsWith('.local') || host.endsWith('.localhost') || host.endsWith('.internal') || host.endsWith('.home.arpa')) {
+    return true
+  }
+  if (host.includes(':')) {
+    // IPv4-mapped IPv6（::ffff:…）直接拒绝；其余按 ULA / 链路本地判断。
+    if (host.startsWith('::ffff:')) return true
+    if (/^f[cd][0-9a-f]{0,2}:/i.test(host)) return true
+    if (/^fe[89ab][0-9a-f]?:/i.test(host)) return true
+    return false
+  }
+  // 纯数字主机名（如 2130706433）一律拒绝，避免十进制 IP 绕过点分检查。
+  if (/^\d+$/.test(host)) return true
+  const dotParts = host.split('.')
+  if (dotParts.every((part) => /^\d+$/.test(part)) && dotParts.length > 0) {
+    // 非标准点分写法（如 "127.1"、"10.1"）：按内网处理更安全。
+    return dotParts.length !== 4 || isPrivateIpv4(host)
+  }
+  return false
+}
+
+/**
+ * 校验远程地址：只允许 http/https、拒绝内嵌凭据、拒绝本机/内网地址。
+ *
+ * 错误信息**不回显原始 URL**（避免把内网地址写进设置页/日志响应），只给原因。
+ */
+export function assertSafeMarketUrl(rawUrl: string, label = '远程地址'): string {
+  const text = typeof rawUrl === 'string' ? rawUrl.trim() : ''
+  let parsed: URL
+  try {
+    parsed = new URL(text)
+  } catch {
+    throw new Error(`${label}不是合法 URL`)
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error(`${label}只支持 http/https`)
+  }
+  if (parsed.username || parsed.password) {
+    throw new Error(`${label}不允许包含用户名或密码`)
+  }
+  if (isPrivateMarketHost(parsed.hostname)) {
+    throw new Error(`${label}不允许指向本机或内网地址（已拒绝，防 SSRF）`)
+  }
+  return parsed.toString()
+}
+
+
 /* ────────────────────────────── 构造函数参数 ────────────────────────────── */
 
 export interface PersonaMarketOptions {
@@ -150,7 +257,9 @@ export class PersonaMarket implements PersonaMarketLike {
       return this.builtinResult()
     }
     try {
-      const raw = await this.fetchJson(indexUrl, '拉取人格索引')
+      // 10.3：远程索引地址必须先过 SSRF 校验（非 http/https、本机/内网直接拒绝）。
+      const safeIndexUrl = assertSafeMarketUrl(indexUrl, '人格索引地址')
+      const raw = await this.fetchJson(safeIndexUrl, '拉取人格索引')
       const entries = this.normalizeIndex(raw)
       const installed = await this.installedIds()
       const mapped = entries.map((entry) => ({ ...entry, tags: [...entry.tags], installed: installed.has(entry.id) }))
@@ -186,7 +295,7 @@ export class PersonaMarket implements PersonaMarketLike {
       )
     }
 
-    const packUrl = this.assertHttpUrl(entry.url)
+    const packUrl = assertSafeMarketUrl(entry.url, `人格包「${entry.name}」的下载地址`)
     const raw = await this.fetchJson(packUrl, `下载人格包「${entry.name}」`)
     // 索引 id 是市场里的稳定身份：下载到的包若自带别的 id，统一收敛到索引 id，避免列表出现重复人格。
     const pack = parsePersonaPack(raw)
@@ -281,35 +390,117 @@ export class PersonaMarket implements PersonaMarketLike {
     return entries
   }
 
-  /** GET 一个 JSON 地址；失败统一抛带上下文的 Error（超时/网络/HTTP/JSON 都覆盖）。 */
+  /**
+   * GET 一个 JSON 地址；失败统一抛带上下文的 Error（超时/网络/HTTP/JSON 都覆盖）。
+   *
+   * 10.3 SSRF 加固：只允许 http/https（协议校验 + 内网地址校验在 assertSafeMarketUrl），
+   * 手动跟随重定向（`redirect:'manual'`，最多 2 跳且每跳重新校验），要求 JSON
+   * Content-Type，响应体上限 2MB（Content-Length 与流式读取双重限制）。
+   */
   private async fetchJson(url: string, action: string): Promise<unknown> {
     const fetcher = this.resolveFetch()
     if (!fetcher) throw new Error(`${action}失败：当前运行环境不支持 fetch`)
-    const signal = this.timeoutSignal()
-    let response: Response
-    try {
-      response = await fetcher(url, {
-        method: 'GET',
-        headers: { accept: 'application/json' },
-        signal,
-      })
-    } catch (error) {
-      const name = error instanceof Error ? error.name : ''
-      const reason =
-        name === 'AbortError' || name === 'TimeoutError'
-          ? `请求超时（${this.timeoutMs}ms）`
-          : errorText(error)
-      throw new Error(`${action}失败：${reason}`)
+    let currentUrl = assertSafeMarketUrl(url, `${action}的请求地址`)
+    for (let redirects = 0; ; redirects += 1) {
+      const signal = this.timeoutSignal()
+      let response: Response
+      try {
+        response = await fetcher(currentUrl, {
+          method: 'GET',
+          headers: { accept: 'application/json' },
+          redirect: 'manual',
+          signal,
+        })
+      } catch (error) {
+        const name = error instanceof Error ? error.name : ''
+        const reason =
+          name === 'AbortError' || name === 'TimeoutError'
+            ? `请求超时（${this.timeoutMs}ms）`
+            : errorText(error)
+        throw new Error(`${action}失败：${reason}`)
+      }
+      if (!response || typeof response.ok !== 'boolean') {
+        throw new Error(`${action}失败：fetch 返回值不是有效响应`)
+      }
+      if (REDIRECT_STATUSES.has(Number(response.status))) {
+        if (redirects >= MARKET_MAX_REDIRECTS) {
+          throw new Error(`${action}失败：重定向次数超过上限（${MARKET_MAX_REDIRECTS} 次）`)
+        }
+        const location = responseHeader(response, 'location').trim()
+        if (!location) throw new Error(`${action}失败：重定向响应缺少 Location`)
+        let nextUrl: string
+        try {
+          nextUrl = new URL(location, currentUrl).toString()
+        } catch {
+          throw new Error(`${action}失败：重定向地址非法`)
+        }
+        // 每一跳都重新做协议 + 内网地址校验，防止 302 到 127.0.0.1 / 169.254 等。
+        currentUrl = assertSafeMarketUrl(nextUrl, `${action}的重定向地址`)
+        continue
+      }
+      if (!response.ok) throw new Error(`${action}失败：HTTP ${response.status}`)
+      const contentType = responseHeader(response, 'content-type').trim()
+      if (!JSON_CONTENT_TYPE.test(contentType)) {
+        throw new Error(`${action}失败：响应 Content-Type 不是 JSON`)
+      }
+      const declaredLength = Number(responseHeader(response, 'content-length'))
+      if (Number.isFinite(declaredLength) && declaredLength > MARKET_MAX_RESPONSE_BYTES) {
+        throw new Error(`${action}失败：响应体超过 2MB 上限`)
+      }
+      const text = await this.readResponseText(response, action)
+      if (new TextEncoder().encode(text).byteLength > MARKET_MAX_RESPONSE_BYTES) {
+        throw new Error(`${action}失败：响应体超过 2MB 上限`)
+      }
+      try {
+        return JSON.parse(text) as unknown
+      } catch {
+        throw new Error(`${action}失败：响应不是合法 JSON`)
+      }
     }
-    if (!response || typeof response.ok !== 'boolean') {
-      throw new Error(`${action}失败：fetch 返回值不是有效响应`)
+  }
+
+  /** 读取响应文本；优先流式读取以便在超大响应时尽早中止（10.3）。 */
+  private async readResponseText(response: Response, action: string): Promise<string> {
+    const body = (response as { body?: unknown }).body
+    const getReader = body && typeof (body as { getReader?: unknown }).getReader === 'function'
+      ? (body as ReadableStream<Uint8Array>).getReader.bind(body)
+      : null
+    if (getReader) {
+      const reader = (body as ReadableStream<Uint8Array>).getReader()
+      const chunks: Uint8Array[] = []
+      let total = 0
+      for (;;) {
+        const { done, value } = await reader.read()
+        if (done) break
+        if (!value) continue
+        total += value.byteLength
+        if (total > MARKET_MAX_RESPONSE_BYTES) {
+          try {
+            await reader.cancel()
+          } catch {
+            // 取消失败不影响结论
+          }
+          throw new Error(`${action}失败：响应体超过 2MB 上限`)
+        }
+        chunks.push(value)
+      }
+      const merged = new Uint8Array(total)
+      let offset = 0
+      for (const chunk of chunks) {
+        merged.set(chunk, offset)
+        offset += chunk.byteLength
+      }
+      return new TextDecoder('utf-8').decode(merged)
     }
-    if (!response.ok) throw new Error(`${action}失败：HTTP ${response.status}`)
-    try {
-      return (await response.json()) as unknown
-    } catch (error) {
-      throw new Error(`${action}失败：响应不是合法 JSON（${errorText(error)}）`)
+    const textFn = (response as { text?: unknown }).text
+    if (typeof textFn === 'function') {
+      return await (textFn as () => Promise<string>).call(response)
     }
+    // 兼容极简测试替身：只有 json()
+    if (typeof response.json === 'function') {
+      return JSON.stringify(await response.json())
+    }
+    throw new Error(`${action}失败：响应没有可读内容`)
   }
 
   /** 默认用全局 fetch；可注入替身。 */
@@ -326,19 +517,5 @@ export class PersonaMarket implements PersonaMarketLike {
     } catch {
       return undefined
     }
-  }
-
-  /** 只允许 http/https 下载人格包（拒绝 file:/data:/javascript: 等危险协议）。 */
-  private assertHttpUrl(url: string): string {
-    let parsed: URL
-    try {
-      parsed = new URL(url)
-    } catch {
-      throw new Error(`人格包下载地址非法：${url}`)
-    }
-    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-      throw new Error(`人格包下载地址只支持 http/https：${url}`)
-    }
-    return parsed.toString()
   }
 }

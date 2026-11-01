@@ -43,6 +43,7 @@ import type {
   AuditEvent,
   AuditLogLike,
   AuditSummary,
+  DraftDecisionResult,
   EngineStatus,
   InboundMessage,
   MemoryStoreLike,
@@ -51,6 +52,7 @@ import type {
   PersonaMarketLike,
   PersonaPackV2,
   PersonaSummary,
+  SendDraft,
   SendResult,
   StickerCatalogApi,
 } from '../../src/types.ts'
@@ -183,6 +185,9 @@ function makeEngineStatus(overrides: Partial<EngineStatus> = {}): EngineStatus {
     startedAt: FIXED_NOW - 60_000,
     lastActivityAt: FIXED_NOW,
     safeMode: false,
+    sendMode: 'auto',
+    pendingDrafts: 0,
+    sendState: 'received',
   }
   return { ...(base as unknown as EngineStatus), ...overrides }
 }
@@ -208,6 +213,29 @@ class FakeEngine implements PersonaEngineLike {
   async ocrDiagnostics(): Promise<unknown> {
     if (this.ocrDiagnosticsError !== null) throw this.ocrDiagnosticsError
     return this.ocrDiagnosticsResult
+  }
+
+  /** task-12：草稿队列与人工确认（/drafts 端点）。 */
+  drafts: SendDraft[] = []
+  draftDecision: DraftDecisionResult = { ok: true }
+  draftDecisionError: Error | null = null
+  readonly approveDraftCalls: string[] = []
+  readonly rejectDraftCalls: string[] = []
+
+  async listDrafts(): Promise<SendDraft[]> {
+    return this.drafts
+  }
+
+  async approveDraft(id: string): Promise<DraftDecisionResult> {
+    this.approveDraftCalls.push(id)
+    if (this.draftDecisionError !== null) throw this.draftDecisionError
+    return this.draftDecision
+  }
+
+  async rejectDraft(id: string): Promise<DraftDecisionResult> {
+    this.rejectDraftCalls.push(id)
+    if (this.draftDecisionError !== null) throw this.draftDecisionError
+    return this.draftDecision
   }
 
   async status(): Promise<EngineStatus> {
@@ -684,6 +712,10 @@ describe('Host HTTP API：健康检查与运行状态', () => {
     expect(status.personaName).toBe('小号')
     expect(json.channel).toMatchObject({ id: 'mock', state: 'running' })
     expect(json.configSummary).toMatchObject({ whitelistCount: 1, online: true, activeChannel: 'mock' })
+    // task-12 / 13.4：发送模式与草稿队列状态对外可见
+    expect(json.sendMode).toBe('auto')
+    expect(json.pendingDrafts).toBe(0)
+    expect(json.sendState).toBe('received')
   })
 
   it('GET /status 暴露 safeMode（Phase F）', async () => {
@@ -1423,6 +1455,89 @@ describe('Host HTTP API：测试与运行时操作', () => {
 
 /* ═══════════════ Phase F：OCR / 读屏诊断（只读降级） ═══════════════ */
 
+describe('Host HTTP API：待发送草稿（task-12 / 13.4）', () => {
+  const draftSample: SendDraft = {
+    id: 'draft-1',
+    opId: 'op-1',
+    contactId: 'wxid_alice',
+    contactName: '小爱',
+    text: '批准才会发送',
+    createdAt: FIXED_NOW - 1000,
+    expiresAt: FIXED_NOW + 3600_000,
+    status: 'pending',
+    reason: 'draft-mode',
+  }
+
+  it('GET /drafts 返回引擎草稿队列', async () => {
+    const env = await makeEnv()
+    env.engine!.drafts = [draftSample]
+    const json = expectOk(await call(env, 'GET', '/drafts'))
+    expect(Array.isArray(json.drafts)).toBe(true)
+    expect(json.drafts).toHaveLength(1)
+    expect((json.drafts as SendDraft[])[0]).toMatchObject({ id: 'draft-1', status: 'pending', reason: 'draft-mode' })
+  })
+
+  it('POST /drafts/approve 成功时调用引擎并透传结果', async () => {
+    const env = await makeEnv()
+    env.engine!.draftDecision = { ok: true, delivery: 'sent', draft: { ...draftSample, status: 'approved' } }
+    const json = expectOk(await call(env, 'POST', '/drafts/approve', { id: 'draft-1' }))
+    expect(env.engine!.approveDraftCalls).toEqual(['draft-1'])
+    expect(json.ok).toBe(true)
+    expect((json.result as DraftDecisionResult).delivery).toBe('sent')
+  })
+
+  it('POST /drafts/approve 被门禁拒绝时返回 409 并透传原因', async () => {
+    const env = await makeEnv()
+    env.engine!.draftDecision = { ok: false, error: '已拒绝发送：引擎已暂停（manual）', detail: 'paused' }
+    const response = await call(env, 'POST', '/drafts/approve', { id: 'draft-1' })
+    expectFail(response, 409, /暂停/)
+    expect(env.engine!.approveDraftCalls).toEqual(['draft-1'])
+  })
+
+  it('POST /drafts/approve 对已终结（unknown）的草稿返回 409，绝不重发', async () => {
+    const env = await makeEnv()
+    env.engine!.draftDecision = { ok: false, error: '该草稿对应的发送操作已终结（可能已发送或结果未知），为避免重复发送已拒绝', detail: 'duplicate' }
+    expectFail(await call(env, 'POST', '/drafts/approve', { id: 'draft-1' }), 409, /已终结/)
+  })
+
+  it('POST /drafts/approve 草稿不存在时返回 404', async () => {
+    const env = await makeEnv()
+    env.engine!.draftDecision = { ok: false, error: '草稿不存在或已清理' }
+    expectFail(await call(env, 'POST', '/drafts/approve', { id: 'draft-missing' }), 404, /不存在/)
+  })
+
+  it('POST /drafts/reject 调用引擎标记拒绝', async () => {
+    const env = await makeEnv()
+    env.engine!.draftDecision = { ok: true, draft: { ...draftSample, status: 'rejected' } }
+    const json = expectOk(await call(env, 'POST', '/drafts/reject', { id: 'draft-1' }))
+    expect(env.engine!.rejectDraftCalls).toEqual(['draft-1'])
+    expect((json.result as DraftDecisionResult).draft?.status).toBe('rejected')
+  })
+
+  it('POST /drafts/approve 缺少 id 时返回 400', async () => {
+    const env = await makeEnv()
+    expectFail(await call(env, 'POST', '/drafts/approve', {}), 400, /id/)
+    expect(env.engine!.approveDraftCalls).toEqual([])
+  })
+
+  it('GET /drafts/approve 方法不允许时返回 405', async () => {
+    const env = await makeEnv()
+    expectFail(await call(env, 'GET', '/drafts/approve'), 405)
+  })
+
+  it('没有引擎时 /drafts 返回 409', async () => {
+    const env = await makeEnv({ engine: null })
+    expectFail(await call(env, 'GET', '/drafts'), 409, /引擎/)
+    expectFail(await call(env, 'POST', '/drafts/approve', { id: 'draft-1' }), 409, /引擎/)
+  })
+
+  it('引擎处理草稿抛异常时返回 500', async () => {
+    const env = await makeEnv()
+    env.engine!.draftDecisionError = new Error('写盘失败')
+    expectFail(await call(env, 'POST', '/drafts/approve', { id: 'draft-1' }), 500, /失败/)
+  })
+})
+
 describe('Host HTTP API：OCR 诊断（Phase F 只读）', () => {
   const sampleEnvelope = {
     channelId: 'desktop',
@@ -1433,9 +1548,17 @@ describe('Host HTTP API：OCR 诊断（Phase F 只读）', () => {
       engines: ['winrt', 'tesseract'],
       lines: 12,
       uncertainCount: 2,
+      rejectCount: 1,
+      conflictCount: 3,
       durationMs: 345,
       lastReadAt: FIXED_NOW - 1000,
       lastError: 'none',
+      dpi: 120,
+      scale: 1.5,
+      screenshotMode: 'printwindow',
+      engineVersion: 'winrt-1.2.0',
+      secondOcrUsed: true,
+      qualityStatus: 'degraded',
     },
   }
 
@@ -1451,10 +1574,54 @@ describe('Host HTTP API：OCR 诊断（Phase F 只读）', () => {
       captureId: 'cap-1',
       lines: 12,
       uncertainCount: 2,
+      rejectCount: 1,
+      conflictCount: 3,
       durationMs: 345,
+      dpi: 120,
+      scale: 1.5,
+      screenshotMode: 'printwindow',
+      engineVersion: 'winrt-1.2.0',
+      secondOcrUsed: true,
+      qualityStatus: 'degraded',
       dualEngine: true,
     })
     expect(diagnostics.secret).toBeUndefined()
+  })
+
+  it('task-12：诊断白名单补齐 pipeline-fixer 新增字段，缺失时安全忽略', async () => {
+    // 只有新字段（无 captureId/lines/lastReadAt）也应判为 available
+    const env = await makeEnv()
+    env.engine!.ocrDiagnosticsResult = { ocr: { dpi: 144, qualityStatus: 'ok' } }
+    const view = normalizeOcrDiagnostics(env.engine!.ocrDiagnosticsResult)
+    expect(view.available).toBe(true)
+    expect(view.dpi).toBe(144)
+    expect(view.qualityStatus).toBe('ok')
+    expect(view.scale).toBeUndefined()
+
+    // 全部缺失时保持降级，不因新字段缺失而报错
+    const empty = normalizeOcrDiagnostics({ ocr: {} })
+    expect(empty.available).toBe(false)
+    expect(empty.dpi).toBeUndefined()
+
+    // 越界/超长时钳制
+    const clamped = normalizeOcrDiagnostics({
+      ocr: {
+        dpi: 999_999,
+        scale: 99,
+        screenshotMode: 'x'.repeat(100),
+        engineVersion: 'v'.repeat(100),
+        qualityStatus: 'q'.repeat(100),
+        conflictCount: 999_999_999,
+        rejectCount: 999_999_999,
+      },
+    })
+    expect(clamped.available).toBe(true)
+    expect(clamped.dpi).toBeLessThanOrEqual(10_000)
+    expect(clamped.scale).toBeLessThanOrEqual(16)
+    expect((clamped.screenshotMode ?? '').length).toBeLessThanOrEqual(32)
+    expect((clamped.engineVersion ?? '').length).toBeLessThanOrEqual(64)
+    expect(clamped.conflictCount).toBeLessThanOrEqual(100_000)
+    expect(clamped.rejectCount).toBeLessThanOrEqual(100_000)
   })
 
   it('通道未提供 ocr 数据时 available:false 并给出原因', async () => {

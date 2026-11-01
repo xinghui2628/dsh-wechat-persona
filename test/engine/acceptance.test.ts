@@ -261,6 +261,8 @@ function makeHarness(options: {
   state?: Partial<RuntimeState>
   /** Phase F：通道 id（默认 mock；safeMode 用例需要真实通道 id 才能触发拦截）。 */
   channelId?: ChannelId
+  /** 9.4：注入固定的 opId 生成器，用于验证幂等（同一 opId 只调一次 channel.send）。 */
+  nextOperationId?: () => string
 } = {}): Harness {
   const now = options.now ?? new Date('2026-10-30T12:00:00+08:00').getTime()
   const config = { ...defaultConfig(), ...(options.config ?? {}) } as WechatPersonaConfig
@@ -319,6 +321,7 @@ function makeHarness(options: {
     stickers,
     persona,
     saveState: async () => {},
+    ...(options.nextOperationId ? { nextOperationId: options.nextOperationId } : {}),
   })
   return { engine, config, clock, random, store, channel, llm, search, notifier, audit, state, events: audit.events }
 }
@@ -941,16 +944,26 @@ describe('Phase F safeMode：安全运行模式拒绝真实发送', () => {
     reply: { ...defaultConfig().reply, stickerProbability: 0 },
   }
 
-  it('safeMode + 真实通道：生成后不调用 channel.send，审计记 safe-mode', async () => {
+  it('safeMode + 真实通道：生成后不调用 channel.send，只落一条 safe-mode 草稿', async () => {
     const h = makeHarness({ config: safeConfig, channelId: 'desktop' })
     await h.engine.handleInbound(inbound())
     expect(h.llm.calls).toHaveLength(1) // 照常生成了回复
     expect(h.channel.sent).toHaveLength(0) // 但绝不发送
     expect(h.state.stats.sends).toBe(0)
     expect((await h.engine.status()).safeMode).toBe(true)
-    const blockEvent = h.audit.events.find((event) => event.type === 'skip' && event.reason === 'safe-mode')
-    expect(blockEvent).toBeTruthy()
-    expect(String(blockEvent && blockEvent.detail)).toContain('安全模式')
+    // task-12 / 13.4：safeMode 优先级最高——不发送，改为生成待人工确认的草稿。
+    expect(h.state.stats.drafts).toBe(1)
+    const drafts = await h.engine.listDrafts()
+    expect(drafts).toHaveLength(1)
+    expect(drafts[0]?.reason).toBe('safe-mode')
+    expect(drafts[0]?.status).toBe('pending')
+    const draftEvent = h.audit.events.find((event) => event.type === 'draft')
+    expect(draftEvent).toBeTruthy()
+    // 不允许批准发送到真实通道（门禁仍拦截）。
+    const approved = await h.engine.approveDraft(drafts[0]!.id)
+    expect(approved.ok).toBe(false)
+    expect(String(approved.error)).toContain('安全模式')
+    expect(h.channel.sent).toHaveLength(0)
   })
 
   it('safeMode + mock 通道：允许 mock 空转发送', async () => {
@@ -959,6 +972,7 @@ describe('Phase F safeMode：安全运行模式拒绝真实发送', () => {
     expect(h.channel.sent.length).toBeGreaterThan(0)
     expect(h.state.stats.sends).toBeGreaterThan(0)
     expect(h.audit.events.some((event) => event.type === 'skip' && event.reason === 'safe-mode')).toBe(false)
+    expect(h.state.stats.drafts).toBe(0)
   })
 
   it('safeMode 下 sendTest 也拒绝真实通道：delivery=not-sent、错误含「安全模式」', async () => {
@@ -1005,5 +1019,208 @@ describe('Phase F OCR 诊断：engine.ocrDiagnostics() 只读透传', () => {
   it('通道未提供 ocr 时返回 null（api 层据此降级 available:false）', () => {
     const h = makeHarness({ config: { whitelist } })
     expect(h.engine.ocrDiagnostics().ocr).toBeNull()
+  })
+})
+
+/* ═══════════ task-12：9.1 发送状态机 / 9.4 幂等账本 / 13.4 draft·confirm ═══════════ */
+
+describe('9.1 发送生命周期状态机：真实阶段推进 + audit', () => {
+  const autoConfig = { whitelist, reply: { ...defaultConfig().reply, stickerProbability: 0 } }
+
+  function sendStateReasons(events: AuditEvent[]): string[] {
+    return events.filter((event) => event.type === 'send-state').map((event) => String(event.reason))
+  }
+
+  it('自动发送：received → validated → generating → ready → sending → confirmed', async () => {
+    const h = makeHarness({ config: autoConfig })
+    await h.engine.handleInbound(inbound())
+    const states = sendStateReasons(h.audit.events)
+    expect(states).toEqual(['validated', 'generating', 'ready', 'sending', 'confirmed'])
+    const confirmed = h.audit.events.find((event) => event.type === 'send-state' && event.reason === 'confirmed')
+    expect(String(confirmed?.detail)).toBe('sending → confirmed')
+    expect((await h.engine.status()).sendState).toBe('confirmed')
+  })
+
+  it('draft 模式：状态停在 draft（不进入 sending/confirmed）', async () => {
+    const h = makeHarness({ config: { ...autoConfig, sendMode: 'draft' as const } })
+    await h.engine.handleInbound(inbound())
+    expect(sendStateReasons(h.audit.events)).toEqual(['validated', 'generating', 'draft'])
+    expect((await h.engine.status()).sendState).toBe('draft')
+  })
+
+  it('unknown 结果：终态为 unknown（绝不当作成功）', async () => {
+    const h = makeHarness({ config: autoConfig })
+    h.channel.sendResults = [{ ok: false, error: '快发送已回车但气泡未确认，已跳过保守重发以免重复', delivery: 'unknown' }]
+    await h.engine.handleInbound(inbound())
+    const states = sendStateReasons(h.audit.events)
+    expect(states[states.length - 1]).toBe('unknown')
+    expect((await h.engine.status()).sendState).toBe('unknown')
+  })
+})
+
+describe('9.4 sendOperationId 幂等：同一 opId 只调一次 channel.send', () => {
+  it('同一 opId 的手动发送重复调用：第二次被账本拒绝，通道只收到一次', async () => {
+    const h = makeHarness({
+      // 关掉最小发送间隔，让第二次调用真正走到「账本幂等」而不是被频控拦下。
+      config: { whitelist, rateLimit: { ...defaultConfig().rateLimit, minReplyIntervalSec: 0 }, reply: { ...defaultConfig().reply, stickerProbability: 0 } },
+      nextOperationId: () => 'op-fixed',
+    })
+    const first = await h.engine.sendTest('张三', '重复发送测试')
+    expect(first.ok).toBe(true)
+    expect(h.channel.sent).toHaveLength(1)
+    // 模拟 DSH 重试 / 调用方重试同一个逻辑操作：opId 相同 → 绝不重复发送。
+    // 先把时钟推过最小发送间隔，确保拦截来自账本而不是频控。
+    h.clock.advance(2000)
+    const second = await h.engine.sendTest('张三', '重复发送测试')
+    expect(second.ok).toBe(false)
+    expect(second.delivery).toBe('unknown')
+    expect(String(second.error)).toContain('已终结')
+    expect(h.channel.sent).toHaveLength(1)
+    expect(h.audit.events.some((event) => event.type === 'send-state' && event.reason === 'skip-duplicate')).toBe(true)
+  })
+
+  it('重启后账本恢复：已 confirmed 的 opId 不再执行', async () => {
+    const config = { whitelist, reply: { ...defaultConfig().reply, stickerProbability: 0 } }
+    const h1 = makeHarness({ config, nextOperationId: () => 'op-restart' })
+    expect((await h1.engine.sendTest('张三', '重启幂等测试')).ok).toBe(true)
+
+    const h2 = makeHarness({ config, nextOperationId: () => 'op-restart' })
+    for (const [key, value] of h1.store.files) h2.store.files.set(key, value)
+    await h2.engine.start()
+    const replayed = await h2.engine.sendTest('张三', '重启幂等测试')
+    expect(replayed.ok).toBe(false)
+    expect(h2.channel.sent).toHaveLength(0)
+  })
+
+  it('multi-part 部分成功：已发送 part 不重发，失败 part 记 failed，最终状态 confirmed', async () => {
+    const h = makeHarness({
+      config: {
+        whitelist,
+        reply: { ...defaultConfig().reply, splitProbability: 1, maxSplitParts: 2, maxChars: 300, stickerProbability: 0 },
+      },
+    })
+    h.llm.text = '今天天气真好呀。我刚刚在楼下散步呢。'
+    h.channel.sendResults = [
+      { ok: true },
+      { ok: false, error: '发送前校验失败', delivery: 'not-sent' },
+      { ok: false, error: '发送前校验失败', delivery: 'not-sent' },
+    ]
+    await h.engine.handleInbound(inbound())
+    // part1 一次成功；part2 失败一次 + 确认未发出重试一次 = 3 次通道调用。
+    expect(h.channel.sent).toHaveLength(3)
+    expect(h.state.stats.sends).toBe(1)
+    const stored = JSON.parse(h.store.files.get('send-ledger.json') ?? '{}') as { entries?: Array<{ state: string; partIndex: number }> }
+    const entries = stored.entries ?? []
+    expect(entries.filter((entry) => entry.state === 'confirmed')).toHaveLength(1)
+    expect(entries.filter((entry) => entry.state === 'failed')).toHaveLength(1)
+    expect(h.audit.events.some((event) => event.type === 'send-state' && event.reason === 'confirmed')).toBe(true)
+  })
+})
+
+describe('13.4 draft / confirm：生成草稿、人工批准才发送，且批准重走全部门禁', () => {
+  const draftConfig = {
+    whitelist,
+    sendMode: 'draft' as const,
+    reply: { ...defaultConfig().reply, stickerProbability: 0 },
+  }
+
+  async function draftOnce(options: Parameters<typeof makeHarness>[0] = {}) {
+    const h = makeHarness({ config: draftConfig, ...options })
+    await h.engine.handleInbound(inbound())
+    const drafts = await h.engine.listDrafts()
+    return { h, drafts }
+  }
+
+  it('draft 模式：不调用 channel.send，写 drafts.json 并暴露 pendingDrafts', async () => {
+    const { h, drafts } = await draftOnce()
+    expect(h.channel.sent).toHaveLength(0)
+    expect(h.state.stats.sends).toBe(0)
+    expect(drafts).toHaveLength(1)
+    expect(drafts[0]).toMatchObject({ contactId: '张三', status: 'pending', reason: 'draft-mode' })
+    expect((await h.engine.status()).sendMode).toBe('draft')
+    expect((await h.engine.status()).pendingDrafts).toBe(1)
+    expect(h.state.stats.drafts).toBe(1)
+    const stored = JSON.parse(h.store.files.get('drafts.json') ?? '{}') as { version?: number; drafts?: unknown[] }
+    expect(stored.version).toBe(1)
+    expect(stored.drafts).toHaveLength(1)
+    expect(h.audit.events.some((event) => event.type === 'draft' && event.reason === 'draft-mode')).toBe(true)
+  })
+
+  it('approve 后发送（mock 通道）并标记 approved，同一草稿不能重复批准', async () => {
+    const { h, drafts } = await draftOnce()
+    const approved = await h.engine.approveDraft(drafts[0]!.id)
+    expect(approved.ok).toBe(true)
+    expect(approved.delivery).toBe('sent')
+    expect(h.channel.sent).toHaveLength(1)
+    expect(h.state.stats.sends).toBe(1)
+    const after = await h.engine.listDrafts()
+    expect(after[0]?.status).toBe('approved')
+    expect(after[0]?.delivery).toBe('sent')
+    // 同一草稿重复批准：已处理 → 拒绝，不再发送。
+    const again = await h.engine.approveDraft(drafts[0]!.id)
+    expect(again.ok).toBe(false)
+    expect(h.channel.sent).toHaveLength(1)
+    expect(h.audit.events.some((event) => event.type === 'send' && event.reason === 'draft-approved')).toBe(true)
+  })
+
+  it('暂停时批准：拒绝（重走 canSend 门禁），不发送', async () => {
+    const { h, drafts } = await draftOnce()
+    await h.engine.pause('manual-test')
+    const result = await h.engine.approveDraft(drafts[0]!.id)
+    expect(result.ok).toBe(false)
+    expect(String(result.error)).toContain('暂停')
+    expect(h.channel.sent).toHaveLength(0)
+    expect(h.audit.events.some((event) => event.type === 'draft' && event.reason === 'approve-blocked')).toBe(true)
+  })
+
+  it('白名单被移除后批准：拒绝，不发送', async () => {
+    const { h, drafts } = await draftOnce()
+    h.config.whitelist = []
+    const result = await h.engine.approveDraft(drafts[0]!.id)
+    expect(result.ok).toBe(false)
+    expect(String(result.error)).toContain('白名单')
+    expect(h.channel.sent).toHaveLength(0)
+  })
+
+  it('批准后通道返回 unknown：不自动重发，第二次批准被账本拒绝', async () => {
+    const { h, drafts } = await draftOnce()
+    h.channel.sendResults = [{ ok: false, error: '快发送已回车但气泡未确认，已跳过保守重发以免重复', delivery: 'unknown' }]
+    const first = await h.engine.approveDraft(drafts[0]!.id)
+    expect(first.ok).toBe(false)
+    expect(first.delivery).toBe('unknown')
+    expect(h.channel.sent).toHaveLength(1)
+    // 草稿仍是 pending（人工可查看），但账本已终结 → 不能再发。
+    const second = await h.engine.approveDraft(drafts[0]!.id)
+    expect(second.ok).toBe(false)
+    expect(String(second.error)).toContain('已终结')
+    expect(h.channel.sent).toHaveLength(1)
+  })
+
+  it('reject：标记 rejected 且账本 cancelled，之后不能批准', async () => {
+    const { h, drafts } = await draftOnce()
+    const rejected = await h.engine.rejectDraft(drafts[0]!.id)
+    expect(rejected.ok).toBe(true)
+    const after = await h.engine.listDrafts()
+    expect(after[0]?.status).toBe('rejected')
+    const approved = await h.engine.approveDraft(drafts[0]!.id)
+    expect(approved.ok).toBe(false)
+    expect(h.channel.sent).toHaveLength(0)
+  })
+
+  it('重启后 drafts.json 恢复，仍可批准发送', async () => {
+    const config = { whitelist, sendMode: 'draft' as const, reply: { ...defaultConfig().reply, stickerProbability: 0 } }
+    const h1 = makeHarness({ config })
+    await h1.engine.handleInbound(inbound())
+    const draft = (await h1.engine.listDrafts())[0]!
+
+    const h2 = makeHarness({ config })
+    for (const [key, value] of h1.store.files) h2.store.files.set(key, value)
+    await h2.engine.start()
+    const restored = await h2.engine.listDrafts()
+    expect(restored).toHaveLength(1)
+    expect(restored[0]?.id).toBe(draft.id)
+    const approved = await h2.engine.approveDraft(draft.id)
+    expect(approved.ok).toBe(true)
+    expect(h2.channel.sent).toHaveLength(1)
   })
 })

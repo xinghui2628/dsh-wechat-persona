@@ -11,6 +11,8 @@
 
 import type {
   ChannelStatus,
+  DraftDecisionResult,
+  DraftStatus,
   EngineDeps,
   EngineStatus,
   InboundMessage,
@@ -22,6 +24,7 @@ import type {
   PersonaPack,
   RiskSignal,
   SendDelivery,
+  SendDraft,
   SendResult,
   SkipReason,
   StickerCatalogLike,
@@ -40,6 +43,8 @@ import { extractPreferences } from '../core/preferences.ts'
 import { buildMessages, buildSystemPrompt } from '../llm/prompt.ts'
 import { summarizeMemory } from './summarizer.ts'
 import { dayKey } from '../util/time.ts'
+import { canTransition, type SendState } from '../core/send-state.ts'
+import { SendLedger } from '../core/send-ledger.ts'
 
 /** 模型输出清洗：去 markdown/引号/前缀，保留换行以便拆条。 */
 export function sanitizeReply(text: string): string {
@@ -82,6 +87,23 @@ interface DeferredInboundEntry {
 interface DeferredStoreFile {
   version: 1
   entries: DeferredInboundEntry[]
+}
+
+/**
+ * 13.4：待人工确认的发送草稿队列（落盘到 dataDir/drafts.json，重启后仍可批准/拒绝）。
+ * 只保存生成的文本，不执行任何内容；批准时重新走完整发送门禁与 9.4 账本。
+ */
+const DRAFTS_FILE = 'drafts.json'
+const DRAFTS_STORE_VERSION = 1
+const DRAFTS_MAX = 50
+/** 草稿 24 小时内有效，过期后不允许再批准发送。 */
+const DRAFT_TTL_MS = 24 * 60 * 60 * 1000
+/** 已处理草稿保留 24 小时，便于设置页回看最近结果。 */
+const DRAFT_KEEP_MS = 24 * 60 * 60 * 1000
+
+interface DraftStoreFile {
+  version: 1
+  drafts: SendDraft[]
 }
 
 /**
@@ -160,9 +182,22 @@ export class PersonaEngine {
   private flushTask: Promise<void> | null = null
   /** 发送尝试的投递三态计数（P0-2，随 status 暴露）。 */
   private readonly deliveryCounts = { sent: 0, notSent: 0, unknown: 0 }
+  /** 9.1：当前这条回复所处的发送生命周期阶段（入站串行处理，全局单值即可）。 */
+  private sendState: SendState = 'received'
+  /** 9.4：跨重启的发送账本（同一 sendOperationId + partIndex 只执行一次）。 */
+  private readonly ledger: SendLedger
+  /** 13.4：待人工确认的发送草稿（draft / confirm / safeMode / 预算草稿都进这里）。 */
+  private drafts: SendDraft[] = []
+  private draftsLoaded = false
 
   constructor(deps: EngineDeps) {
     this.deps = deps
+    this.ledger = new SendLedger({
+      clock: deps.clock,
+      store: deps.store,
+      logger: deps.logger,
+      ...(deps.nextOperationId ? { nextOperationId: deps.nextOperationId } : {}),
+    })
   }
 
   /** 设置页切换人格后热更新（不必重载插件）。 */
@@ -183,6 +218,9 @@ export class PersonaEngine {
     this.abortController = new AbortController()
     // 重启后先把上次暂停期间暂存的消息读回来（未暂停时下面直接补处理）。
     await this.loadDeferred()
+    // 9.4 / 13.4：读回发送账本与草稿队列，保证跨重启不重复发送、草稿仍可人工批准。
+    await this.ledger.load()
+    await this.loadDrafts()
     // P1-7：启动时若状态仍是暂停/熔断，绝不静默开始收消息/发消息；等主人显式 resume。
     // 只拦暂停/熔断：预算耗尽不应让通道永远起不来（次日预算会自动恢复）。
     const blocked = this.canSend({ checkBudget: false, checkSafeMode: false })
@@ -305,9 +343,11 @@ export class PersonaEngine {
       lastActivityAt: state.lastActivityAt,
       delivery: { ...this.deliveryCounts },
       deferredCount: this.deferred.length,
-      // Phase F：安全运行模式（types.ts 的 EngineStatus 未扩展，API 层按结构可选读取）。
       safeMode: config.safeMode === true,
-    } as EngineStatus & { safeMode: boolean }
+      sendMode: config.sendMode,
+      pendingDrafts: this.pendingDrafts(),
+      sendState: this.sendState,
+    }
   }
 
   /**
@@ -340,11 +380,15 @@ export class PersonaEngine {
    * 手动发一条测试消息（工具 / 设置页用）。
    * P1-5：与自动发送共用同一套门禁（暂停 / 熔断 / 预算 / 白名单 / 频控），
    * 不再绕过引擎直接调用 channel.send。
+   * 9.1 / 9.4：同样走发送状态机与发送账本（同一 opId 只执行一次）。
    */
   async sendTest(contactId: string, text: string): Promise<SendResult> {
+    const now = this.deps.clock.now()
+    this.setSendState('received')
     const blocked = this.canSend({ contactId, checkWhitelist: true, checkRate: true })
     if (blocked) {
       this.deps.logger.warn('手动发送被门禁拒绝', `${blocked.reason}: ${blocked.detail}`)
+      this.setSendState('cancelled')
       await this.audit({
         type: 'send-fail',
         contactId,
@@ -357,8 +401,21 @@ export class PersonaEngine {
           delivery: 'not-sent',
         },
       })
+      await this.persist()
       return { ok: false, error: `已拒绝发送：${blocked.detail}`, delivery: 'not-sent' }
     }
+    await this.transitionSendState('validated', { contactId }, now)
+    const operation = this.ledger.beginOperation({ contactId, text })
+    // 9.4：同一 opId 已终结（已发出 / 结果未知 / 已取消）→ 绝不再发。
+    if (!this.ledger.shouldSend(operation.opId, 0)) {
+      this.setSendState('unknown')
+      await this.audit({ type: 'send-state', contactId, reason: 'skip-duplicate', detail: `op=${operation.opId} 已终结，跳过手动重发`, extra: { opId: operation.opId } })
+      await this.persist()
+      return { ok: false, error: '该发送操作已终结（可能已发送或结果未知），为避免重复发送已跳过', delivery: 'unknown' }
+    }
+    await this.transitionSendState('ready', { contactId }, now)
+    await this.transitionSendState('sending', { contactId }, now)
+    this.ledger.markSending(operation.opId, 0)
     const startedAt = this.deps.clock.now()
     let result: SendResult
     try {
@@ -373,8 +430,10 @@ export class PersonaEngine {
     const delivery = resolveSendDelivery(result)
     this.countDelivery(delivery)
     const delivered = delivery === 'sent'
+    const finalState: SendState = delivered ? 'confirmed' : delivery === 'unknown' ? 'unknown' : 'failed'
+    this.ledger.recordResult(operation.opId, 0, { state: finalState, delivery })
+    await this.ledger.save()
     if (delivered) {
-      const now = this.deps.clock.now()
       const counter = normalizeCounter(this.deps.state.rate[contactId], now)
       this.deps.state.rate[contactId] = recordReply(counter, now)
       this.deps.state.stats.sends += 1
@@ -393,6 +452,7 @@ export class PersonaEngine {
         durationMs: this.deps.clock.now() - startedAt,
       },
     })
+    await this.transitionSendState(finalState, { contactId }, this.deps.clock.now())
     await this.persist()
     return { ...result, ok: delivered, delivery }
   }
@@ -571,6 +631,241 @@ export class PersonaEngine {
     await this.persist()
   }
 
+  /* ──────────────── 9.1 发送状态机 / 9.4 发送账本 / 13.4 草稿 ──────────────── */
+
+  private setSendState(state: SendState): void {
+    this.sendState = state
+  }
+
+  /**
+   * 9.1：推进发送生命周期并写 audit。非法转换只告警不抛异常——状态机是观测/防重保障，
+   * 不能因为一次异常转换把正常回复链路带崩（真正的防重由 send-ledger 负责）。
+   */
+  private async transitionSendState(to: SendState, contact?: { contactId?: string; msgId?: string }, now?: number): Promise<void> {
+    const from = this.sendState
+    if (from === to) return
+    if (!canTransition(from, to)) {
+      this.deps.logger.warn('忽略非法的发送状态转换', `${from} → ${to}`)
+      return
+    }
+    this.sendState = to
+    await this.audit({
+      type: 'send-state',
+      contactId: contact?.contactId,
+      msgId: contact?.msgId,
+      reason: to,
+      detail: `${from} → ${to}`,
+      extra: { from, to, at: now ?? this.deps.clock.now() },
+    })
+  }
+
+  /** 13.4：从 dataDir/drafts.json 读回草稿队列（损坏时按空队列继续，不影响启动）。 */
+  private async loadDrafts(): Promise<void> {
+    let stored: unknown = null
+    try {
+      stored = await this.deps.store.readJson<DraftStoreFile | null>(DRAFTS_FILE)
+    } catch (error) {
+      this.deps.logger.warn('读取草稿队列失败，已按空队列继续', String(error))
+      stored = null
+    }
+    const list = stored && typeof stored === 'object' && Array.isArray((stored as DraftStoreFile).drafts) ? (stored as DraftStoreFile).drafts : []
+    this.drafts = this.pruneDrafts(list.filter((draft) => this.isValidStoredDraft(draft)), this.deps.clock.now()).slice(-DRAFTS_MAX)
+    this.draftsLoaded = true
+  }
+
+  private async saveDrafts(): Promise<void> {
+    try {
+      await this.deps.store.writeJson(DRAFTS_FILE, { version: DRAFTS_STORE_VERSION, drafts: this.drafts })
+    } catch (error) {
+      this.deps.logger.warn('写入草稿队列失败（本次运行仍使用内存队列）', String(error))
+    }
+  }
+
+  private isValidDraftStatus(value: unknown): value is DraftStatus {
+    return value === 'pending' || value === 'approved' || value === 'rejected' || value === 'expired'
+  }
+
+  private isValidStoredDraft(value: unknown): value is SendDraft {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+    const draft = value as Partial<SendDraft>
+    return (
+      typeof draft.id === 'string' &&
+      draft.id.length > 0 &&
+      typeof draft.opId === 'string' &&
+      draft.opId.length > 0 &&
+      typeof draft.contactId === 'string' &&
+      draft.contactId.length > 0 &&
+      typeof draft.text === 'string' &&
+      draft.text.length > 0 &&
+      typeof draft.createdAt === 'number' &&
+      Number.isFinite(draft.createdAt) &&
+      typeof draft.expiresAt === 'number' &&
+      Number.isFinite(draft.expiresAt) &&
+      this.isValidDraftStatus(draft.status) &&
+      typeof draft.reason === 'string'
+    )
+  }
+
+  /** 过期 pending → expired；已处理草稿保留 24 小时后清理。 */
+  private pruneDrafts(list: SendDraft[], now: number): SendDraft[] {
+    const kept: SendDraft[] = []
+    for (const draft of list) {
+      if (draft.status === 'pending' && now >= draft.expiresAt) {
+        kept.push({ ...draft, status: 'expired' })
+        continue
+      }
+      if (draft.status !== 'pending' && now - draft.createdAt > DRAFT_KEEP_MS) continue
+      kept.push(draft)
+    }
+    return kept
+  }
+
+  /** 13.4：生成一条待批准草稿（draft / confirm / safeMode / 预算草稿统一入口）。 */
+  private async persistDraft(input: { message: InboundMessage; text: string; now: number; reason: string; phase: string; totalTokens: number }): Promise<void> {
+    const { message, text, now } = input
+    // 9.4：批准时复用同一个 opId，保证「草稿批准」也只执行一次。
+    const operation = this.ledger.beginOperation({ contactId: message.contactId, text })
+    const draft: SendDraft = {
+      id: `draft-${now.toString(36)}-${Math.floor(this.deps.random.next() * 0xffffff).toString(16)}`,
+      opId: operation.opId,
+      contactId: message.contactId,
+      contactName: message.contactName,
+      text,
+      createdAt: now,
+      expiresAt: now + DRAFT_TTL_MS,
+      status: 'pending',
+      reason: input.reason,
+    }
+    this.drafts.push(draft)
+    this.drafts = this.pruneDrafts(this.drafts, now).slice(-DRAFTS_MAX)
+    await this.ledger.save()
+    await this.saveDrafts()
+    this.deps.state.stats.drafts += 1
+    // 兼容旧版 drafts.jsonl 追加（只记录数据，不执行任何内容）。
+    try {
+      await this.deps.store.append(
+        'drafts.jsonl',
+        JSON.stringify({ ts: now, contactId: message.contactId, contactName: message.contactName, text, totalTokens: input.totalTokens, phase: input.phase }) + '\n',
+      )
+    } catch (error) {
+      this.deps.logger.warn('追写草稿日志失败', String(error))
+    }
+    await this.audit({
+      type: 'draft',
+      contactId: message.contactId,
+      msgId: message.id,
+      reason: input.reason === 'budget-exhausted' ? 'budget-exhausted' : input.reason === 'budget-draft' ? 'budget-draft' : 'draft-mode',
+      detail: text.slice(0, 200),
+      extra: { draftId: draft.id, opId: draft.opId, reason: input.reason },
+    })
+  }
+
+  private pendingDrafts(): number {
+    return this.drafts.filter((draft) => draft.status === 'pending').length
+  }
+
+  /** 列出草稿（过期项已标记；不返回可变的内部引用）。 */
+  async listDrafts(): Promise<SendDraft[]> {
+    const now = this.deps.clock.now()
+    const before = JSON.stringify(this.drafts)
+    this.drafts = this.pruneDrafts(this.drafts, now)
+    if (JSON.stringify(this.drafts) !== before) await this.saveDrafts()
+    return this.drafts.map((draft) => ({ ...draft }))
+  }
+
+  private findDraft(id: string): SendDraft | null {
+    const draft = this.drafts.find((item) => item.id === id)
+    return draft ?? null
+  }
+
+  /** 13.4：拒绝草稿——不发送，并把账本记为 cancelled（该 opId 以后不再执行）。 */
+  async rejectDraft(id: string): Promise<DraftDecisionResult> {
+    const draft = this.findDraft(id)
+    if (!draft) return { ok: false, error: '草稿不存在或已清理' }
+    if (draft.status !== 'pending') return { ok: false, error: `草稿已处理（${draft.status}），不能重复操作`, draft }
+    draft.status = 'rejected'
+    this.ledger.recordResult(draft.opId, 0, { state: 'cancelled', delivery: 'not-sent' })
+    await this.ledger.save()
+    await this.saveDrafts()
+    await this.audit({ type: 'draft', contactId: draft.contactId, reason: 'draft-rejected', extra: { draftId: draft.id, opId: draft.opId } })
+    await this.persist()
+    return { ok: true, draft }
+  }
+
+  /**
+   * 13.4：批准并发送一条草稿。
+   * 必须重走完整门禁（暂停/熔断/预算/白名单/频控） + 9.4 账本；unknown 绝不再发。
+   */
+  async approveDraft(id: string): Promise<DraftDecisionResult> {
+    const now = this.deps.clock.now()
+    const draft = this.findDraft(id)
+    if (!draft) return { ok: false, error: '草稿不存在或已清理' }
+    if (draft.status === 'expired' || (draft.status === 'pending' && now >= draft.expiresAt)) {
+      if (draft.status === 'pending') {
+        draft.status = 'expired'
+        await this.saveDrafts()
+      }
+      return { ok: false, error: '草稿已过期，请重新生成', draft }
+    }
+    if (draft.status !== 'pending') return { ok: false, error: `草稿已处理（${draft.status}），不能重复操作`, draft }
+    // 9.4：该 opId 已终结（confirmed/unknown/cancelled，或 not-sent 重试用尽）→ 绝不再发。
+    if (!this.ledger.shouldSend(draft.opId, 0)) {
+      await this.audit({ type: 'draft', contactId: draft.contactId, reason: 'approve-duplicate', detail: `op=${draft.opId} 已终结，拒绝重复发送`, extra: { draftId: draft.id, opId: draft.opId } })
+      await this.persist()
+      return { ok: false, error: '该草稿对应的发送操作已终结（可能已发送或结果未知），为避免重复发送已拒绝', detail: 'duplicate', draft }
+    }
+    const blocked = this.canSend({ contactId: draft.contactId, contactName: draft.contactName, checkWhitelist: true, checkRate: true })
+    if (blocked) {
+      await this.audit({ type: 'draft', contactId: draft.contactId, reason: 'approve-blocked', detail: `send-blocked: ${blocked.detail}`, extra: { draftId: draft.id } })
+      await this.persist()
+      return { ok: false, error: `已拒绝发送：${blocked.detail}`, detail: blocked.reason, draft }
+    }
+    this.setSendState('draft')
+    await this.transitionSendState('ready', { contactId: draft.contactId }, now)
+    await this.transitionSendState('sending', { contactId: draft.contactId }, now)
+    this.ledger.markSending(draft.opId, 0)
+    const startedAt = this.deps.clock.now()
+    let result: SendResult
+    try {
+      result = await this.deps.channel.send(draft.contactId, { kind: 'text', text: draft.text }, this.abortController.signal)
+    } catch (error) {
+      result = { ok: false, error: error instanceof Error ? error.message : String(error), delivery: 'unknown' }
+    }
+    const delivery = resolveSendDelivery(result)
+    this.countDelivery(delivery)
+    const delivered = delivery === 'sent'
+    const nextState: SendState = delivered ? 'confirmed' : delivery === 'unknown' ? 'unknown' : 'failed'
+    this.ledger.recordResult(draft.opId, 0, { state: nextState, delivery })
+    await this.ledger.save()
+    if (delivered) {
+      this.deps.state.rate[draft.contactId] = recordReply(normalizeCounter(this.deps.state.rate[draft.contactId], now), now)
+      this.deps.state.stats.sends += 1
+      this.deps.state.lastActivityAt = now
+      draft.status = 'approved'
+      draft.delivery = 'sent'
+      delete draft.lastError
+    } else {
+      draft.delivery = delivery
+      draft.lastError = result.error ?? (delivery === 'unknown' ? '发送结果无法确认' : '发送失败')
+    }
+    await this.saveDrafts()
+    await this.audit({
+      type: delivered ? 'send' : 'send-fail',
+      contactId: draft.contactId,
+      reason: delivered ? 'draft-approved' : 'draft-approve-failed',
+      send: { kind: 'text', chars: draft.text.length, ok: delivered, error: result.error, delivery, durationMs: this.deps.clock.now() - startedAt },
+      extra: { draftId: draft.id, opId: draft.opId },
+    })
+    await this.transitionSendState(nextState, { contactId: draft.contactId }, this.deps.clock.now())
+    await this.persist()
+    if (delivered) return { ok: true, delivery, draft }
+    if (delivery === 'unknown') {
+      return { ok: false, error: '发送结果无法确认（unknown），为避免重复发送不会自动重发，请人工到微信确认', detail: 'unknown', delivery, draft }
+    }
+    // not-sent：确认没发出去，账本记 failed（可再次批准重试）。
+    return { ok: false, error: '发送失败（确认未发出，可再次批准重试）', detail: 'failed', delivery: 'not-sent', draft }
+  }
+
   /* ────────────────────────── 风控熔断 ────────────────────────── */
 
   async handleRisk(signal: RiskSignal): Promise<void> {
@@ -672,6 +967,8 @@ export class PersonaEngine {
     const { config, clock, state, memory, audit, channel } = this.deps
     const now = clock.now()
     const fromWhitelist = matchWhitelist(config, message.contactId, message.contactName)
+    // 9.1：每条入站消息重新开始一次发送生命周期（串行处理，不存在并发覆盖）。
+    this.setSendState('received')
 
     // 0) 人格停用 / 私聊开关
     if (config.persona.enabled === false || this.deps.persona.systemPrompt.trim() === '') {
@@ -780,6 +1077,8 @@ export class PersonaEngine {
       await this.skip(message, gate.decision, now)
       return
     }
+    // 9.1：门禁全部通过 → validated（之后每一步都可能被新的暂停/熔断打断，发送前还会复查）。
+    await this.transitionSendState('validated', { contactId: message.contactId, msgId: message.id }, now)
 
     // 4) 预算：超限直接停
     state.budget = normalizeBudget(state.budget, now)
@@ -879,6 +1178,7 @@ export class PersonaEngine {
     })
 
     // 7) 调模型（失败重试 1 次；若当前模型不支持所选「思考等级」，自动降级后重试）
+    await this.transitionSendState('generating', { contactId: message.contactId, msgId: message.id }, now)
     let result: LlmResult | null = null
     let lastError: unknown = null
     let effort: LlmRequest['reasoningEffort'] = config.reply.reasoningEffort
@@ -953,21 +1253,25 @@ export class PersonaEngine {
       return
     }
 
-    // 9) 草稿模式：只生成不发（超预算也不发）
+    // 9) 草稿模式：生成后不发，落盘到人工确认队列（13.4）
+    //    触发条件优先级：预算草稿/超限 > safeMode > sendMode（draft/confirm）
+    //    safeMode 下即使 sendMode=auto 也只生成草稿，绝不触达真实微信。
     const phase = budgetPhase(config, state.budget, now)
-    if (phase === 'draft' || phase === 'exhausted') {
-      state.stats.drafts += 1
-      await this.deps.store.append(
-        'drafts.jsonl',
-        JSON.stringify({ ts: now, contactId: message.contactId, contactName: message.contactName, text: reply, totalTokens, phase }) + '\n',
-      )
-      await this.audit({
-        type: 'draft',
-        contactId: message.contactId,
-        msgId: message.id,
-        reason: phase === 'exhausted' ? 'budget-exhausted' : 'budget-draft',
-        detail: reply.slice(0, 200),
-      })
+    const configuredMode = config.sendMode === 'draft' || config.sendMode === 'confirm' ? config.sendMode : 'auto'
+    const safeBlocked = config.safeMode === true && channel.id !== 'mock'
+    if (phase !== 'ok' || safeBlocked || configuredMode !== 'auto') {
+      const reason =
+        phase === 'exhausted'
+          ? 'budget-exhausted'
+          : phase === 'draft'
+            ? 'budget-draft'
+            : safeBlocked
+              ? 'safe-mode'
+              : configuredMode === 'draft'
+                ? 'draft-mode'
+                : 'confirm-mode'
+      await this.transitionSendState('draft', { contactId: message.contactId, msgId: message.id }, now)
+      await this.persistDraft({ message, text: reply, now, reason, phase, totalTokens })
       await this.persist()
       return
     }
@@ -999,6 +1303,8 @@ export class PersonaEngine {
       }
       planParts.push(part)
     }
+    // 9.1：发送计划已就绪（用户此时可能刚好暂停——发送循环还会再查一次）。
+    await this.transitionSendState('ready', { contactId: message.contactId, msgId: message.id }, now)
     const sendSignal = this.abortController.signal
     // 拟人延迟也要能被打断：暂停/停止时立即醒来，不把暂停拖到延迟结束（P0-1）。
     await this.sleep(plan.typingMs, sendSignal)
@@ -1006,10 +1312,15 @@ export class PersonaEngine {
     // 11) 发送
     //   P0-1：拟人延迟结束后、每个 part 发出前、每次重试前都重新过发送门禁
     //         （暂停/熔断/预算可能在“生成完 → 延迟中”发生）；
-    //   P0-2：只有确认「没发出去」（delivery='not-sent'）才允许重试，unknown 绝不重试。
+    //   P0-2：只有确认「没发出去」（delivery='not-sent'）才允许重试，unknown 绝不重试；
+    //   9.4：每个 part 用 sendOperationId 写账本，跨重启 / DSH 重试都不会重复发送；
     //   任何一条发送失败即中止本批，避免半截刷屏。
+    await this.transitionSendState('sending', { contactId: message.contactId, msgId: message.id }, now)
+    const operation = this.ledger.beginOperation({ contactId: message.contactId, text: reply })
     let sent = 0
     let stickerSent: string | null = null
+    let duplicateSkipped = false
+    let unknownResult = false
     for (let index = 0; index < planParts.length; index += 1) {
       const part = planParts[index] as OutboundPart
       if (index > 0) {
@@ -1020,6 +1331,8 @@ export class PersonaEngine {
         await this.recordSendBlocked(message, preSend, clock.now())
         break
       }
+      // 9.4：同一 opId 的每个 part 一条账本记录（重复 begin 不会重置已有结果）。
+      this.ledger.beginOperation({ opId: operation.opId, contactId: message.contactId, text: reply, partIndex: index })
       const startedAt = clock.now()
       let sendResult: SendResult = { ok: false, error: 'not-sent', delivery: 'not-sent' }
       let blockedByGate = false
@@ -1029,9 +1342,24 @@ export class PersonaEngine {
         if (blocked) {
           sendResult = { ok: false, error: `send-blocked: ${blocked.detail}`, delivery: 'not-sent' }
           await this.recordSendBlocked(message, blocked, clock.now())
+          this.ledger.recordResult(operation.opId, index, { state: 'cancelled', delivery: 'not-sent' })
           blockedByGate = true
           break
         }
+        // 9.4：账本显示该 part 已终结（confirmed/unknown/cancelled 或重试用尽）→ 绝不重复发送。
+        if (!this.ledger.shouldSend(operation.opId, index)) {
+          duplicateSkipped = true
+          await this.audit({
+            type: 'send-state',
+            contactId: message.contactId,
+            msgId: message.id,
+            reason: 'skip-duplicate',
+            detail: `op=${operation.opId} part=${index} 已终结，跳过重发`,
+            extra: { opId: operation.opId, partIndex: index },
+          })
+          break
+        }
+        this.ledger.markSending(operation.opId, index)
         try {
           sendResult = await channel.send(message.contactId, part, sendSignal)
         } catch (error) {
@@ -1044,13 +1372,27 @@ export class PersonaEngine {
         }
         const delivery = resolveSendDelivery(sendResult)
         this.countDelivery(delivery)
-        if (sendResult.ok) break
-        if (sendSignal.aborted) break
-        if (attempt >= 1) break
-        if (!canRetrySend(sendResult)) break
+        if (sendResult.ok) {
+          this.ledger.recordResult(operation.opId, index, { state: 'confirmed', delivery: 'sent' })
+          await this.ledger.save()
+          break
+        }
+        // 以下都是失败：按投递三态决定是否还能重试（unknown 一律终结）。
+        if (sendSignal.aborted) {
+          this.ledger.recordResult(operation.opId, index, { state: 'cancelled', delivery })
+          break
+        }
+        if (attempt >= 1 || !canRetrySend(sendResult)) {
+          this.ledger.recordResult(operation.opId, index, { state: delivery === 'unknown' ? 'unknown' : 'failed', delivery })
+          if (delivery === 'unknown') unknownResult = true
+          break
+        }
+        // 确认没发出去（not-sent）：账本记 failed（可重试）后再试一次。
+        this.ledger.recordResult(operation.opId, index, { state: 'failed', delivery: 'not-sent' })
         await this.sleep(400 + Math.floor(this.deps.random.next() * 600), sendSignal)
       }
-      if (blockedByGate) break
+      await this.ledger.save()
+      if (duplicateSkipped || blockedByGate) break
       if (sendResult.ok) {
         sent += 1
         if (part.kind === 'sticker') stickerSent = part.stickerId
@@ -1083,9 +1425,14 @@ export class PersonaEngine {
             durationMs: clock.now() - startedAt,
           },
         })
+        if (resolveSendDelivery(sendResult) === 'unknown') unknownResult = true
         break
       }
     }
+    // 9.1：一批发送结束 → 终态（部分 part 成功也算 confirmed：至少有一条已确定发出）。
+    const finalState: SendState = sent > 0 ? 'confirmed' : unknownResult ? 'unknown' : 'failed'
+    await this.transitionSendState(finalState, { contactId: message.contactId, msgId: message.id }, clock.now())
+    await this.ledger.save()
 
     if (sent === 0) {
       await this.persist()
