@@ -304,6 +304,7 @@ public static class WXDriver {
     [DllImport("user32.dll")] public static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr extra);
     [DllImport("user32.dll")] public static extern int GetSystemMetrics(int i);
     [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
+    [DllImport("user32.dll")] public static extern uint GetDpiForWindow(IntPtr h);
 
     [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
     [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X, Y; }
@@ -816,7 +817,15 @@ function Get-InboundCandidates($Snapshot) {
     foreach ($m in $merged) {
         $side = Get-BubbleSide $m $pane
         if ($side -eq 'right') { continue }
-        $out += @{ text = [string]$m.text; left = [double]$m.left; right = [double]$m.right; top = [double]$m.top; bottom = [double]$m.bottom; side = $side }
+        # merged：这条气泡由几条原始 OCR 行合并而来（供可信度评估判断跨行合并风险）。
+        $mergedN = 0
+        foreach ($r in $raw) {
+            $cx = ([double]$r.left + [double]$r.right) / 2.0
+            $cy = ([double]$r.top + [double]$r.bottom) / 2.0
+            if ($cx -ge [double]$m.left -and $cx -le [double]$m.right -and $cy -ge [double]$m.top -and $cy -le [double]$m.bottom) { $mergedN++ }
+        }
+        if ($mergedN -lt 1) { $mergedN = 1 }
+        $out += @{ text = [string]$m.text; left = [double]$m.left; right = [double]$m.right; top = [double]$m.top; bottom = [double]$m.bottom; side = $side; merged = $mergedN }
     }
     return $out
 }
@@ -1932,9 +1941,24 @@ if ($hwnd -ne [IntPtr]::Zero) { Ensure-UsableWindow $hwnd }
     # 同一帧：read 已用 -KeepImage 保留本次快照 PNG，第二引擎直接识别同一个文件，绝不二次截图（OCR-H3）。
     $readImage = [string]$script:LastSnapshotImage
     $enginesUsed = @('winrt')
+    # 诊断（13.2）：DPI / 缩放 / 截图方式 / 引擎标签全部来自真实运行时信息；拿不到就不输出该字段。
+    $dpiValue = 0
+    try { if ($hwnd -ne [IntPtr]::Zero) { $dpiValue = [int][WXDriver]::GetDpiForWindow($hwnd) } } catch { $dpiValue = 0 }
+    # 真实引擎版本线索：WinRT OcrEngine 的识别语言标签（RecognizerLanguage 优先，旧接口回退）。
+    $winrtLangTag = ''
+    try { $winrtLangTag = [string]$script:OcrEngine.RecognizerLanguage.LanguageTag } catch { $winrtLangTag = '' }
+    if ([string]::IsNullOrWhiteSpace($winrtLangTag)) {
+        try { $winrtLangTag = [string]$script:OcrEngine.Language.LanguageTag } catch { $winrtLangTag = '' }
+    }
+    if ([string]::IsNullOrWhiteSpace($winrtLangTag)) { $winrtLangTag = 'unknown' }
+    $conflictCount = 0
 
-    # 双引擎投票：第二引擎（RapidOCR）独立识别同一帧；只在「重叠度高且更完整」时替换候选文本，
-    # 这样两套模型同时认错的概率远低于单引擎，且 python/依赖缺失时静默回退系统 OCR。
+    # 双引擎融合（6.4）：第二引擎（RapidOCR）独立识别同一帧，按「几何匹配 → 文本差异 → 原生置信度」
+    # 分层决策，不再用「谁更长谁赢」：
+    #   overlap>=0.90：两引擎一致（agreement=agree），保留系统 OCR 文本；
+    #   0.35<=overlap<0.90：冲突（agreement=conflict，计入 conflictCount），只有第二引擎原生
+    #     score>=0.85 的强证据才替换文本，否则保留原文交给 TS 侧可信度评估/二次验证；
+    #   无匹配行：agreement=single（只有单引擎证据，不臆断）。
     if ($Action -eq 'read' -and $SecondOcr) {
         if ([string]::IsNullOrWhiteSpace($readImage) -or -not (Test-Path -LiteralPath $readImage)) {
             Write-Debug-Log 'SecondOcr 跳过：没有可复用的同帧截图'
@@ -1953,6 +1977,7 @@ if ($hwnd -ne [IntPtr]::Zero) { Ensure-UsableWindow $hwnd }
                         $oldText = [string]$c.text
                         $cTop = [double]$c.top
                         $best = $null
+                        $bestScore = 0.0
                         $bestOverlap = 0.0
                         # 第一轮：只认同一条消息（行 y 坐标接近）的第二引擎结果，避免把别的消息张冠李戴。
                         foreach ($ln in @($second.lines)) {
@@ -1961,7 +1986,7 @@ if ($hwnd -ne [IntPtr]::Zero) { Ensure-UsableWindow $hwnd }
                             $lnTop = [double]$ln.y / $ocrScale
                             if ([math]::Abs($lnTop - $cTop) -gt 26.0) { continue }
                             $ov = Get-TextOverlap $oldText $lt
-                            if ($ov -gt $bestOverlap) { $bestOverlap = $ov; $best = $lt }
+                            if ($ov -gt $bestOverlap) { $bestOverlap = $ov; $best = $lt; try { $bestScore = [double]$ln.score } catch { $bestScore = 0.0 } }
                         }
                         # 第二轮兜底：万一行坐标因滚动/缩放对不上，改用全局高重合度匹配（更严格）。
                         if ($null -eq $best -or $bestOverlap -lt 0.35) {
@@ -1969,16 +1994,31 @@ if ($hwnd -ne [IntPtr]::Zero) { Ensure-UsableWindow $hwnd }
                                 $lt = [string]$ln.text
                                 if ([string]::IsNullOrWhiteSpace($lt)) { continue }
                                 $ov = Get-TextOverlap $oldText $lt
-                                if ($ov -gt $bestOverlap) { $bestOverlap = $ov; $best = $lt }
+                                if ($ov -gt $bestOverlap) { $bestOverlap = $ov; $best = $lt; try { $bestScore = [double]$ln.score } catch { $bestScore = 0.0 } }
                             }
                         }
-                        if ($null -ne $best -and $bestOverlap -ge 0.35 -and $best.Length -gt $oldText.Length) {
-                            Write-Debug-Log ("SecondOcr 合并 top=" + [int]$c.top + " overlap=" + [math]::Round($bestOverlap, 2) + " old=" + $oldText + " new=" + $best)
+                        if ($null -eq $best -or $bestOverlap -lt 0.35) {
+                            $c.agreement = 'single'
+                            continue
+                        }
+                        if ($bestOverlap -ge 0.90) {
+                            $c.agreement = 'agree'
+                            if ($bestScore -gt 0) { $c.confidence = $bestScore }
+                            continue
+                        }
+                        # 0.35 <= overlap < 0.90：两引擎文本冲突，计入诊断。
+                        $conflictCount++
+                        $c.agreement = 'conflict'
+                        if ($bestScore -ge 0.85) {
                             $c.text = $best
+                            $c.confidence = $bestScore
                             $mergedCount++
+                            Write-Debug-Log ("SecondOcr 采用高置信度第二引擎文本 top=" + [int]$c.top + " overlap=" + [math]::Round($bestOverlap, 2) + " score=" + [math]::Round($bestScore, 2) + " new=" + $best)
+                        } else {
+                            Write-Debug-Log ("SecondOcr 冲突但证据不足，保留系统 OCR top=" + [int]$c.top + " overlap=" + [math]::Round($bestOverlap, 2) + " score=" + [math]::Round($bestScore, 2))
                         }
                     }
-                    Write-Debug-Log ("SecondOcr 完成 merged=" + $mergedCount)
+                    Write-Debug-Log ("SecondOcr 完成 采用=" + $mergedCount + " 冲突=" + $conflictCount)
                 } else {
                     Write-Debug-Log ("SecondOcr 不可用：" + [string]$second.error)
                 }
@@ -1996,6 +2036,22 @@ if ($hwnd -ne [IntPtr]::Zero) { Ensure-UsableWindow $hwnd }
     }
     Write-Debug-Log ("候选消息 " + $candidates.Count)
     foreach ($c in $candidates) { Write-Debug-Log ("  CAND top=" + [int]$c.top + " text=" + $c.text) }
+
+    # 诊断（13.2）：引擎标签由 WinRT 语言标签 + 实际使用的第二引擎拼成（不编造版本号）。
+    $engineVersion = 'winrt:' + $winrtLangTag
+    if (@($enginesUsed) -contains 'rapidocr') { $engineVersion = $engineVersion + '+rapidocr' }
+    $qualityStatus = 'ok'
+    if ($candidates.Count -eq 0) { $qualityStatus = 'empty' }
+    elseif ($conflictCount -gt 0) { $qualityStatus = 'degraded' }
+    $diagOut = @{
+        scale          = [double]$snap.geo.scale
+        screenshotMode = $(if ([string]$snap.geo.source -eq 'screen') { 'copyscreen' } else { 'printwindow' })
+        engineVersion  = $engineVersion
+        conflictCount  = $conflictCount
+        secondOcrUsed  = (@($enginesUsed) -contains 'rapidocr')
+        qualityStatus  = $qualityStatus
+    }
+    if ($dpiValue -gt 0) { $diagOut.dpi = $dpiValue }
 
     $texts = @($candidates | ForEach-Object { [string]$_.text })
     $paneOut = @{}
@@ -2052,8 +2108,10 @@ if ($hwnd -ne [IntPtr]::Zero) { Ensure-UsableWindow $hwnd }
         $seq = 0
         foreach ($c in $candidates) {
             $seq++
-            $out += @{
-                id         = ('pc-' + (Get-Hash ([string]$c.text)) + '-n' + $seq)
+            # 稳定 id 不依赖文本（OCR 变化不改身份）：captureSeq + 帧内序号 + 几何指纹。
+            $geom = ([string][int]$c.left) + ',' + ([string][int]$c.top) + ',' + ([string][int]$c.right) + ',' + ([string][int]$c.bottom)
+            $item = @{
+                id         = ('pc-' + $captureSeq + '-n' + $seq + '-' + (Get-Hash $geom))
                 text       = [string]$c.text
                 captureId  = $captureId
                 seq        = $captureSeq
@@ -2061,8 +2119,12 @@ if ($hwnd -ne [IntPtr]::Zero) { Ensure-UsableWindow $hwnd }
                 box        = (& $boxOf $c)
                 receivedAt = (Now-Id)
             }
+            if ($null -ne $c.merged) { $item.merged = [int]$c.merged }
+            if ($null -ne $c.confidence) { $item.confidence = [double]$c.confidence }
+            if ($null -ne $c.agreement) { $item.agreement = [string]$c.agreement }
+            $out += $item
         }
-        Write-Result @{ ok = $true; captureId = $captureId; engines = @($enginesUsed); pane = $paneOut; messages = @($out) }
+        Write-Result @{ ok = $true; captureId = $captureId; engines = @($enginesUsed); pane = $paneOut; diag = $diagOut; messages = @($out) }
         exit 0
     }
 
@@ -2106,14 +2168,16 @@ if ($hwnd -ne [IntPtr]::Zero) { Ensure-UsableWindow $hwnd }
         }
     }
 
-    # 新行进入 pending：id = 文本哈希 + 持久化递增序号，保证「同文本两条」id 不同，
-    # 且同一行跨帧重放时 id 不变（TS 侧 inFlight 据此去重）。
+    # 新行进入 pending：id 基于「帧号 + 递增序号 + 几何指纹」，不含文本哈希——
+    # 这样同一行跨帧重放 id 不变（TS 侧 inFlight 据此去重），OCR 文本抖动不改变消息身份；
+    # 连发两条相同文本时 messageSeq 不同，仍是两条不同消息（8.2）。
     $pendingNew = @()
     for ($i = 0; $i -lt $newTexts.Count; $i++) {
         $messageSeq++
         $c = $newCandidates[$i]
-        $pendingNew += @{
-            id          = ('pc-' + (Get-Hash ([string]$newTexts[$i])) + '-' + $messageSeq)
+        $geom = ([string][int]$c.left) + ',' + ([string][int]$c.top) + ',' + ([string][int]$c.right) + ',' + ([string][int]$c.bottom)
+        $pendingItem = @{
+            id          = ('pc-' + $captureSeq + '-' + $messageSeq + '-' + (Get-Hash $geom))
             text        = [string]$newTexts[$i]
             captureId   = $captureId
             seq         = $captureSeq
@@ -2121,6 +2185,10 @@ if ($hwnd -ne [IntPtr]::Zero) { Ensure-UsableWindow $hwnd }
             side        = [string]$c.side
             box         = (& $boxOf $c)
         }
+        if ($null -ne $c.merged) { $pendingItem.merged = [int]$c.merged }
+        if ($null -ne $c.confidence) { $pendingItem.confidence = [double]$c.confidence }
+        if ($null -ne $c.agreement) { $pendingItem.agreement = [string]$c.agreement }
+        $pendingNew += $pendingItem
     }
     $combinedPending = @(@($pendingLines) + @($pendingNew))
     $allPending = @($combinedPending | Select-Object -Last 200)
@@ -2139,16 +2207,20 @@ if ($hwnd -ne [IntPtr]::Zero) { Ensure-UsableWindow $hwnd }
 
     $linesOut = @()
     foreach ($c in $candidates) {
-        $linesOut += @{
+        $lineItem = @{
             text      = [string]$c.text
             side      = [string]$c.side
             captureId = $captureId
             box       = (& $boxOf $c)
         }
+        if ($null -ne $c.merged) { $lineItem.merged = [int]$c.merged }
+        if ($null -ne $c.confidence) { $lineItem.confidence = [double]$c.confidence }
+        if ($null -ne $c.agreement) { $lineItem.agreement = [string]$c.agreement }
+        $linesOut += $lineItem
     }
     $out = @()
     foreach ($p in $allPending) {
-        $out += @{
+        $msgItem = @{
             id         = [string]$p.id
             text       = [string]$p.text
             captureId  = [string]$p.captureId
@@ -2157,9 +2229,13 @@ if ($hwnd -ne [IntPtr]::Zero) { Ensure-UsableWindow $hwnd }
             box        = $p.box
             receivedAt = [string]$p.firstSeenAt
         }
+        if ($null -ne $p.merged) { $msgItem.merged = [int]$p.merged }
+        if ($null -ne $p.confidence) { $msgItem.confidence = [double]$p.confidence }
+        if ($null -ne $p.agreement) { $msgItem.agreement = [string]$p.agreement }
+        $out += $msgItem
     }
     Write-Debug-Log ("输出待确认消息 " + $out.Count + "（含重放），本次新消息 " + $pendingNew.Count + "，帧 " + $captureId)
-    Write-Result @{ ok = $true; captureId = $captureId; engines = @($enginesUsed); pane = $paneOut; lines = @($linesOut); messages = @($out) }
+    Write-Result @{ ok = $true; captureId = $captureId; engines = @($enginesUsed); pane = $paneOut; diag = $diagOut; lines = @($linesOut); messages = @($out) }
     exit 0
 } catch {
     Write-Debug-Log ("脚本异常: " + $_.Exception.Message)

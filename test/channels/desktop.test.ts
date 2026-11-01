@@ -818,3 +818,237 @@ describe('气泡归属 + captureId + ack 水位线（v3.0.0 Phase C，OCR-M1/H2 
     expect(second.messages).toEqual([])
   })
 })
+
+describe('可解释置信度 + 脚本诊断（v3.0.0 Phase C，6.5/13.2 回归）', () => {
+  const PANE = { left: 360, right: 1194, top: 80, bottom: 720 }
+
+  function unreadListRow(): DesktopScriptResult {
+    return {
+      code: 0,
+      stdout: JSON.stringify({
+        ok: true,
+        rows: [{ name: '张三', found: true, unread: true, preview: '', top: 100, left: 160, height: 80 }],
+      }),
+      stderr: '',
+    }
+  }
+
+  function readPayload(messages: unknown[], extra: Record<string, unknown> = {}): DesktopScriptResult {
+    return { code: 0, stdout: JSON.stringify({ ok: true, messages, ...extra }), stderr: '' }
+  }
+
+  it('低置信消息不投递、rejectCount 累加且不推进 ack（保留 pending 下次重放）', async () => {
+    const recorder = recordRunner((script, args) => {
+      if (script === 'user-activity') return USER_IDLE
+      if (args.includes('read')) {
+        return readPayload(
+          [{ id: 'pc-low', text: '今天大吧鱼很好吃', captureId: 'cap-1', box: { x: 380, y: 200, width: 160, height: 10 } }],
+          {
+            captureId: 'cap-1',
+            pane: PANE,
+            engines: ['winrt'],
+            diag: {
+              dpi: 120,
+              scale: 1,
+              screenshotMode: 'printwindow',
+              engineVersion: 'winrt-zh-Hans-CN',
+              conflictCount: 0,
+              secondOcrUsed: false,
+              qualityStatus: 'ok',
+            },
+          },
+        )
+      }
+      return unreadListRow()
+    })
+    const harness = makeDesktopHarness({ runScript: recorder.runner })
+    harness.channel.handler = (message) => harness.messages.push(message)
+    harness.channel.stopped = false
+    await harness.channel.readInboundOnce()
+    expect(harness.messages).toEqual([])
+    expect(harness.channel.rejectCount).toBe(1)
+    expect(harness.channel.ackByContact.get('张三')).toBeUndefined()
+    const status = harness.channel.status() as { ocr?: { rejectCount?: number; qualityStatus?: string } }
+    expect(status.ocr?.rejectCount).toBe(1)
+    // 低置信 ≠ 丢消息：不推进 ack，脚本下次会把同一行（同一稳定 id）重放回来。
+    const readCalls = recorder.calls.filter((call) => call.script === 'wechat-uia' && call.args.includes('read'))
+    expect(readCalls.length).toBeGreaterThanOrEqual(1)
+  })
+
+  it('verify 时自动用同帧第二引擎二次验证，一致后只投递一次', async () => {
+    const recorder = recordRunner((script, args) => {
+      if (script === 'user-activity') return USER_IDLE
+      if (!args.includes('read')) return unreadListRow()
+      if (args.includes('-SecondOcr')) {
+        return readPayload(
+          [{
+            id: 'pc-once',
+            text: '今天大肥鱼很好吃',
+            captureId: 'cap-1',
+            box: { x: 380, y: 200, width: 160, height: 28 },
+            confidence: 0.95,
+            merged: 1,
+            agreement: 'agree',
+          }],
+          {
+            captureId: 'cap-1',
+            pane: PANE,
+            engines: ['winrt', 'rapidocr'],
+            diag: {
+              dpi: 120,
+              scale: 2,
+              screenshotMode: 'printwindow',
+              engineVersion: 'winrt-zh-Hans-CN+rapidocr',
+              conflictCount: 0,
+              secondOcrUsed: true,
+              qualityStatus: 'ok',
+            },
+          },
+        )
+      }
+      return readPayload(
+        [{ id: 'pc-once', text: '今天大肥鱼很好吃', captureId: 'cap-1', box: { x: 380, y: 200, width: 160, height: 12 } }],
+        {
+          captureId: 'cap-1',
+          pane: PANE,
+          engines: ['winrt'],
+          diag: { dpi: 120, scale: 2, screenshotMode: 'printwindow', qualityStatus: 'degraded' },
+        },
+      )
+    })
+    const harness = makeDesktopHarness({ runScript: recorder.runner })
+    harness.channel.handler = (message) => harness.messages.push(message)
+    harness.channel.stopped = false
+    await harness.channel.readInboundOnce()
+    expect(harness.messages).toHaveLength(1)
+    expect(harness.messages[0]).toMatchObject({ id: 'pc-once', text: '今天大肥鱼很好吃' })
+    const readCalls = recorder.calls.filter((call) => call.script === 'wechat-uia' && call.args.includes('read'))
+    expect(readCalls.some((call) => call.args.includes('-SecondOcr'))).toBe(true)
+    expect(harness.channel.rejectCount).toBe(0)
+    expect(harness.channel.ackByContact.get('张三')).toBe('cap-1')
+  })
+
+  it('reject 决策直接拒投（不再触发二次读取），ack 不推进', async () => {
+    const recorder = recordRunner((script, args) => {
+      if (script === 'user-activity') return USER_IDLE
+      if (args.includes('read')) {
+        return readPayload(
+          [{
+            id: 'pc-bad',
+            text: '今天大吧鱼很好吃',
+            captureId: 'cap-1',
+            box: { x: 380, y: 200, width: 160, height: 28 },
+            confidence: 0.2,
+            merged: 3,
+            agreement: 'conflict',
+          }],
+          {
+            captureId: 'cap-1',
+            pane: PANE,
+            engines: ['winrt', 'rapidocr'],
+            diag: { dpi: 120, scale: 2, screenshotMode: 'copyscreen', conflictCount: 1, secondOcrUsed: true, qualityStatus: 'degraded' },
+          },
+        )
+      }
+      return unreadListRow()
+    })
+    const harness = makeDesktopHarness({ runScript: recorder.runner })
+    harness.channel.handler = (message) => harness.messages.push(message)
+    harness.channel.stopped = false
+    await harness.channel.readInboundOnce()
+    expect(harness.messages).toEqual([])
+    expect(harness.channel.rejectCount).toBe(1)
+    expect(harness.channel.ackByContact.get('张三')).toBeUndefined()
+    const readCalls = recorder.calls.filter((call) => call.script === 'wechat-uia' && call.args.includes('read'))
+    expect(readCalls.some((call) => call.args.includes('-SecondOcr'))).toBe(false)
+  })
+
+  it('脚本诊断（dpi/scale/截图方式/引擎版本/冲突数/质量状态）透传到 status().ocr', async () => {
+    const recorder = recordRunner((script, args) => {
+      if (script === 'user-activity') return USER_IDLE
+      if (args.includes('read')) {
+        return readPayload(
+          [{
+            id: 'pc-diag',
+            text: '在吗',
+            captureId: 'cap-7',
+            box: { x: 380, y: 200, width: 60, height: 28 },
+            confidence: 0.95,
+            agreement: 'agree',
+          }],
+          {
+            captureId: 'cap-7',
+            pane: PANE,
+            engines: ['winrt', 'rapidocr'],
+            diag: {
+              dpi: 144,
+              scale: 2,
+              screenshotMode: 'copyscreen',
+              engineVersion: 'rapidocr-1.3.0',
+              conflictCount: 2,
+              secondOcrUsed: true,
+              qualityStatus: 'degraded',
+            },
+          },
+        )
+      }
+      return unreadListRow()
+    })
+    const harness = makeDesktopHarness({ runScript: recorder.runner })
+    harness.channel.handler = (message) => harness.messages.push(message)
+    harness.channel.stopped = false
+    await harness.channel.readInboundOnce()
+    expect(harness.messages).toHaveLength(1)
+    const status = harness.channel.status() as {
+      ocr?: {
+        captureId?: string
+        engines?: string[]
+        lines?: number
+        rejectCount?: number
+        dpi?: number
+        scale?: number
+        screenshotMode?: string
+        engineVersion?: string
+        conflictCount?: number
+        secondOcrUsed?: boolean
+        qualityStatus?: string
+      }
+    }
+    expect(status.ocr).toMatchObject({
+      captureId: 'cap-7',
+      engines: ['winrt', 'rapidocr'],
+      lines: 1,
+      rejectCount: 0,
+      dpi: 144,
+      scale: 2,
+      screenshotMode: 'copyscreen',
+      engineVersion: 'rapidocr-1.3.0',
+      conflictCount: 2,
+      secondOcrUsed: true,
+      qualityStatus: 'degraded',
+    })
+  })
+
+  it('旧版脚本输出（无 diag/原生置信度）保持原行为：直接投递、不触发二次读取', async () => {
+    const recorder = recordRunner((script, args) => {
+      if (script === 'user-activity') return USER_IDLE
+      if (args.includes('read')) {
+        return readPayload([{ id: 'pc-legacy', text: '在吗', captureId: 'cap-1', box: { x: 380, y: 200, width: 60, height: 10 } }], {
+          captureId: 'cap-1',
+          pane: PANE,
+        })
+      }
+      return unreadListRow()
+    })
+    const harness = makeDesktopHarness({ runScript: recorder.runner })
+    harness.channel.handler = (message) => harness.messages.push(message)
+    harness.channel.stopped = false
+    await harness.channel.readInboundOnce()
+    expect(harness.messages).toHaveLength(1)
+    expect(harness.channel.rejectCount).toBe(0)
+    expect(harness.channel.ackByContact.get('张三')).toBe('cap-1')
+    const readCalls = recorder.calls.filter((call) => call.script === 'wechat-uia' && call.args.includes('read'))
+    expect(readCalls.some((call) => call.args.includes('-SecondOcr'))).toBe(false)
+  })
+})
+

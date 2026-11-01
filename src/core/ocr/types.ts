@@ -178,6 +178,43 @@ export interface ConfidenceReport {
   factors: ConfidenceFactor[]
 }
 
+/**
+ * 多引擎融合结论（v3.0.0 task-13，设计文档 6.4）：复用消息状态六态。
+ * confirmed=两引擎一致；uncertain=证据不足；unreadable=无法辨认；
+ * mismatch=同区域但文本冲突；duplicate=重复行；wrong-contact=联系人校验失败。
+ */
+export type OcrMergeStatus = MessageStatus
+
+/** 第二 OCR 引擎对同一行的文本一致程度（single=只有单引擎，未做交叉验证）。 */
+export type OcrAgreement = 'agree' | 'conflict' | 'single'
+
+/** 置信度决策：accept=放行；verify=需二次验证；reject=不自动投递（留待下次，不丢消息）。 */
+export type ConfidenceDecisionKind = 'accept' | 'verify' | 'reject'
+
+/** 跨帧候选序列差异分类（设计文档 8.2/8.3）。 */
+export type FrameDeltaKind = 'replay' | 'ocr-changed' | 'insert' | 'scroll' | 'duplicate'
+
+/**
+ * 脚本侧 OCR 诊断原始值（PS1 read 输出 diag 字段，v3.0.0 task-13 13.2 诊断中心用）。
+ * 全部为真实采集值，缺失即 undefined，禁止用占位值冒充实测。
+ */
+export interface OcrScriptDiagnostics {
+  /** 窗口 DPI（GetDpiForWindow 实测） */
+  dpi?: number
+  /** 截图放大倍数（Get-WindowShot 返回的 scale） */
+  scale?: number
+  /** 截图方式 */
+  screenshotMode?: 'printwindow' | 'copyscreen' | 'unknown'
+  /** OCR 引擎版本标识（如 winrt:zh-Hans-CN / rapidocr:<版本>） */
+  engineVersion?: string
+  /** 本次读取中两引擎文本冲突的候选数 */
+  conflictCount?: number
+  /** 本次读取是否调用了第二引擎（RapidOCR） */
+  secondOcrUsed?: boolean
+  /** 脚本侧质量结论（由真实冲突数/候选数推导） */
+  qualityStatus?: 'ok' | 'degraded' | 'empty' | 'unknown'
+}
+
 /** 发送结果三态：sent=确认送达；not-sent=确认未发出（可安全重试）；unknown=不可确认（不得自动重发）。 */
 export type SendDelivery = 'sent' | 'not-sent' | 'unknown'
 

@@ -126,3 +126,55 @@ describe('OCR 投递决策（pipeline.ts 纯函数，OCR-H2/M1 回归）', () =>
     expect(plan.nextAck).toBe('cap-12-abcd1234')
   })
 })
+
+describe('融合状态 / 置信度字段透传（pipeline.ts 6.4/6.5 扩展）', () => {
+  it('unreadable / mismatch / wrong-contact 显式状态拒绝并保留原因', () => {
+    const plan = planInboundDispatch({
+      captureId: 'cap-3',
+      pane: PANE,
+      messages: [
+        { id: 'ok', text: '正常入站', box: { x: 380, y: 200, width: 60, height: 28 } },
+        { id: 'u', text: '无法辨认', box: { x: 380, y: 240, width: 60, height: 28 }, status: 'unreadable' },
+        { id: 'm', text: '两引擎不一致', box: { x: 380, y: 280, width: 60, height: 28 }, status: 'mismatch' },
+        { id: 'w', text: '联系人不对', box: { x: 380, y: 320, width: 60, height: 28 }, status: 'wrong-contact' },
+      ],
+    })
+    expect(plan.accepted.map((item) => item.id)).toEqual(['ok'])
+    expect(plan.rejected.map((item) => item.reason)).toEqual(['unreadable', 'mismatch', 'wrong-contact'])
+  })
+
+  it('accepted 保留 confidence / merged / agreement 供置信度评估使用', () => {
+    const plan = planInboundDispatch({
+      captureId: 'cap-4',
+      pane: PANE,
+      messages: [
+        {
+          id: 'm1',
+          text: '今天吃鱼',
+          box: { x: 380, y: 200, width: 120, height: 28 },
+          confidence: 0.93,
+          merged: 2,
+          agreement: 'agree',
+        },
+      ],
+    })
+    expect(plan.accepted[0]).toEqual({
+      id: 'm1',
+      text: '今天吃鱼',
+      captureId: 'cap-4',
+      side: 'left',
+      confidence: 0.93,
+      merged: 2,
+      agreement: 'agree',
+    })
+  })
+
+  it('未携带融合字段时 accepted 结构保持旧形状（向后兼容）', () => {
+    const plan = planInboundDispatch({
+      captureId: 'cap-5',
+      pane: PANE,
+      messages: [{ id: 'm', text: '在吗', box: { x: 380, y: 200, width: 60, height: 28 } }],
+    })
+    expect(plan.accepted[0]).toEqual({ id: 'm', text: '在吗', captureId: 'cap-5', side: 'left' })
+  })
+})

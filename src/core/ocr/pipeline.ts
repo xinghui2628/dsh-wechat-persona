@@ -13,7 +13,7 @@
 
 import { seqFromCaptureId, stableMessageId } from './baseline.ts'
 import { classifyBubble, isValidPane } from './bubbles.ts'
-import type { OcrBox } from './types.ts'
+import type { OcrBox, OcrAgreement, MessageStatus } from './types.ts'
 import type { BubbleLineInput, BubblePane, BubbleSide } from './types.ts'
 
 /** 脚本输出的一条消息（字段全部可选，兼容旧版本）。 */
@@ -26,6 +26,14 @@ export interface OcrMessageInput {
   side?: BubbleSide
   /** 消息外接框（新版本脚本会输出，帧像素坐标） */
   box?: OcrBox
+  /** 引擎原生置信度（仅有引擎提供时存在，不提供即 undefined） */
+  confidence?: number
+  /** 该消息由几条原始 OCR 行合并而来（>1 表示跨行合并） */
+  merged?: number
+  /** 第二引擎对同一行的文本一致程度（single=只有单引擎） */
+  agreement?: OcrAgreement
+  /** 脚本/融合层给出的候选状态（缺省视为 confirmed） */
+  status?: MessageStatus
 }
 
 /** 一次 read 的完整输入。 */
@@ -38,8 +46,16 @@ export interface OcrReadInput {
   messages?: OcrMessageInput[]
 }
 
-/** 拒绝原因。 */
-export type OcrRejectReason = 'empty' | 'uncertain' | 'outbound' | 'duplicate'
+/** 拒绝原因（含融合状态与置信度原因）。 */
+export type OcrRejectReason =
+  | 'empty'
+  | 'uncertain'
+  | 'outbound'
+  | 'duplicate'
+  | 'unreadable'
+  | 'mismatch'
+  | 'wrong-contact'
+  | 'low-confidence'
 
 /** 可投递消息。 */
 export interface OcrAcceptedMessage {
@@ -47,6 +63,12 @@ export interface OcrAcceptedMessage {
   text: string
   captureId: string
   side: BubbleSide
+  /** 引擎原生置信度（引擎未提供则不存在） */
+  confidence?: number
+  /** 合并的原始 OCR 行数 */
+  merged?: number
+  /** 第二引擎文本一致程度 */
+  agreement?: OcrAgreement
 }
 
 /** 被拒绝消息（只计数与记原因，不投递）。 */
@@ -111,6 +133,21 @@ export function planInboundDispatch(input: OcrReadInput): OcrDispatchPlan {
       return
     }
 
+    // 融合/置信度层给出的非 confirmed 状态优先拒绝（不投递、不静默改文本）
+    const status = message.status
+    if (
+      status === 'unreadable' ||
+      status === 'mismatch' ||
+      status === 'wrong-contact' ||
+      status === 'uncertain' ||
+      status === 'duplicate'
+    ) {
+      if (status === 'uncertain') uncertainCount += 1
+      else if (status === 'duplicate') duplicateCount += 1
+      rejected.push({ id, text, reason: status })
+      return
+    }
+
     const geometryUsable = Boolean(message.box && pane && isValidPane(pane))
     let ownership: 'inbound' | 'outbound' | 'uncertain'
     let side: BubbleSide
@@ -149,6 +186,13 @@ export function planInboundDispatch(input: OcrReadInput): OcrDispatchPlan {
       text,
       captureId: (message.captureId ?? captureId).trim(),
       side,
+      ...(typeof message.confidence === 'number' && Number.isFinite(message.confidence)
+        ? { confidence: message.confidence }
+        : {}),
+      ...(typeof message.merged === 'number' && Number.isFinite(message.merged) ? { merged: message.merged } : {}),
+      ...(message.agreement === 'agree' || message.agreement === 'conflict' || message.agreement === 'single'
+        ? { agreement: message.agreement }
+        : {}),
     })
   })
 

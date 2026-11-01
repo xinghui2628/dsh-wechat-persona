@@ -34,8 +34,10 @@ import {
 import { textOverlapRatio } from '../../core/ocr/normalize.ts';
 import { mergeEngineVote } from '../../core/ocr/vote.ts';
 import { planInboundDispatch } from '../../core/ocr/pipeline.ts';
-import type { OcrDispatchPlan, OcrMessageInput } from '../../core/ocr/pipeline.ts';
-import type { BubblePane, BubbleSide, OcrBox } from '../../core/ocr/types.ts';
+import type { OcrAcceptedMessage, OcrDispatchPlan, OcrMessageInput } from '../../core/ocr/pipeline.ts';
+import { evaluateConfidence } from '../../core/ocr/confidence.ts';
+import type { ConfidenceEvaluation } from '../../core/ocr/confidence.ts';
+import type { BubblePane, BubbleSide, OcrBox, OcrScriptDiagnostics } from '../../core/ocr/types.ts';
 import type {
   ChannelCapabilities,
   ChannelId,
@@ -133,6 +135,8 @@ interface DesktopScriptPayload {
   engines?: string[];
   /** v3.0.0：发送结果三态（脚本回车后无法确认气泡时给 unknown，引擎据此不自动重发）。 */
   delivery?: SendDelivery;
+  /** v3.0.0 Phase C：本次读取的截图/引擎诊断（DPI、缩放、截图方式、冲突数等，不含正文）。 */
+  diag?: OcrScriptDiagnostics;
 }
 
 /** v3.0.0 Phase F：最近一次 OCR 读取诊断（供只读诊断接口；不含聊天内容）。 */
@@ -145,12 +149,28 @@ export interface DesktopOcrDiagnostics {
   lines?: number;
   /** 因归属不确定被拒投的候选数（最近一次读取）。 */
   uncertainCount?: number;
+  /** 因置信度不足被拒投的累计条数（单调递增；为诊断用）。 */
+  rejectCount?: number;
   /** 最近一次读取耗时（ms）。 */
   durationMs?: number;
   /** 最后读取时间戳（ms）。 */
   lastReadAt?: number;
   /** 最后一次 OCR/读取错误（脱敏，不含正文）。 */
   lastError?: string;
+  /** 窗口 DPI（真实值，脚本提供时才有）。 */
+  dpi?: number;
+  /** 截图放大倍数（脚本实际使用的 scale）。 */
+  scale?: number;
+  /** 截图方式：PrintWindow 或屏幕拷贝。 */
+  screenshotMode?: 'printwindow' | 'copyscreen';
+  /** OCR 引擎版本/语言标签（真实来源，脚本提供时才有）。 */
+  engineVersion?: string;
+  /** 最近一次读取中多引擎文本冲突数。 */
+  conflictCount?: number;
+  /** 最近一次读取是否用了第二引擎。 */
+  secondOcrUsed?: boolean;
+  /** 识别质量状态（由脚本诊断或本次计数推导）。 */
+  qualityStatus?: 'ok' | 'degraded' | 'empty' | 'unknown';
 }
 
 /** 解析 user-activity.ps1 的 stdout（纯数字 / {"idleMs":N} / idle=N）；解析不出返回 null。 */
@@ -210,6 +230,8 @@ export class DesktopChannel {
   ackByContact = new Map<string, string>();
   // v3.0.0：因气泡归属不确定而被拒绝投递的累计条数（ChannelStatus 契约不含该字段，诊断用）。
   uncertainCount = 0;
+  /** v3.0.0 Phase C：因置信度不足被拒投的累计条数（不投递但保留 pending，下次重放再试）。 */
+  rejectCount = 0;
   // v3.0.0：ack 水位线是否已从 dataDir 读回（懒加载，避免构造函数做异步 IO）。
   private ackLoaded = false;
   // v3.0.0：ack 落盘串行链（多次 commit 不并发写同一个文件；失败不影响主流程）。
@@ -249,6 +271,7 @@ export class DesktopChannel {
     this.lastSentText = new Map();
     this.ackByContact = new Map();
     this.uncertainCount = 0;
+    this.rejectCount = 0;
     this.ocrDiagnostics = {};
     this.ocrStartedAt = 0;
     this.loadSentState();
@@ -579,17 +602,31 @@ export class DesktopChannel {
     const lineCount = Array.isArray(data.lines)
       ? data.lines.length
       : Array.isArray(data.messages) ? data.messages.length : undefined;
+    const scriptDiag = this.normalizeScriptDiag(data.diag);
     this.ocrDiagnostics = {
       ...this.ocrDiagnostics,
+      ...scriptDiag,
       captureId: plan.captureId || this.ocrDiagnostics.captureId,
       engines: Array.isArray(data.engines) && data.engines.length > 0
         ? data.engines.map((engine) => String(engine))
         : this.ocrDiagnostics.engines,
       lines: typeof lineCount === 'number' ? lineCount : this.ocrDiagnostics.lines,
       uncertainCount: plan.uncertainCount,
+      rejectCount: this.rejectCount,
       lastReadAt: Date.now(),
       durationMs: this.ocrStartedAt > 0 ? Date.now() - this.ocrStartedAt : this.ocrDiagnostics.durationMs,
     };
+    // 质量状态以脚本真实诊断为准；脚本没给时按本次冲突/空行推导（不编造引擎信息）。
+    const quality = scriptDiag.qualityStatus;
+    if (quality) {
+      this.ocrDiagnostics.qualityStatus = quality;
+    } else if (lineCount === 0) {
+      this.ocrDiagnostics.qualityStatus = 'empty';
+    } else if (this.ocrDiagnostics.conflictCount && this.ocrDiagnostics.conflictCount > 0) {
+      this.ocrDiagnostics.qualityStatus = 'degraded';
+    } else if (typeof lineCount === 'number') {
+      this.ocrDiagnostics.qualityStatus = 'ok';
+    }
     if (plan.rejected.length > 0) {
       for (const rejected of plan.rejected) {
         this.logger.debug?.(`[desktop] 拒绝投递(${rejected.reason}) ${name}: ${rejected.text.slice(0, 30)}`);
@@ -604,6 +641,123 @@ export class DesktopChannel {
     if (this.ackByContact.get(name) === plan.nextAck) return;
     this.ackByContact.set(name, plan.nextAck);
     this.persistAckState();
+  }
+
+  /** 校验脚本诊断字段（v3.0.0 Phase C）：只接受类型合法、非空的真实值，不编造。 */
+  private normalizeScriptDiag(diag: OcrScriptDiagnostics | undefined): Partial<DesktopOcrDiagnostics> {
+    if (!diag || typeof diag !== 'object') return {};
+    const out: Partial<DesktopOcrDiagnostics> = {};
+    if (typeof diag.dpi === 'number' && Number.isFinite(diag.dpi) && diag.dpi > 0) out.dpi = diag.dpi;
+    if (typeof diag.scale === 'number' && Number.isFinite(diag.scale) && diag.scale > 0) out.scale = diag.scale;
+    if (diag.screenshotMode === 'printwindow' || diag.screenshotMode === 'copyscreen') {
+      out.screenshotMode = diag.screenshotMode;
+    }
+    if (typeof diag.engineVersion === 'string' && diag.engineVersion.trim().length > 0) {
+      out.engineVersion = diag.engineVersion.trim().slice(0, 80);
+    }
+    if (typeof diag.conflictCount === 'number' && Number.isFinite(diag.conflictCount) && diag.conflictCount >= 0) {
+      out.conflictCount = Math.floor(diag.conflictCount);
+    }
+    if (typeof diag.secondOcrUsed === 'boolean') out.secondOcrUsed = diag.secondOcrUsed;
+    if (
+      diag.qualityStatus === 'ok' ||
+      diag.qualityStatus === 'degraded' ||
+      diag.qualityStatus === 'empty' ||
+      diag.qualityStatus === 'unknown'
+    ) {
+      out.qualityStatus = diag.qualityStatus;
+    }
+    return out;
+  }
+
+  /** 原始消息按 id 建索引（accepted 不携带 box，置信度评估回查原始几何/原生置信度）。 */
+  private rawMessageMap(data: DesktopScriptPayload | null): Map<string, DesktopScriptMessage> {
+    const map = new Map<string, DesktopScriptMessage>();
+    const messages = Array.isArray(data?.messages) ? data.messages : [];
+    for (const message of messages) {
+      if (message && typeof message.id === 'string' && message.id) map.set(message.id, message);
+    }
+    return map;
+  }
+
+  /** 拒投一条低置信消息：累计计数 + 更新诊断（消息保留在脚本 pending 里，下次重放再试）。 */
+  private markRejected(reason: string): void {
+    this.rejectCount += 1;
+    this.ocrDiagnostics = { ...this.ocrDiagnostics, rejectCount: this.rejectCount };
+    this.logger.debug?.(`[desktop] 置信度不足（${reason}），不投递并保留 pending 下次再试`);
+  }
+
+  /** 该消息是否已经投递过（重放消息跳过置信度门禁，避免同一帧反复卡住 ack）。 */
+  private wasDelivered(name: string, id: string): boolean {
+    return this.inFlight.has(`${name}|${id}`);
+  }
+
+  /**
+   * 可信度评估（6.5）：只有脚本真的给出了可解释证据（原生 confidence / 合并行数 /
+   * 第二引擎一致性 / 诊断信息）才评估；旧版脚本输出（无这些字段）保持原行为，不臆造分数。
+   */
+  private evaluateMessage(
+    name: string,
+    message: OcrAcceptedMessage,
+    data: DesktopScriptPayload,
+    rawById: Map<string, DesktopScriptMessage>,
+  ): ConfidenceEvaluation | null {
+    const raw = rawById.get(message.id);
+    const hasEvidence =
+      !!data.diag ||
+      (!!raw && (
+        typeof raw.confidence === 'number' ||
+        typeof raw.merged === 'number' ||
+        raw.agreement === 'agree' ||
+        raw.agreement === 'conflict' ||
+        raw.agreement === 'single'
+      )) ||
+      (Array.isArray(data.engines) && data.engines.length > 0);
+    if (!hasEvidence) return null;
+    const evaluation = evaluateConfidence({
+      // 原生置信度：引擎给才有，不给就保持 undefined（不计分、不编造）。
+      nativeConfidence: typeof raw?.confidence === 'number' && Number.isFinite(raw.confidence) ? raw.confidence : undefined,
+      boxHeight: raw?.box?.height,
+      scale: data.diag?.scale,
+      engineCount: Array.isArray(data.engines) && data.engines.length > 0 ? data.engines.length : undefined,
+      agreement: raw?.agreement,
+      mergedLines: typeof raw?.merged === 'number' ? raw.merged : undefined,
+      // 截断/纠错/联系人验证在投递前无法从脚本输出确知：保持 undefined，不臆断。
+    });
+    this.logger.debug?.(
+      `[desktop] 置信度 ${name} id=${message.id} score=${evaluation.score.toFixed(2)} decision=${evaluation.decision}：${evaluation.explain}`,
+    );
+    return evaluation;
+  }
+
+  /**
+   * 二次验证（6.5 verify 分支）：再读同一帧（同帧第二引擎，-SecondOcr），按稳定消息 id 找回
+   * 同一条消息重新评估可信度。仍不可信就返回原判，交由调用方拒投并保留 pending。
+   */
+  private async verifySecondEngine(
+    name: string,
+    args: string[],
+    message: OcrAcceptedMessage,
+    data: DesktopScriptPayload,
+  ): Promise<ConfidenceEvaluation | null> {
+    const engines = Array.isArray(data.engines) ? data.engines.map(String) : [];
+    if (engines.includes('rapidocr')) return null;
+    try {
+      const retry = await this.runScript('wechat-uia', [...args, '-SecondOcr']);
+      const retryData = this.parseJson(retry);
+      if (!retryData || retryData.ok !== true) return null;
+      const plan = planInboundDispatch({
+        captureId: retryData.captureId,
+        ack: this.ackByContact.get(name) || '',
+        pane: retryData.pane,
+        messages: Array.isArray(retryData.messages) ? retryData.messages : [],
+      });
+      const same = plan.accepted.find((item) => item.id === message.id);
+      if (!same) return null;
+      return this.evaluateMessage(name, same, retryData, this.rawMessageMap(retryData));
+    } catch {
+      return null;
+    }
   }
 
   async readInboundOnce(): Promise<void> {
@@ -694,15 +848,39 @@ export class DesktopChannel {
       }
       const read = await this.runScript('wechat-uia', args);
       const data = this.parseJson(read);
-      const plan = data && data.ok === true ? this.planRead(item.name, data) : null;
+      const payload = data && data.ok === true ? data : null;
+      const plan = payload ? this.planRead(item.name, payload) : null;
+      const rawById = this.rawMessageMap(payload);
       let verified: { text: string; id?: string } | null = null;
+      let blockedAck = false;
       for (const message of plan?.accepted ?? []) {
         const text = message.text.trim();
         if (!text) continue;
         if (this.isOwnText(item.name, text)) continue;
+        // 重放消息已投递过：不再评估置信度（inFlight 兜底去重），也不阻塞 ack。
+        if (this.wasDelivered(item.name, message.id)) continue;
+        let verdict = payload ? this.evaluateMessage(item.name, message, payload, rawById) : null;
+        if (verdict && verdict.decision !== 'accept') {
+          if (verdict.decision === 'verify') {
+            const second = payload
+              ? await this.verifySecondEngine(item.name, args, message, payload)
+              : null;
+            if (second) verdict = second;
+          }
+          if (verdict && verdict.decision !== 'accept') {
+            blockedAck = true;
+            this.markRejected(`${verdict.decision} score=${verdict.score.toFixed(2)} ${text.slice(0, 20)}`);
+            continue;
+          }
+        }
         verified = { text, id: message.id };
       }
       if (!verified) {
+        if (blockedAck) {
+          // 有低置信消息：不推进 ack，脚本下次重放（id 稳定），也不拿列表预览兜底。
+          this.logger.debug?.(`[desktop] 本次读取存在低置信消息，保留 pending 下次再试：${item.name}`);
+          continue;
+        }
         if (plan && plan.uncertainCount > 0) {
           // 读到的新行几何归属不确定（长气泡越线等）：按约定拒投并计数，也不用列表预览补投，
           // 避免「无法判断归属却仍然回复」。ack 掉本轮帧，避免同一帧被反复重放。
@@ -722,7 +900,7 @@ export class DesktopChannel {
       const fullText = await this.recheckGarbledText(item.name, args, verified.text);
       const useFull = fullText.length >= preview.length || fullText.includes(preview) || preview.includes(fullText);
       this.emitMessage(item.name, useFull ? fullText : preview, verified.id);
-      this.commitAck(item.name, plan);
+      if (!blockedAck) this.commitAck(item.name, plan);
     }
     for (const item of previewFallbacks) this.emitPreview(item.name, correctOcrText(item.preview, this.contactNames()));
 
@@ -751,6 +929,8 @@ export class DesktopChannel {
         continue;
       }
       const plan = this.planRead(name, data);
+      const rawById = this.rawMessageMap(data);
+      let blockedAck = false;
       for (const message of plan.accepted) {
         const text = message.text.trim();
         if (!text) continue;
@@ -760,10 +940,25 @@ export class DesktopChannel {
           this.logger.debug?.(`[desktop] 跳过自回声消息：${name} ${text.slice(0, 30)}`);
           continue;
         }
+        // 重放消息已投递过：跳过置信度门禁（inFlight 去重），避免已投递的行把 ack 卡住。
+        if (this.wasDelivered(name, message.id)) continue;
+        let verdict = this.evaluateMessage(name, message, data, rawById);
+        if (verdict && verdict.decision !== 'accept') {
+          if (verdict.decision === 'verify') {
+            const second = await this.verifySecondEngine(name, args, message, data);
+            if (second) verdict = second;
+          }
+          if (verdict && verdict.decision !== 'accept') {
+            // 低置信：不投递、不推进 ack（脚本 pending 下次重放），绝不永久吞消息。
+            blockedAck = true;
+            this.markRejected(`${verdict.decision} score=${verdict.score.toFixed(2)} ${text.slice(0, 20)}`);
+            continue;
+          }
+        }
         const finalText = await this.recheckGarbledText(name, args, text);
         this.emitMessage(name, finalText, message.id);
       }
-      this.commitAck(name, plan);
+      if (!blockedAck) this.commitAck(name, plan);
     }
   }
 
