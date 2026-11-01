@@ -29,7 +29,7 @@
 - **基线不丢消息**：脚本 pending 队列 + `-Ack <captureId>` 水位线，先原子保存（temp+rename）后输出、读取不再截断；TS 侧透传 ack、成功投递后提交水位线并持久化到 dataDir（`desktop-ack.json`），插件重启后不重放已处理帧；消息 id 跨帧稳定。
 - **气泡归属**：`bubbles.ts` 按几何判定 inbound/outbound/uncertain（长气泡越线判 uncertain），投递前拒投 uncertain/outbound 并计数，不再猜。
 - 纠错分级：受控词典只做同长度近形替换，「更长才替换」门槛与姓名/金额/验证码等敏感区段保护；双引擎融合仅对可疑行触发。
-- 合成 OCR 语料 + 基准：`scripts/ocr/*`（语料生成、WinRT/RapidOCR 引擎适配、v0.2.8 baseline 逐行转写、v3 管线离线等价）、`test/fixtures/ocr-corpus/`（40 张合成截图 + manifest + results）、`docs/OCR-BENCHMARK.md`、`docs/OCR-DESIGN.md`。
+- 合成 OCR 语料 + 基准：`scripts/ocr/*`（语料生成、WinRT/RapidOCR 引擎适配、v0.2.8 baseline 逐行转写、v3 管线离线等价）、`test/fixtures/ocr-corpus/`（60 张合成截图 + manifest + results）、`docs/OCR-BENCHMARK.md`、`docs/OCR-DESIGN.md`。
 
 ### 发送可靠性（阶段 D）
 
@@ -49,15 +49,32 @@
 - README 重写为 12 节（含 Mermaid 架构图、配置表、OCR 说明与限定、隐私边界）；新增 `docs/PRIVACY.md`、`docs/MIGRATION-v3.md`（含回滚）、`docs/TROUBLESHOOTING.md`、`docs/CONTRIBUTING.md`、`docs/RELEASE-CHECKLIST.md`；更新 `docs/ARCHITECTURE.md`。
 - CI（`.github/workflows/ci.yml`）：Windows 跑 typecheck → test:sandbox → check-sensitive → build → OCR 冒烟；Linux 显式标记跳过 WinRT 相关项。
 
+### 逐项差距补齐（任务书复核，2026-11-01）
+
+- **发送状态机（9.1）**：新增 `src/core/send-state.ts`（received→validated→generating→draft→ready→sending→confirmed/failed/unknown/cancelled 10 态 + 合法转换表），engine 按真实阶段推进并写 audit `send-state`。
+- **sendOperationId 幂等（9.4）**：新增 `src/core/send-ledger.ts`（dataDir/`send-ledger.json`，每逻辑发送唯一 opId，terminal 不重发，multi-part 按 partIndex，`shouldRetry` 仅 failed+not-sent 且 attempts<3；unknown 永不自动重发）。
+- **草稿/人工确认模式（13.4）**：`config.sendMode: 'auto'|'draft'|'confirm'`（默认 auto，可迁移）；draft/confirm 写 dataDir/`drafts.json`（上限 50、24h TTL），API `GET /drafts`、`POST /drafts/approve|reject`（approve 重走 `canSend()` 全部门禁 + 同 opId），UI 有「待发送草稿」面板。
+- **多引擎融合/对齐/置信度（6.2–6.5）**：新增 `src/core/ocr/fusion.ts`（几何一对一匹配）、`align.ts`（Levenshtein 序列对齐，跨气泡禁配）、`confidence.ts`（可解释评分 + accept/verify/reject，联系人验证失败硬否决）、`tracker.ts`（LCS 跨帧 replay/ocr-changed/insert/scroll/duplicate/reset）；desktop read 接入置信度门禁（low-confidence 不投递、verify 用同帧第二引擎二次验证、低置信不推进 ack 留在 pending 下次重放）；PS1 删除「谁更长谁用谁」，改分层决策（overlap≥0.90 agree / 0.35–0.90 conflict 且第二引擎原生 score≥0.85 才替换）。
+- **稳定消息身份（8.2/8.3）**：PS1 pending id 去文本哈希，改为 `pc-<captureSeq>-<messageSeq>-<几何hash>`（连发同文本算两条、跨帧重放 id 稳定）；新增 `tracker.ts` 与重复文本/滚动/插入/OCR 变化/切联系人测试。
+- **市场 SSRF 加固（10.3）**：`src/core/persona-market.ts` 仅 http/https、拒绝内网/回环/链路本地/`.local`、`redirect:'manual'` 最多 2 跳且每跳重校验、Content-Type 必须 JSON、2MB 双限、错误不回显 URL。
+- **诊断字段（13.2）**：`GET /diagnostics/ocr` 白名单补齐 15 字段（captureId/engines/lines/uncertainCount/rejectCount/durationMs/lastReadAt/lastError/dpi/scale/screenshotMode/engineVersion/conflictCount/secondOcrUsed/qualityStatus），缺失安全忽略、越界钳制、不含聊天内容。
+- **预处理 A–H 与 A/B 六组（4.4/12.1–12.3）**：语料扩到 30 场景×2=60 张（旧 40 张 SHA256 不变）；A–H 实测（upscale3x 最优，裁剪单用不优于全窗放大）；A/B 六组消融（A v0.2.8 → F 完整 v3：eval 集 CER 35.59%→22.07%、整句 30.30%→51.52%）；12.2 事件/资源统计（双引擎冲突 42.42%、不确定 18.18%、误改 0、重复 0）。
+- **RapidOCR 双路径（5.2）与 Worker 评估（5.3）**：`scripts/py/rapid_ocr.py` 支持统一 `rapidocr` 包（boxes/txts/scores）与旧 `rapidocr_onnxruntime` 自动检测（本机仅旧包，新路径代码就绪未实测，如实标注）；`scripts/ocr/worker-eval.mjs` 量化常驻 Worker（稳态 1323ms/图 vs 现状 3130ms/图，结论「值得做、本期不接线」）。
+- **CI 十项与发布准备（14.4/14.5）**：`.github/workflows/ci.yml` 覆盖 typecheck/单测/集成/OCR 冒烟/Windows 兼容/build/API 验证/依赖审计/敏感扫描/发布包检查；新增 `scripts/check-package.mjs`；`docs/RELEASE-CHECKLIST.md` 增发布说明/可复现构建/SHA256/干净发布包/回退 v0.2.8/批准边界。
+- **合规清单**：新增 `docs/SPEC-COMPLIANCE.md`（任务书十六部分逐项状态/证据/残余风险/待维护者决定）。
+
 ### 测试与基准
 
-- `npm run typecheck` 0 错；`npm run test:sandbox` **34 个文件 / 548 个用例**全部通过；`node scripts/check-sensitive.mjs` 0 命中；`npm run build` 通过。
-- 合成语料 eval 集（20 图 / 46 条消息，离线等价口径）：v3 CER **21.38%** / 整句准确率 **47.83%**，同集 v0.2.8 baseline 37.37% / 28.26%（CER −15.99pp、整句 +19.57pp）；增益主要来自 WinRT 2x 首读 + CJK 空格归一。真实微信窗口未验证（需真机授权后按 TEST-PLAN 复测）。
+- `npm run typecheck` 0 错；`npm run test:sandbox` **40 个文件 / 648 个用例**全部通过；`node scripts/check-sensitive.mjs` 157 个受跟踪文件 0 命中；`node scripts/check-package.mjs` 167 候选 0 违规；`npm run build` 通过；`npm run verify:api` 24/24。
+- OCR 基准（60 图合成语料、离线等价口径）：A–H 中 `upscale3x` 最优（tune 集 CER 17.66%/整句 53.85%，eval 集 25.68%/51.52%）；A/B 六组 eval 集：A v0.2.8 35.59%→B 预处理 22.82%→C 换引擎 2.25%→D 新对齐 24.47%→E 新融合 12.91%→F 完整 v3 **22.07%**（整句 30.30%→51.52%，CER −13.52pp、整句 +21.22pp）；两轮 eval 结论一致（相对 v0.2.8 有可测量改善），达成任务书 12.4 门槛第 2 条（**限定「合成语料 + 离线等价」**）。真实微信窗口未验证（需真机授权后按 `docs/TEST-PLAN.md` 复测）。
 
 ### 未做 / 风险
 
-- 未用真实微信联系人做任何发送或端到端测试；PS1 阈值（同帧/气泡边距）需真机校准。
-- 未推送远程、未打 tag、未创建 Release（需维护者明确批准）。
+- 未用真实微信联系人做任何发送或端到端测试；PS1 的 DPI/双引擎阈值（0.90/0.85）/气泡边距/几何 id 需真机校准；置信度阈值 0.75/0.45 为规则初值，未用标注集校准。
+- fusion/align/tracker 是核心库 + 单测，**未接入生产 read 路径**（生产用 PS1 几何匹配 + pending/ack 跨帧重放），如实标注。
+- RapidOCR 统一 `rapidocr` 包本机未安装，双路径只实测旧包路径；Worker 评估结论为「值得做、未接线」。
+- 市场 SSRF 防护基于主机名字符串判定，未做 DNS 解析后二次校验（DNS rebinding 仍有残余面），已在 `docs/SECURITY.md` 标注。
+- 未推送远程、未打 tag、未创建 Release（需维护者明确批准）；`private: true` 保持不变。
 - v0.2.8 历史提交中残留的实名（已在当前工作树修复）是否改写 git 历史由维护者决定（公开仓库不可逆）。
 
 ## [0.2.8] - 2026-10-31
