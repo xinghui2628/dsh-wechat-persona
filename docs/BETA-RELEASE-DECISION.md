@@ -2,6 +2,8 @@
 
 > 生成时间：2026-11-01（本地）。本轮按任务书《v3.0.0-beta.1 低成本、安全、诚实的 GitHub 公开测试版发布任务书》执行：**只做本地安全收尾、范围冻结、安装验收与发布素材准备；未 push、未打 tag、未创建 Release、未重写历史、未碰真实微信。**
 >
+> **更新（2026-11-01 晚，最终发布阶段）**：经用户一次性授权，本报告后续动作已全部执行——token 已完成文件层轮换并擦除旧备份、历史姓名已在本地重写替换为虚构文本、API 安全字段已加保护、`v3.0.0-beta.1` 已作为 GitHub Pre-release 发布（附件 tgz + SHA256SUMS）。本报告正文保留发布准备阶段快照，相关章节已加「后续更新」说明。
+>
 > 结论：**本地候选已就绪，但远程公开为 NO-GO（等待用户最少授权与两项 P0 用户侧动作）。**
 
 ## 0. 结论先行（Go / No-Go）
@@ -9,9 +11,9 @@
 | 项 | 结论 | 说明 |
 | --- | --- | --- |
 | 本地发布候选（代码/文档/包） | **READY** | 见 B/C 节门禁实测 |
-| 远程 push / 打 tag / 创建 Draft Release | **NO-GO（未授权）** | 用户尚未给出本次具体的远程发布授权 |
-| 公开 beta.1 是否可发布 | **NO-GO（P0 未清）** | ①外发 `api-token` 未被用户实际轮换；②历史实名残留处理决定未给 |
-| 是否建议先小范围技术同学预览 | 可 | 在用户完成 P0 用户侧动作并授权后，按 §12 操作 |
+| 远程 push / 打 tag / 创建 Draft Release | **已执行（2026-11-01）** | 经用户授权：feat 普通 push、master 受控 force-with-lease、v0.2.8 tag 受控更新、新 tag `v3.0.0-beta.1` |
+| 公开 beta.1 是否可发布 | **已发布（Pre-release）** | 两项 P0 已清：token 已轮换、历史姓名已本地重写替换；另完成 API 安全字段保护修复 |
+| 是否建议先小范围技术同学预览 | 已作为 Pre-release 公开 | 面向技术同学的开发者预览；真实微信/GUI 仍未实机验收（属预期范围） |
 
 ## 1. Git 状态与备份（A 阶段）
 
@@ -38,7 +40,7 @@
 3. 若曾把旧 token 用于其他服务/脚本，请一并更换并检查日志。
 4. 完成后只需回复「已轮换并验证旧 token 401」，**不必展示新 token**。
 
-> 未完成前：公开 beta = **BLOCKED**（不得发布）。
+> **后续更新（2026-11-01 下午）**：该文件层轮换已完成——旧 token 备份用 `crypto.randomBytes(96)` 覆盖 4 轮后删除、目录/临时目录残留扫描 0 命中、新 token 33 B（`randomBytes(24).toString('base64url')` 格式）；**兼容模式仍不强制 Bearer**（见 SECURITY.md 残余风险 #1）。
 
 ## 3. Git 历史中的疑似真实姓名（P0，用户决定）
 
@@ -46,7 +48,7 @@
 - 两套方案（详见 `docs/HISTORY-PRIVACY-ANALYSIS.md`）：
   - **A 保留历史**：零操作、零风险操作；代价是姓名永久可检索（公开仓库）。
   - **B 隔离镜像重写**：在完全隔离的临时克隆/镜像中试演最小范围脱敏，需重写 2 个已推送提交及所有后代（25 个本地提交重放、`v0.2.8` tag 重建），影响 SHA/分支/fork/PR/CI 缓存；**强制 push 需用户单独书面授权**，且无法保证第三方副本/缓存消失。
-- 本轮**未执行任何改写**。需要用户明确：接受 A（知情后保留）还是授权 B 的隔离试演。
+**后续更新（2026-11-01 晚）**：经用户授权已按方案 B 在本地执行历史重写（测试记录姓名替换为虚构文本；feat 分支与 master 已重写、`v0.2.8` tag 重建指向脱敏提交、旧 SHA 不再可达；`v0.2.3` 标签对象未变）。详细证据见 `docs/HISTORY-PRIVACY-ANALYSIS.md` 与最终发布报告。
 
 ## 4. 默认安全：旧版/新版行为与 beta 闸门（B 阶段，见实现报告）
 
@@ -71,16 +73,17 @@
 | 命令 | 结果 |
 | --- | --- |
 | `npm run typecheck` | 0 错（exit 0） |
-| `npm run test:sandbox` | **43 文件 / 725 用例全过**（含 beta 闸门 16 条，exit 0） |
+| `npm run test:sandbox` | **43 文件 / 729 用例全过**（含 beta 闸门 16 条，exit 0） |
 | `npm run build` | exit 0（`dist/index.js:41` PLUGIN_VERSION=`3.0.0-beta.1`） |
 | `node scripts/check-sensitive.mjs` | **222 个受跟踪文本文件 0 命中**（exit 0） |
 | `node scripts/check-package.mjs` | **197 候选 0 违规**（exit 0，1 条本地垃圾警告，不入包） |
 | `npm run verify:api` | **25/25**（exit 0；脚本显式 `betaSafeMode:false` 以覆盖发送链路） |
-| 发布候选 tgz（199 文件 / 731,632 B / 解包 2,289,465 B）SHA256 | `2a4382d003416e940c6bc20b3b2410b4247c8e6515b01c95d30f85c4dc249512`（提交前候选；提交后重建会变化，最终以附件 `SHA256SUMS` 为准） |
+| 本机 API 安全字段保护（回归） | 兼容模式下 `POST /config` 显式变更 `betaSafeMode` / `apiToken` → 403 `safety-fields-require-auth`；未变更安全字段保存 → 202；已配置 token + Bearer → 202（4 条新用例） |
+| 发布候选 tgz | 199 文件（历史重写后最终树重建）；SHA256 见 Release 附件 `SHA256SUMS.txt` |
 
 ## 7. 发布候选包与安装验收（C 阶段）
 
-- 候选附件：`dsh-wechat-persona-3.0.0-beta.1.tgz`（按 RELEASE-CHECKLIST §6.4 用受跟踪文件 + dist 制作），SHA256 见 §6、`SHA256SUMS`。
+- 候选附件：`dsh-wechat-persona-3.0.0-beta.1.tgz`（按 RELEASE-CHECKLIST §6.4 用受跟踪文件 + dist 制作），SHA256 见 Release 附件 `SHA256SUMS.txt`。
 - 干净模拟安装（`%TEMP%` 独立目录 + 宿主依赖 junction，不联网）：**19/19 通过** —— 默认 `activeChannel=mock`、`betaSafeMode=true`；`GET /config` 确认默认值；mock 入站 202 且 audit 出现 send 事件；`POST /test/send` 409、`DesktopChannel.send` 返回 `delivery=not-sent` 且 `runScript` 0 次调用、`betaSafeScriptArgs()=["-NoRealSend"]`；包内 PS1 BOM 正常且 `-NoRealSend` 硬阻断行号正确；回滚演练后安装目录与临时 dataDir 均删除、仓库与 `dist/` 完好。
 - **未执行且如实标注**：真实 DSH profile 安装/卸载/回滚、跨 OS、真实微信；第三方同学真实安装未做过（只能称「内部干净模拟」）。
 - 安装/回滚步骤见 `docs/BETA-QUICKSTART.md`；已知限制见 `docs/BETA-LIMITATIONS.md`。

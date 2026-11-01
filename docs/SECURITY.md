@@ -45,6 +45,7 @@ dsh-wechat-persona:
 ```
 
 - **默认 `apiToken: ''`（兼容模式）**：只做 L1–L5；服务端在首次请求时 `warn` 一次「API 未配置共享 token…」，不硬失败。这样升级后旧设置页、旧脚本、旧工具（只带 `x-dsh-wechat-persona: 1`）仍可工作，避免升级即断。
+- **安全字段保护（v3.0.0-beta.1）**：兼容模式下，`POST /config` 若显式变更 `betaSafeMode` 或 `apiToken` 会返回 **403**（`safety-fields-require-auth`），需在插件配置文件（profile/cordis.patch.yml）中修改并重启插件；未变更安全字段的保存、以及已配置 token 且 Bearer 校验通过的维护者请求不受影响。
 - 插件启动时会在数据目录生成/复用 **运维参考 token**：`<dataDir>/api-token`（默认 `<工作区>/.dsh-wechat-persona/api-token`），权限 `0600`。**该文件内容默认不强制生效**，仅作为启用材料；把它填入配置 `apiToken` 即切换为强制 Bearer 校验（重启插件后生效）。
 - 若你**已显式配置** `apiToken`：所有 API 调用（含设置页、`wechat_persona_*` 工具、调试脚本）都必须携带 `Authorization: Bearer <token>`，否则 401。
 
